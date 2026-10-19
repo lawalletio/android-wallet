@@ -68,6 +68,9 @@ import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -207,7 +210,7 @@ fun ReceiveInvoiceScreen() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spinner(14.dp, Lw.MutedFg); Spacer(Modifier.width(8.dp)); MutedText(stringResource(R.string.receive_waitingPayment))
             }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Lw.Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 LwIcon(L.drawable.lucide_ic_nfc, size = 20.dp, tint = Lw.MutedFg)
                 Spacer(Modifier.width(10.dp))
                 Txt(

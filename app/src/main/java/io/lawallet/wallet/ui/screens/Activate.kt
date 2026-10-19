@@ -116,7 +116,7 @@ fun ActivateScreen(tokenId: String) {
                 p.status == "REVOKED" -> StatusBlock(stringResource(R.string.activate_revoked_title), stringResource(R.string.activate_revoked_body))
                 p.qrKind != "ONE_TIME" -> StatusBlock(stringResource(R.string.activate_unsupported_title), stringResource(R.string.activate_unsupported_body))
                 else -> {
-                    Txt(stringResource(R.string.activate_eyebrow).uppercase(), size = 12.sp, color = Lw.MutedFg, letterSpacing = 2.sp)
+                    Txt(stringResource(R.string.activate_eyebrow), size = 15.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                     AspectCard(p.card?.design?.imageUrl?.let { absolute(c.session.instanceUrl, it) }, Modifier.fillMaxWidth())
                     p.card?.title?.let { Txt(it, size = 20.sp, weight = FontWeight.SemiBold) }
                     if (auth != AuthState.LoggedIn) {

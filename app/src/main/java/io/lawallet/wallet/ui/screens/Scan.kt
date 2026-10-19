@@ -63,6 +63,9 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import com.composables.icons.lucide.R as L
@@ -169,7 +172,7 @@ fun ScanScreen() {
             text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
             confirmButton = { TextButton({ foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) { Txt(stringResource(R.string.scan_openLink)) } },
             dismissButton = { TextButton({ foreign = null }) { Txt(stringResource(R.string.scan_scanAnother)) } },
-            containerColor = Lw.Card,
+            containerColor = Glass.Dialog,
         )
     }
 }

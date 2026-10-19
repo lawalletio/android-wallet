@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +86,9 @@ import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -100,7 +104,7 @@ private fun SettingsPage(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-fun lwSwitchColors() = SwitchDefaults.colors(checkedTrackColor = LocalBrand.current.t400, checkedThumbColor = Lw.Foreground, uncheckedTrackColor = Lw.Secondary, uncheckedThumbColor = Lw.MutedFg, uncheckedBorderColor = Lw.Border)
+fun lwSwitchColors() = SwitchDefaults.colors(checkedTrackColor = LocalBrand.current.t400, checkedThumbColor = Lw.Foreground, uncheckedTrackColor = Color.White.copy(alpha = 0.08f), uncheckedThumbColor = Lw.MutedFg, uncheckedBorderColor = Color.White.copy(alpha = 0.16f))
 
 @Composable
 fun SettingsScreen() {
@@ -111,7 +115,7 @@ fun SettingsScreen() {
     var confirm by remember { mutableStateOf(false) }
     val bg by c.prefs.backgroundListener.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) { Txt(stringResource(R.string.settings_title), size = 16.sp, weight = FontWeight.SemiBold) }
+        Txt(stringResource(R.string.settings_title), Modifier.padding(start = 20.dp, top = 24.dp, bottom = 16.dp), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             SettingsGroup(stringResource(R.string.settings_account)) {
                 SettingsRow(stringResource(R.string.settings_myCards), { nav.navigate(R0.CARDS) }, Modifier.testTag("settings-cards"), icon = L.drawable.lucide_ic_credit_card)
@@ -153,7 +157,7 @@ fun SettingsScreen() {
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
         confirmButton = { TextButton({ confirm = false; c.session.logout() }, Modifier.testTag("confirm-remove")) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
         dismissButton = { TextButton({ confirm = false }) { Txt(stringResource(R.string.common_cancel)) } },
-        containerColor = Lw.Card,
+        containerColor = Glass.Dialog,
     )
 }
 
@@ -185,7 +189,7 @@ fun CardsScreen() {
             else -> list.forEach { card ->
                 val name = card.title ?: fallback
                 val status = when { card.blocked -> R.string.settings_cardsScreen_status_Blocked; card.disabled -> R.string.settings_cardsScreen_status_Disabled; else -> R.string.settings_cardsScreen_status_Active }
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card).padding(16.dp).testTag("card-${card.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp).testTag("card-${card.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     AspectCard(card.design?.imageUrl?.let { absolute(c.session.instanceUrl, it) }, Modifier.fillMaxWidth())
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -315,7 +319,7 @@ fun SecurityScreen() {
         text = { Txt(stringResource(R.string.settings_securityScreen_removeConfirm)) },
         confirmButton = { TextButton({ confirmRemove = false; c.session.logout() }) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
         dismissButton = { TextButton({ confirmRemove = false }) { Txt(stringResource(R.string.common_cancel)) } },
-        containerColor = Lw.Card,
+        containerColor = Glass.Dialog,
     )
 }
 
@@ -348,7 +352,7 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
             if (!deleting) TextButton({ deleting = true }) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
             else TextButton({ onDone(false) }) { Txt(stringResource(R.string.common_cancel)) }
         },
-        containerColor = Lw.Card,
+        containerColor = Glass.Dialog,
     )
 }
 
@@ -371,7 +375,7 @@ fun CurrenciesScreen() {
             state.active.forEachIndexed { i, code ->
                 if (i > 0) GroupDivider()
                 Row(
-                    Modifier.fillMaxWidth().height(56.dp).then(if (dragging == code) Modifier.offset { IntOffset(0, dragY.roundToInt()) }.background(Lw.Secondary) else Modifier).padding(horizontal = 12.dp).testTag("active-$code"),
+                    Modifier.fillMaxWidth().height(56.dp).then(if (dragging == code) Modifier.offset { IntOffset(0, dragY.roundToInt()) }.background(Color.White.copy(alpha = 0.10f)) else Modifier).padding(horizontal = 12.dp).testTag("active-$code"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (code == "SAT") LwIcon(L.drawable.lucide_ic_lock, size = 18.dp, tint = Lw.MutedFg)

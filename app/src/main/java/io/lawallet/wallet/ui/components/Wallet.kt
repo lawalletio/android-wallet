@@ -70,21 +70,26 @@ import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.fx.Keypad
 import io.lawallet.wallet.core.fx.KeypadMode
 import io.lawallet.wallet.ui.theme.LocalBrand
+import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.frosted
+import io.lawallet.wallet.ui.theme.glass
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
 import com.composables.icons.lucide.R as L
 
-/** components/wallet/shared/nav-tabbar.tsx — floating pill + raised theme scan button. */
+/** Floating frosted pill (real backdrop blur over the scrolling screen) + the brand scan button. */
 @Composable
-fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onScan: () -> Unit, modifier: Modifier = Modifier) {
+fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onScan: () -> Unit, haze: HazeState?, modifier: Modifier = Modifier) {
     val brand = LocalBrand.current
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 16.dp, top = 12.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
-            Modifier.widthIn(max = 286.dp).fillMaxWidth().height(64.dp).shadow(24.dp, CircleShape)
-                .clip(CircleShape).background(Lw.Card.copy(alpha = 0.95f)).border(1.dp, Lw.Border.copy(alpha = 0.6f), CircleShape)
+            Modifier.widthIn(max = 286.dp).fillMaxWidth().height(64.dp)
+                .shadow(28.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                .frosted(haze, CircleShape)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -93,20 +98,28 @@ fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onSca
             Spacer(Modifier.size(54.dp))
             TabItem(L.drawable.lucide_ic_settings, current == "settings", stringResource(R.string.shared_nav_settings), onSettings)
         }
-        // Bottom-aligned with the pill (both share the Box's bottom edge); it rises above the pill's top.
+        // Bottom-aligned with the pill; lit from above with a brand glow below.
         Box(
-            Modifier.size(87.dp).shadow(16.dp, CircleShape).clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(brand.t200, brand.t400))).border(1.dp, brand.t300, CircleShape)
+            Modifier.size(87.dp)
+                .shadow(12.dp, CircleShape, ambientColor = brand.t400.copy(alpha = 0.6f), spotColor = brand.t400.copy(alpha = 0.6f))
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(listOf(brand.t400, brand.t300, brand.t200)))
+                .drawBehind { drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.28f), 0.5f to Color.Transparent)) }
+                .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), brand.t300.copy(alpha = 0.5f))), CircleShape)
                 .clickable(onClick = onScan).testTag("nav-scan"),
             contentAlignment = Alignment.Center,
-        ) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 37.dp, contentDescription = stringResource(R.string.shared_nav_scan)) }
+        ) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 36.dp, contentDescription = stringResource(R.string.shared_nav_scan)) }
     }
 }
 
 @Composable
 private fun TabItem(icon: Int, active: Boolean, label: String, onClick: () -> Unit) {
-    Box(Modifier.size(54.dp).clip(CircleShape).clickable(onClick = onClick).testTag("nav-$label"), contentAlignment = Alignment.Center) {
-        LwIcon(icon, size = 28.dp, tint = if (active) Lw.Foreground else Lw.MutedFg, contentDescription = label)
+    Box(
+        Modifier.size(54.dp).clip(CircleShape).then(if (active) Modifier.background(Color.White.copy(alpha = 0.08f)) else Modifier)
+            .clickable(onClick = onClick).testTag("nav-$label"),
+        contentAlignment = Alignment.Center,
+    ) {
+        LwIcon(icon, size = 26.dp, tint = if (active) Lw.Foreground else Lw.MutedFg, contentDescription = label)
     }
 }
 
@@ -140,14 +153,14 @@ fun AmountKeypad(value: String, onChange: (String) -> Unit, mode: KeypadMode, mo
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { key ->
                     Box(
-                        Modifier.weight(1f).fillMaxHeight().heightIn(min = 58.dp).clip(RoundedCornerShape(16.dp))
-                            .then(if (key != null) Modifier.background(Lw.Card.copy(alpha = 0.9f)).clickable(enabled = enabled) { onChange(Keypad.press(value, key, mode)) }.testTag("key-$key") else Modifier),
+                        Modifier.weight(1f).fillMaxHeight().heightIn(min = 58.dp)
+                            .then(if (key != null) Modifier.glass(RoundedCornerShape(20.dp), GlassLevel.Thin).clickable(enabled = enabled) { onChange(Keypad.press(value, key, mode)) }.testTag("key-$key") else Modifier),
                         contentAlignment = Alignment.Center,
                     ) {
                         when (key) {
                             null -> {}
                             Keypad.BACKSPACE -> LwIcon(L.drawable.lucide_ic_delete, size = 26.dp, contentDescription = stringResource(R.string.shared_keypad_deleteLast))
-                            else -> Txt(key, size = 30.sp, weight = FontWeight.SemiBold)
+                            else -> Txt(key, size = 28.sp, weight = FontWeight.Medium)
                         }
                     }
                 }
@@ -160,11 +173,11 @@ fun AmountKeypad(value: String, onChange: (String) -> Unit, mode: KeypadMode, mo
 @Composable
 fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     if (codes.size < 2) return
-    Row(modifier.clip(CircleShape).background(Lw.Card).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(modifier.glass(CircleShape, GlassLevel.Thin).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         codes.forEach { code ->
             val active = code == selected
             Box(
-                Modifier.clip(CircleShape).then(if (active) Modifier.shadow(2.dp, CircleShape).background(Lw.Background) else Modifier)
+                Modifier.clip(CircleShape).then(if (active) Modifier.glass(CircleShape, GlassLevel.Strong) else Modifier)
                     .clickable { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
             ) { Txt(if (code == "SAT") "SAT" else code, size = 12.sp, weight = FontWeight.SemiBold, color = if (active) Lw.Foreground else Lw.MutedFg) }
         }
@@ -189,7 +202,7 @@ fun relativeTime(ms: Long): String {
 fun TransactionRow(tx: Tx, onClick: () -> Unit) {
     val color = if (tx.incoming) Lw.Green else Lw.Orange
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("tx-row"), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(color.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             LwIcon(if (tx.incoming) L.drawable.lucide_ic_arrow_down_left else L.drawable.lucide_ic_arrow_up_right, size = 20.dp, tint = color)
         }
         Spacer(Modifier.width(12.dp))
@@ -218,8 +231,10 @@ fun QrDisplay(data: String, caption: String?, copyValue: String = data, modifier
     val bmp = remember(data) { qrBitmap(data) }
     val copied = stringResource(R.string.common_copied)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.shadow(12.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(16.dp).clickable { context.copyToClipboard(copyValue, copied) }) {
-            Image(bmp.asImageBitmap(), null, Modifier.size(240.dp).testTag("qr"))
+        Box(Modifier.glass(RoundedCornerShape(32.dp), GlassLevel.Regular).padding(12.dp)) {
+            Box(Modifier.clip(RoundedCornerShape(22.dp)).background(Color.White).padding(16.dp).clickable { context.copyToClipboard(copyValue, copied) }) {
+                Image(bmp.asImageBitmap(), null, Modifier.size(232.dp).testTag("qr"))
+            }
         }
         if (caption != null) {
             Spacer(Modifier.height(16.dp))
@@ -243,8 +258,7 @@ fun SwipeButton(label: String, onConfirm: () -> Unit, loading: Boolean, done: Bo
     val shimmer = rememberInfiniteTransition(label = "shimmer").animateFloat(-1f, 2f, infiniteRepeatable(tween(2500, easing = LinearEasing), RepeatMode.Restart), label = "x")
     val max = (trackPx - thumbPx - 8f).coerceAtLeast(1f)
     BoxWithConstraints(
-        modifier.fillMaxWidth().height(52.dp).clip(CircleShape).background(if (done) Lw.Green.copy(alpha = 0.25f) else Lw.Card)
-            .border(1.dp, Lw.Border, CircleShape).testTag("swipe"),
+        modifier.fillMaxWidth().height(56.dp).glass(CircleShape, GlassLevel.Regular, tint = if (done) Lw.Green.copy(alpha = 0.25f) else null).testTag("swipe"),
     ) {
         trackPx = constraints.maxWidth.toFloat()
         Box(Modifier.fillMaxSize().drawBehind {
@@ -257,8 +271,8 @@ fun SwipeButton(label: String, onConfirm: () -> Unit, loading: Boolean, done: Bo
             }
         }
         if (!loading && !done) Box(
-            Modifier.offset { IntOffset(offset.value.roundToInt() + 4, with(this) { 2.dp.roundToPx() }) }.size(48.dp).clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(Lw.Neutral400, Lw.Neutral100)))
+            Modifier.offset { IntOffset(offset.value.roundToInt() + 4, with(this) { 4.dp.roundToPx() }) }.size(48.dp).clip(CircleShape)
+                .background(Brush.verticalGradient(listOf(Lw.Neutral100, Lw.Neutral400)))
                 .pointerInput(enabled, max) {
                     if (!enabled) return@pointerInput
                     detectHorizontalDragGestures(
@@ -293,8 +307,8 @@ fun PaymentReceiptCard(
     val copiedMsg = stringResource(R.string.common_copied)
     Column(Modifier.fillMaxWidth()) {
         Column(
-            Modifier.fillMaxWidth().shadow(20.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).background(Lw.Card).border(1.dp, Lw.Border, RoundedCornerShape(24.dp))
-                .drawBehind { drawRect(Brush.horizontalGradient(listOf(Color.Transparent, brand.t300, Color.Transparent)), size = size.copy(height = 1.dp.toPx())) },
+            Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))
+                .drawBehind { drawRect(Brush.horizontalGradient(listOf(Color.Transparent, brand.t400, Color.Transparent)), size = size.copy(height = 1.5.dp.toPx())) },
         ) {
             Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 32.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatusMark(status)
@@ -307,8 +321,8 @@ fun PaymentReceiptCard(
                 if (currency != "SAT") Txt(stringResource(R.string.common_sats, Currencies.formatSats(amountSats)), size = 14.sp, color = Lw.MutedFg)
                 CurrencyToggle(currencies, currency, onCurrency)
             }
-            if (rows.isNotEmpty()) Box(Modifier.fillMaxWidth().background(Lw.Background.copy(alpha = 0.35f)).padding(16.dp)) {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card.copy(alpha = 0.7f)).border(1.dp, Lw.Border.copy(alpha = 0.7f), RoundedCornerShape(16.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     rows.forEach { (k, v) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Txt(k, size = 14.sp, color = Lw.MutedFg)
@@ -320,15 +334,15 @@ fun PaymentReceiptCard(
         }
         if (proofs.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Lw.Card.copy(alpha = 0.85f)).border(1.dp, Lw.Border.copy(alpha = 0.8f), RoundedCornerShape(24.dp)).padding(16.dp)) {
-                Txt(stringResource(R.string.shared_receipt_proofTitle).uppercase(), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg, letterSpacing = 2.sp)
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
+                Txt(stringResource(R.string.shared_receipt_proofTitle), size = 15.sp, weight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 MutedText(stringResource(R.string.shared_receipt_proofHint))
                 proofs.forEach { (label, value) ->
                     var shown by remember { mutableStateOf(false) }
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(label.uppercase(), Modifier.weight(1f), size = 10.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, letterSpacing = 1.2.sp)
+                        Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                         if (value != null) {
                             Box(Modifier.size(28.dp).clip(CircleShape).clickable { shown = !shown }, contentAlignment = Alignment.Center) { LwIcon(if (shown) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, size = 16.dp, tint = Lw.MutedFg) }
                             Box(Modifier.size(28.dp).clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg) }
@@ -352,13 +366,13 @@ private fun StatusMark(status: String) {
         "failed" -> Triple(Lw.Destructive.copy(alpha = 0.15f), L.drawable.lucide_ic_x, Lw.Red)
         else -> Triple(brand.t400.copy(alpha = 0.15f), L.drawable.lucide_ic_check, brand.t400)
     }
-    Box(Modifier.size(80.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = 40.dp, tint = tint) }
+    Box(Modifier.size(80.dp).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = 38.dp, tint = tint) }
 }
 
 /** Receipt footer: Share | View activity, then Done. */
 @Composable
 fun ReceiptFooter(onShare: () -> Unit, onActivity: (() -> Unit)?, onDone: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Lw.Background.copy(alpha = 0.9f)).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Lw.Background.copy(alpha = 0.85f)))).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LwButton(stringResource(R.string.common_share), onShare, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
             if (onActivity != null) LwButton(stringResource(R.string.shared_receipt_viewActivity), onActivity, Modifier.weight(1f), BtnVariant.Secondary)
@@ -367,21 +381,21 @@ fun ReceiptFooter(onShare: () -> Unit, onActivity: (() -> Unit)?, onDone: () -> 
     }
 }
 
-/** home/payment-notice.tsx — pill 64dp from the top, green/orange border, ±amount. */
+/** Frosted payment notice: tinted disc, direction, ±amount. */
 @Composable
-fun PaymentNoticePill(type: String, amountSats: Long, modifier: Modifier = Modifier) {
+fun PaymentNoticePill(type: String, amountSats: Long, haze: HazeState?, modifier: Modifier = Modifier) {
     val received = type == "payment_received"
     val c = if (received) Lw.Green else Lw.Orange
     Row(
-        modifier.shadow(16.dp, CircleShape).clip(CircleShape).background(Lw.Card.copy(alpha = 0.95f)).border(1.dp, c.copy(alpha = 0.4f), CircleShape)
-            .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp).testTag("payment-notice"),
+        modifier.shadow(24.dp, CircleShape, ambientColor = c, spotColor = c).frosted(haze, CircleShape)
+            .padding(start = 6.dp, end = 18.dp, top = 6.dp, bottom = 6.dp).testTag("payment-notice"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(32.dp).clip(CircleShape).background(c.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(34.dp).glass(CircleShape, GlassLevel.Thin, tint = c.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
             LwIcon(if (received) L.drawable.lucide_ic_arrow_down_left else L.drawable.lucide_ic_arrow_up_right, size = 18.dp, tint = c)
         }
         Spacer(Modifier.width(10.dp))
-        Txt(stringResource(if (received) R.string.shared_tx_received else R.string.shared_tx_sent).uppercase(), size = 12.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, letterSpacing = 0.8.sp)
+        Txt(stringResource(if (received) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         Spacer(Modifier.width(10.dp))
         Txt((if (received) "+" else "−") + Currencies.formatSats(amountSats), size = 16.sp, weight = FontWeight.SemiBold, color = c)
         Spacer(Modifier.width(4.dp))
@@ -396,7 +410,7 @@ fun ScreenColumn(modifier: Modifier = Modifier, padding: PaddingValues = Padding
 
 @Composable
 fun AspectCard(url: String?, modifier: Modifier = Modifier) {
-    Box(modifier.aspectRatio(1.586f).clip(RoundedCornerShape(12.dp)).background(Lw.Secondary)) {
+    Box(modifier.aspectRatio(1.586f).shadow(24.dp, RoundedCornerShape(16.dp)).glass(RoundedCornerShape(16.dp))) {
         if (url != null) coil3.compose.AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
     }
 }

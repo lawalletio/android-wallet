@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -58,7 +57,13 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.lawallet.wallet.ui.theme.Inter
 import io.lawallet.wallet.ui.theme.LocalBrand
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.glass
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.heightIn
 import com.composables.icons.lucide.R as L
 
 /** Lucide icon by drawable id, e.g. `LwIcon(L.drawable.lucide_ic_house)`. */
@@ -86,7 +91,10 @@ fun Txt(
 
 enum class BtnVariant { Default, Theme, Secondary, Destructive, Outline, Ghost }
 
-/** components/ui/button.tsx — gradients + inset highlight, press scale 0.97. */
+/**
+ * Buttons: Theme is the brand gradient lit from above with a soft brand glow underneath;
+ * Secondary/Outline are glass; Default keeps the web's neutral metal gradient.
+ */
 @Composable
 fun LwButton(
     text: String,
@@ -103,81 +111,84 @@ fun LwButton(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
-    val s = shape ?: RoundedCornerShape((brand.radius - 2.dp).coerceAtLeast(0.dp))
-    val (bg, border, fg, highlight) = when (variant) {
-        BtnVariant.Default -> Quad(Brush.verticalGradient(listOf(Lw.Neutral400, Lw.Neutral100)), Lw.Neutral700, Lw.Background, Color.White.copy(alpha = 0.4f))
-        BtnVariant.Theme -> Quad(Brush.verticalGradient(listOf(brand.t200, brand.t400)), brand.t300, Lw.Foreground, brand.t400)
-        BtnVariant.Secondary -> Quad(Brush.verticalGradient(listOf(Lw.Secondary, Lw.Secondary)), null, Lw.Foreground, null)
-        BtnVariant.Destructive -> Quad(Brush.verticalGradient(listOf(Lw.Destructive, Lw.Destructive)), null, Lw.DestructiveFg, null)
-        BtnVariant.Outline -> Quad(Brush.verticalGradient(listOf(Lw.Background, Lw.Background)), Lw.Border, Lw.Foreground, null)
-        BtnVariant.Ghost -> Quad(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)), null, Lw.Foreground, null)
-    }
+    val s = shape ?: RoundedCornerShape(if (brand.radius == 0.dp) 0.dp else (brand.radius + 4.dp).coerceAtMost(height / 2))
     val active = enabled && !loading
+    val fg = when (variant) { BtnVariant.Default -> Lw.Background; BtnVariant.Destructive -> Lw.DestructiveFg; else -> Lw.Foreground }
+    val surface = when (variant) {
+        BtnVariant.Theme -> Modifier
+            .shadow(if (enabled) 18.dp else 0.dp, s, ambientColor = brand.t400, spotColor = brand.t400)
+            .clip(s)
+            .background(Brush.verticalGradient(listOf(brand.t400, brand.t300, brand.t200)), s)
+            .drawBehind { drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.22f), 0.5f to Color.Transparent)) }
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), brand.t300.copy(alpha = 0.6f))), s)
+        BtnVariant.Default -> Modifier.clip(s)
+            .background(Brush.verticalGradient(listOf(Lw.Neutral100, Lw.Neutral400)), s)
+            .border(1.dp, Color.White.copy(alpha = 0.5f), s)
+        BtnVariant.Secondary -> Modifier.glass(s, if (pressed) GlassLevel.Strong else GlassLevel.Regular)
+        BtnVariant.Outline -> Modifier.clip(s).border(1.dp, Glass.edge(GlassLevel.Strong), s)
+        BtnVariant.Destructive -> Modifier.glass(s, GlassLevel.Regular, tint = Lw.Red.copy(alpha = 0.22f))
+        BtnVariant.Ghost -> Modifier.clip(s)
+    }
     Box(
         modifier
             .scale(scale)
             .height(height)
-            .alpha(if (enabled) 1f else if (variant == BtnVariant.Default) 0.4f else 0.5f)
-            .clip(s)
-            .background(bg, s)
-            .then(if (border != null) Modifier.border(BorderStroke(1.dp, border), s) else Modifier)
-            .then(if (highlight != null) Modifier.drawWithContent {
-                drawContent()
-                drawRect(Brush.verticalGradient(0f to highlight, 0.06f to Color.Transparent))
-            } else Modifier)
+            .alpha(if (enabled) 1f else 0.45f)
+            .then(surface)
             .clickable(interaction, null, enabled = active, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = fg, strokeWidth = 2.dp)
         else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             if (icon != null) { LwIcon(icon, size = 18.dp, tint = fg); Spacer(Modifier.width(8.dp)) }
-            Txt(text, size = 14.sp, weight = FontWeight.Medium, color = fg, maxLines = 1)
+            Txt(text, size = 15.sp, weight = FontWeight.SemiBold, color = fg, maxLines = 1)
         }
     }
 }
 
-private data class Quad(val bg: Brush, val border: Color?, val fg: Color, val highlight: Color?)
+/** A round glass icon button (44dp), used for back/close and header actions. */
+@Composable
+fun GlassIconButton(@DrawableRes icon: Int, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, contentDescription: String? = null) {
+    Box(modifier.size(size).glass(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        LwIcon(icon, size = 20.dp, contentDescription = contentDescription)
+    }
+}
 
-/** components/wallet/shared/screen-header.tsx — 56dp, round back/close, centered title. */
+/** Flow header: round glass back/close button, centered title. */
 @Composable
 fun ScreenHeader(title: String?, onBack: (() -> Unit)?, close: Boolean = false, trailing: @Composable (() -> Unit)? = null) {
-    Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp)) {
-        if (onBack != null) Box(
-            Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).clickable(onClick = onBack).testTag("header-back"),
-            contentAlignment = Alignment.Center,
-        ) { LwIcon(if (close) L.drawable.lucide_ic_x else L.drawable.lucide_ic_chevron_left, size = 22.dp) }
-        if (title != null) Txt(title, Modifier.align(Alignment.Center), size = 16.sp, weight = FontWeight.Medium)
+    Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp)) {
+        if (onBack != null) GlassIconButton(
+            if (close) L.drawable.lucide_ic_x else L.drawable.lucide_ic_chevron_left, onBack,
+            Modifier.align(Alignment.CenterStart).testTag("header-back"), size = 40.dp,
+        )
+        if (title != null) Txt(title, Modifier.align(Alignment.Center), size = 17.sp, weight = FontWeight.SemiBold)
         if (trailing != null) Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
     }
 }
 
-/** Settings pages: "‹ Back" pill + centered semibold title. */
+/** Settings pages: same round glass back button as flows, large left-aligned title below. */
 @Composable
 fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String) {
-    Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp)) {
-        Row(
-            Modifier.align(Alignment.CenterStart).height(36.dp).clip(CircleShape).background(Lw.Card).clickable(onClick = onBack).padding(start = 8.dp, end = 14.dp).testTag("header-back"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LwIcon(L.drawable.lucide_ic_chevron_left, size = 18.dp)
-            Txt(backLabel, size = 14.sp, weight = FontWeight.Medium)
-        }
-        Txt(title, Modifier.align(Alignment.Center), size = 16.sp, weight = FontWeight.SemiBold)
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
+        GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = backLabel)
+        Spacer(Modifier.height(16.dp))
+        Txt(title, Modifier.padding(start = 4.dp), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
     }
 }
 
-/** rounded-2xl bg-card group with border/40 dividers. */
+/** A glass panel grouping related rows; optional sentence-case caption above. */
 @Composable
 fun SettingsGroup(title: String? = null, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        if (title != null) Txt(title.uppercase(), Modifier.padding(start = 4.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg, letterSpacing = 0.6.sp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card)) { content() }
+        if (title != null) Txt(title, Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        Column(Modifier.fillMaxWidth().glass()) { content() }
     }
 }
 
 @Composable
-fun GroupDivider() = HorizontalDivider(Modifier.padding(start = 16.dp), color = Lw.Border.copy(alpha = 0.4f))
+fun GroupDivider() = HorizontalDivider(Modifier.padding(start = 60.dp), color = Color.White.copy(alpha = 0.06f))
 
 @Composable
 fun SettingsRow(
@@ -193,24 +204,29 @@ fun SettingsRow(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Row(
-        modifier.fillMaxWidth().height(56.dp).scale(if (pressed) 0.985f else 1f)
+        modifier.fillMaxWidth().heightIn(min = 60.dp)
+            .background(if (pressed) Color.White.copy(alpha = 0.05f) else Color.Transparent)
             .then(if (onClick != null) Modifier.clickable(interaction, null, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) { LwIcon(icon, size = 20.dp, tint = Lw.MutedFg); Spacer(Modifier.width(12.dp)) }
+        if (icon != null) {
+            Box(Modifier.size(32.dp).glass(RoundedCornerShape(10.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) {
+                LwIcon(icon, size = 17.dp, tint = if (labelColor == Lw.Foreground) Lw.Foreground else labelColor)
+            }
+            Spacer(Modifier.width(14.dp))
+        }
         Txt(label, Modifier.weight(1f), size = 16.sp, weight = FontWeight.Medium, color = labelColor, maxLines = 1)
-        if (value != null) { Txt(value, size = 14.sp, color = Lw.MutedFg, maxLines = 1); Spacer(Modifier.width(6.dp)) }
+        if (value != null) { Txt(value, Modifier.padding(start = 8.dp), size = 14.sp, color = Lw.MutedFg, maxLines = 1); Spacer(Modifier.width(6.dp)) }
         if (trailing != null) trailing()
         else if (onClick != null) LwIcon(if (external) L.drawable.lucide_ic_external_link else L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
     }
 }
 
-/** A plain bg-card surface. */
+/** A glass surface. */
 @Composable
-fun LwCard(modifier: Modifier = Modifier, radius: Dp = 16.dp, color: Color = Lw.Card, border: Color? = null, content: @Composable () -> Unit) {
-    val s = RoundedCornerShape(radius)
-    Box(modifier.clip(s).background(color, s).then(if (border != null) Modifier.border(1.dp, border, s) else Modifier)) { content() }
+fun LwCard(modifier: Modifier = Modifier, radius: Dp = 20.dp, level: GlassLevel = GlassLevel.Regular, content: @Composable () -> Unit) {
+    Box(modifier.glass(RoundedCornerShape(radius), level)) { content() }
 }
 
 /** Community image (logotype/isotype) from settings, falling back to the bundled LaWallet art. */

@@ -31,6 +31,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,11 @@ import io.lawallet.wallet.ui.theme.LaWalletTheme
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.brandOf
+import io.lawallet.wallet.ui.theme.LocalHaze
+import io.lawallet.wallet.ui.theme.PrismBackground
+import io.lawallet.wallet.ui.theme.glass
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -117,6 +123,7 @@ fun LaWalletRoot(container: AppContainer) {
     LaWalletTheme(brand) {
         CompositionLocalProvider(LocalContainer provides container) {
             Box(Modifier.fillMaxSize().background(Lw.Background).semantics { testTagsAsResourceId = true }) {
+                PrismBackground(brand)
                 val auth by container.session.auth.collectAsState()
                 when (auth) {
                     AuthState.Loading -> LoadingScreen()
@@ -145,8 +152,13 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
         if (loggedIn) container.wallet.notices.collect { n -> notice = n; delay(3800); if (notice?.id == n.id) notice = null }
     }
 
-    CompositionLocalProvider(LocalNav provides nav) {
+    val haze = rememberHazeState()
+    val brand = LocalBrand.current
+    CompositionLocalProvider(LocalNav provides nav, LocalHaze provides haze) {
         Box(Modifier.fillMaxSize()) {
+          // Everything the floating glass (tab bar, notices) frosts over: the prism + the current screen.
+          Box(Modifier.fillMaxSize().hazeSource(haze)) {
+            PrismBackground(brand)
             // Fixed for the NavHost's lifetime: changing it would reset the back stack on login
             // (skipping the welcome screen / pending activation).
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
@@ -183,18 +195,20 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.SOUND) { PaymentSoundScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
             }
+          }
             if (route == R0.HOME || route == R0.SETTINGS) {
                 NavTabBar(
                     current = if (route == R0.HOME) "home" else "settings",
                     onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
                     onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
                     onScan = { nav.navigate(R0.SCAN) },
+                    haze = haze,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
             // Over the header row (avatar/logo), so the pill never covers the balance it is announcing.
             AnimatedVisibility(notice != null, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
-                notice?.let { PaymentNoticePill(it.type, it.tx.amountSats) }
+                notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
         }
     }
@@ -207,11 +221,11 @@ private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.C
 fun LoadingScreen() {
     val brand = LocalBrand.current
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(80.dp).clip(RoundedCornerShape(24.dp)).background(Lw.Card), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(80.dp).glass(RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
             BrandImage(brand.isotype, "isotype.svg", Modifier.size(48.dp))
         }
         Spacer(Modifier.height(24.dp))
-        LinearProgressIndicator(Modifier.width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)), color = brand.t300, trackColor = Lw.Card)
+        LinearProgressIndicator(Modifier.width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)), color = brand.t400, trackColor = Color.White.copy(alpha = 0.08f))
         Spacer(Modifier.height(16.dp))
         Txt("v${BuildConfig.VERSION_NAME}", size = 12.sp, color = Lw.MutedFg)
     }

@@ -74,6 +74,9 @@ import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -151,11 +154,11 @@ fun SendRecipientScreen() {
 @Composable
 private fun AddressGroup(title: String, items: List<Pair<String, String>>, onPick: (String) -> Unit) {
     Column {
-        Txt(title.uppercase(), Modifier.padding(start = 4.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg, letterSpacing = 0.6.sp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card)) {
+        Txt(title, Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp))) {
             items.forEach { (address, avatar) ->
                 Row(Modifier.fillMaxWidth().clickable { onPick(address) }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(avatar, null, Modifier.size(32.dp).clip(CircleShape).background(Lw.Secondary), contentScale = ContentScale.Crop)
+                    AsyncImage(avatar, null, Modifier.size(32.dp).glass(CircleShape, GlassLevel.Strong), contentScale = ContentScale.Crop)
                     Spacer(Modifier.width(12.dp))
                     Txt(address, size = 14.sp, maxLines = 1)
                 }
@@ -167,8 +170,8 @@ private fun AddressGroup(title: String, items: List<Pair<String, String>>, onPic
 /** Recipient card used by amount + preview steps. */
 @Composable
 private fun RecipientCard(s: FlowStore.Send) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(Lw.Secondary), contentAlignment = Alignment.Center) {
+    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
             val img = s.meta?.imageDataUri
             if (img != null) AsyncImage(img, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
             else LwIcon(if (s.destination is Destination.Invoice) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_at_sign, size = 18.dp, tint = Lw.MutedFg)
@@ -264,7 +267,7 @@ fun SendPreviewScreen() {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.send_previewTitle), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Lw.Card).padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Txt(stringResource(R.string.send_preview_sending), size = 14.sp, color = Lw.MutedFg)
                 Row(verticalAlignment = Alignment.Bottom) {
                     Txt(Currencies.formatSats(amount), size = 60.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("preview-amount"))
@@ -272,13 +275,13 @@ fun SendPreviewScreen() {
                     Txt("sats", Modifier.padding(bottom = 10.dp), size = 18.sp, color = Lw.MutedFg)
                 }
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PreviewRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
                 PreviewRow(stringResource(R.string.send_preview_type), stringResource(if (s.destination is Destination.Invoice) R.string.send_kind_invoice else R.string.send_kind_address))
                 s.comment?.let { PreviewRow(stringResource(R.string.send_note), it) }
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Txt(stringResource(R.string.send_preview_quote).uppercase(), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg, letterSpacing = 1.sp)
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Txt(stringResource(R.string.send_preview_quote), size = 15.sp, weight = FontWeight.SemiBold)
                 PreviewRow(stringResource(R.string.send_preview_amount), stringResource(R.string.common_sats, Currencies.formatSats(amount)))
                 PreviewRow(stringResource(R.string.send_networkFee), stringResource(R.string.send_preview_feeNotQuoted))
                 PreviewRow(stringResource(R.string.send_preview_total), stringResource(R.string.send_preview_plusFee, Currencies.formatSats(amount)))

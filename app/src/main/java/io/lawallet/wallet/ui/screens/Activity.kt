@@ -49,6 +49,9 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -78,7 +81,7 @@ fun ActivityScreen() {
     val labels = DayLabels(stringResource(R.string.activity_today), stringResource(R.string.activity_yesterday))
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.activity_title), { nav.popBackStack() })
-        Row(Modifier.padding(horizontal = 16.dp).clip(CircleShape).background(Lw.Card).padding(4.dp)) {
+        Row(Modifier.padding(horizontal = 16.dp).glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
             listOf("all" to R.string.activity_all, "transfers" to R.string.activity_transfers).forEach { (k, l) ->
                 Box(Modifier.clip(CircleShape).then(if (tab == k) Modifier.background(Lw.Background) else Modifier).clickable { tab = k }.padding(horizontal = 14.dp, vertical = 6.dp)) {
                     Txt(stringResource(l), size = 12.sp, weight = FontWeight.SemiBold, color = if (tab == k) Lw.Foreground else Lw.MutedFg)

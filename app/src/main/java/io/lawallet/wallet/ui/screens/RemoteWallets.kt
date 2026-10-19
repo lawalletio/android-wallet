@@ -71,6 +71,9 @@ import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
@@ -112,7 +115,15 @@ fun RemoteWalletsScreen() {
                                     Txt(w.name, size = 16.sp, weight = FontWeight.Medium, maxLines = 1)
                                     if (w.isDefault) { Spacer(Modifier.width(8.dp)); Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400) }
                                 }
-                                Txt(listOfNotNull(w.type, w.provider?.uppercase(), when (w.status) { "DEAD" -> stringResource(R.string.rw_dead); "DISABLED" -> stringResource(R.string.remoteWallets_paused); else -> stringResource(R.string.remoteWallets_live) }).joinToString(" · "), size = 12.sp, color = Lw.MutedFg)
+                                Spacer(Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    when (w.status) {
+                                        "DEAD" -> Pill(stringResource(R.string.rw_dead), Lw.Red)
+                                        "DISABLED" -> Pill(stringResource(R.string.remoteWallets_paused), Lw.MutedFg)
+                                        else -> Pill(stringResource(R.string.remoteWallets_live), Lw.Green)
+                                    }
+                                    Pill(if (w.provider == "lncurl") "LNCurl" else w.type, Lw.NwcPurple)
+                                }
                             }
                             if (!w.isDefault && w.status == "ACTIVE") TextButton({
                                 scope.launch { runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }.onSuccess { context.toast(nowPrimary.format(w.name)); changed() }.onFailure { context.toast(it.message ?: updateFailed) } }
@@ -136,7 +147,7 @@ fun RemoteWalletsScreen() {
 
 @Composable
 private fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
-    Txt(text, Modifier.clip(CircleShape).background(color.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 2.dp), size = 11.sp, weight = FontWeight.Medium, color = color)
+    Txt(text, Modifier.glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
 
 @Composable
 private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
@@ -151,7 +162,7 @@ private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Lw.Card,
+        containerColor = Glass.Dialog,
         title = { Txt(stringResource(R.string.rw_add_title), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -230,15 +241,15 @@ fun RemoteWalletDetailScreen(id: String) {
         val w = wallet
         if (w == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { if (notFound) MutedText(stringResource(R.string.remoteWallets_detail_notFound)) else Spinner() }; return@Column }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Lw.Card).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Txt(stringResource(R.string.remote_wallet_balance).uppercase(), size = 12.sp, color = Lw.MutedFg, letterSpacing = 1.sp)
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Txt(stringResource(R.string.remote_wallet_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                 Txt(balance?.let { Currencies.formatSats(it) } ?: "—", size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallet-balance"))
                 Txt("sats", size = 14.sp, color = Lw.MutedFg)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (w.isDefault) Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400)
                     Pill(w.status, if (w.status == "ACTIVE") Lw.Green else Lw.MutedFg)
-                    w.provider?.let { Pill(it.uppercase(), Lw.NwcPurple) }
+                    w.provider?.let { Pill(if (it == "lncurl") "LNCurl" else it, Lw.NwcPurple) }
                 }
             }
             SettingsGroup {
@@ -316,7 +327,7 @@ fun RemoteWalletDetailScreen(id: String) {
         renaming = false; scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, name = v) }.onFailure { context.toast(it.message ?: "") }; load() }
     }
     if (deleting) AlertDialog(
-        onDismissRequest = { deleting = false }, containerColor = Lw.Card,
+        onDismissRequest = { deleting = false }, containerColor = Glass.Dialog,
         text = { Txt(stringResource(R.string.rw_delete_confirm)) },
         confirmButton = { TextButton({
             deleting = false
@@ -340,7 +351,7 @@ fun RemoteWalletDetailScreen(id: String) {
 @Composable
 private fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var v by remember { mutableStateOf(initial) }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Lw.Card, title = { Txt(title, size = 16.sp, weight = FontWeight.SemiBold) },
+    AlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog, title = { Txt(title, size = 16.sp, weight = FontWeight.SemiBold) },
         text = { OutlinedTextField(v, { v = it.take(64) }, singleLine = true, colors = lwFieldColors()) },
         confirmButton = { TextButton({ onSave(v.trim()) }, enabled = v.isNotBlank()) { Txt(stringResource(R.string.common_done)) } },
         dismissButton = { TextButton(onDismiss) { Txt(stringResource(R.string.common_cancel)) } })
@@ -352,7 +363,7 @@ private fun ForwardPlanDialog(current: ReceiveAction?, onDismiss: () -> Unit, on
     var base by remember { mutableStateOf((current?.revision?.baseFeeSats?.toLong() ?: 0).toString()) }
     val rows = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(current?.revision?.destinations?.map { it.address to (it.allocationBps / 100.0).toString() } ?: listOf("" to "100")) } }
     val total = rows.sumOf { it.second.toDoubleOrNull() ?: 0.0 }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Lw.Card,
+    AlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog,
         title = { Txt(stringResource(R.string.remoteWallets_forwarding_configTitle), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -385,7 +396,7 @@ private fun WebhookDialog(onDismiss: () -> Unit, onSave: (String, String, String
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("https://") }
     var action by remember { mutableStateOf("RECEIVED") }
-    AlertDialog(onDismissRequest = onDismiss, containerColor = Lw.Card,
+    AlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog,
         title = { Txt(stringResource(R.string.notifications_add_webhook), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

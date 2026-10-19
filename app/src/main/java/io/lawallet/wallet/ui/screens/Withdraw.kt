@@ -48,6 +48,9 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -72,7 +75,7 @@ fun WithdrawScreen() {
     if (phase != "form") {
         val chest by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.treasure_chest))
         Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Txt(stringResource(if (phase == "claiming") R.string.withdraw_celebration_eyebrowClaiming else R.string.withdraw_celebration_eyebrowClaimed).uppercase(), size = 12.sp, color = Lw.MutedFg, letterSpacing = 2.sp)
+            Txt(stringResource(if (phase == "claiming") R.string.withdraw_celebration_eyebrowClaiming else R.string.withdraw_celebration_eyebrowClaimed), size = 15.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
             LottieAnimation(chest, Modifier.size(260.dp), isPlaying = true, iterations = if (phase == "claiming") Int.MAX_VALUE else 1)
             Txt(
                 stringResource(when (phase) { "claiming" -> R.string.withdraw_celebration_opening; "won" -> R.string.withdraw_celebration_won; else -> R.string.withdraw_celebration_onItsWay }),
@@ -93,7 +96,7 @@ fun WithdrawScreen() {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.withdraw_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Lw.Card).padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp)) {
                 Txt(stringResource(R.string.withdraw_from), size = 12.sp, color = Lw.MutedFg)
                 Txt(p.defaultDescription.ifBlank { stringResource(R.string.withdraw_voucher) }, size = 16.sp, weight = FontWeight.SemiBold)
                 Txt(p.host, size = 12.sp, color = Lw.MutedFg)
@@ -102,7 +105,7 @@ fun WithdrawScreen() {
                 AmountDisplay(keypadDisplay(raw, "SAT"), "sats")
                 MutedText(if (fixed) stringResource(R.string.withdraw_fixedAmount) else stringResource(R.string.withdraw_range, Currencies.formatSats(p.minSats), Currencies.formatSats(p.maxSats)))
             }
-            if (client == null) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Lw.Card).padding(16.dp)) {
+            if (client == null) Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp)).padding(16.dp)) {
                 Txt(stringResource(R.string.withdraw_noWallet), weight = FontWeight.Medium)
                 MutedText(stringResource(R.string.withdraw_noWalletBody), size = 12.sp)
                 LwButton(stringResource(R.string.withdraw_manageWallets), { nav.navigate(R0.REMOTE_WALLETS) }, Modifier.padding(top = 12.dp), BtnVariant.Secondary, height = 36.dp)

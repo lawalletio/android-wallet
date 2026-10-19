@@ -41,6 +41,8 @@ android {
     buildTypes {
         debug {
             signingConfigs.findByName("lawallet")?.let { signingConfig = it }
+            // `-PidSuffix=.preview` installs a side-by-side copy (fresh state) for UI checks.
+            (project.findProperty("idSuffix") as String?)?.let { applicationIdSuffix = it }
         }
         release {
             isMinifyEnabled = true
@@ -108,6 +110,7 @@ dependencies {
     implementation(libs.coil.network)
     implementation(libs.lottie.compose)
     implementation(libs.lucide)
+    implementation(libs.haze)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm)
@@ -118,5 +121,6 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso)
+    androidTestImplementation(libs.androidx.test.rules)
     debugImplementation(libs.compose.ui.test.manifest)
 }
