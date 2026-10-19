@@ -93,8 +93,9 @@ fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onSca
             Spacer(Modifier.size(54.dp))
             TabItem(L.drawable.lucide_ic_settings, current == "settings", stringResource(R.string.shared_nav_settings), onSettings)
         }
+        // Bottom-aligned with the pill (both share the Box's bottom edge); it rises above the pill's top.
         Box(
-            Modifier.offset(y = (-24).dp).size(87.dp).shadow(16.dp, CircleShape).clip(CircleShape)
+            Modifier.size(87.dp).shadow(16.dp, CircleShape).clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(brand.t200, brand.t400))).border(1.dp, brand.t300, CircleShape)
                 .clickable(onClick = onScan).testTag("nav-scan"),
             contentAlignment = Alignment.Center,
