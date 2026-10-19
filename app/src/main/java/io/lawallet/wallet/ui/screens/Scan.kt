@@ -75,7 +75,7 @@ sealed interface ScanOutcome {
 
 /** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
 suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String): ScanOutcome =
-    when (val r = c.scanRouter.route(raw, c.session.instanceHost)) {
+    when (val r = c.scanRouter.route(raw, c.session.instanceHosts)) {
         is ScanResult.Activate -> if (r.sameInstance) { nav.navigate(R0.activate(r.tokenId)); ScanOutcome.Handled } else ScanOutcome.Foreign(r.url, java.net.URI(r.url).host)
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination)); ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }

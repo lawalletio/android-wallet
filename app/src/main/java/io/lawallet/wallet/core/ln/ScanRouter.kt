@@ -12,10 +12,11 @@ sealed interface ScanResult {
 }
 
 class ScanRouter(private val lnurl: Lnurl) {
-    suspend fun route(raw: String, instanceHost: String): ScanResult {
+    /** [instanceHosts]: hosts that count as "this community" (transport URL + advertised endpoint). */
+    suspend fun route(raw: String, instanceHosts: Set<String>): ScanResult {
         val text = raw.trim()
-        ActivationUrl.parse(text)?.let {
-            return ScanResult.Activate(it.tokenId, it.host.equals(instanceHost, ignoreCase = true), text)
+        ActivationUrl.parse(text)?.let { a ->
+            return ScanResult.Activate(a.tokenId, instanceHosts.any { it.equals(a.host, ignoreCase = true) }, text)
         }
         if (Lnurl.looksLikeLnurl(text)) {
             return try {

@@ -45,6 +45,10 @@ class Session(
     val instanceUrl get() = prefs.instanceUrl
     val instanceHost: String get() = prefs.instanceUrl.toHttpUrlOrNull()?.let { if (it.port == okhttp3.HttpUrl.defaultPort(it.scheme)) it.host else "${it.host}:${it.port}" } ?: ""
 
+    /** Hosts that identify this community: the URL we talk to plus its advertised endpoint. */
+    val instanceHosts: Set<String>
+        get() = setOfNotNull(instanceHost, _settings.value?.endpoint?.toHttpUrlOrNull()?.let { if (it.port == okhttp3.HttpUrl.defaultPort(it.scheme)) it.host else "${it.host}:${it.port}" })
+
     /** Local secret (nsec/passkey logins) — what Security → backup reveals. */
     fun secretHex(): String? = (_signer.value as? LocalSigner)?.keys?.secretHex
 

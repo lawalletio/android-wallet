@@ -108,7 +108,7 @@ fun ActivateScreen(tokenId: String) {
                 claim != null -> {
                     Box(Modifier.size(80.dp).clip(CircleShape).background(brand.t400.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_check, size = 40.dp, tint = brand.t400) }
                     Txt(stringResource(R.string.activate_success_title), size = 24.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("activate-success"))
-                    MutedText(claim?.card?.title?.let { it + stringResource(R.string.activate_success_linkedNamed) } ?: stringResource(R.string.activate_success_linked), align = TextAlign.Center)
+                    MutedText(claim?.card?.title?.let { it + " " + stringResource(R.string.activate_success_linkedNamed).trim() } ?: stringResource(R.string.activate_success_linked), align = TextAlign.Center)
                     claim?.bonuses?.sats?.amountSats?.let { MutedText(stringResource(R.string.activate_success_bonus, Currencies.formatSats(it)), align = TextAlign.Center) }
                 }
                 p.status == "CLAIMED" -> StatusBlock(stringResource(R.string.activate_claimed_title), stringResource(R.string.activate_claimed_body))

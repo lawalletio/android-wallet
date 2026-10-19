@@ -19,7 +19,20 @@ import io.lawallet.wallet.R
 class PaymentListenerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // startForeground() must run within a few seconds of startForegroundService(); do it in
+    // onCreate, before touching the app graph, so a slow cold start can't trip the deadline.
+    override fun onCreate() {
+        super.onCreate()
+        goForeground()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        goForeground()
+        (application as LaWalletApp).container.wallet.active.value = true
+        return START_STICKY
+    }
+
+    private fun goForeground() {
         val n = NotificationCompat.Builder(this, Notifications.CHANNEL_LISTENER)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.notif_listener_title))
@@ -29,8 +42,6 @@ class PaymentListenerService : Service() {
             .setContentIntent(Notifications.openAppIntent(this))
             .build()
         ServiceCompat.startForeground(this, 1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        (application as LaWalletApp).container.wallet.active.value = true
-        return START_STICKY
     }
 
     companion object {
@@ -44,7 +55,7 @@ class PaymentListenerService : Service() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val c = (context.applicationContext as LaWalletApp).container
         if (c.prefs.backgroundListener.value && c.prefs.loginMethod != null) PaymentListenerService.start(context)
     }
