@@ -225,6 +225,14 @@ class WalletRepository(
         refreshBalance()
     }
 
+    /** Debug builds only (the web's `?devPayment=`): fake a payment to exercise notices and the balance roll. */
+    suspend fun simulatePayment(incoming: Boolean, sats: Long) {
+        val now = System.currentTimeMillis()
+        val tx = Tx(if (incoming) "incoming" else "outgoing", sats, 0, "Dev payment", "dev-$now", null, now, now, "settled")
+        _balance.value = ((_balance.value ?: 0) + if (incoming) sats else -sats).coerceAtLeast(0)
+        _notices.emit(PaymentNotice("dev:$now", if (incoming) "payment_received" else "payment_sent", tx))
+    }
+
     /**
      * Re-reads /api/users/me before a send/receive (the server may have swapped a dead
      * courtesy wallet) and returns the current client — wallet-nwc.ts `getFreshWalletNwc`.

@@ -1,6 +1,9 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,8 +39,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -65,6 +68,8 @@ import io.lawallet.wallet.ui.components.TransactionRow
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
@@ -100,17 +105,31 @@ fun HomeScreen() {
         }
     }
 
-    // Balance roll + glow on payments (home-screen.tsx BalanceText cue).
+    // Balance roll (use-animated-number.ts: 600ms ease-out cubic; the first value snaps).
     val shown = remember { Animatable((balance ?: 0).toFloat()) }
-    var cue by remember { mutableStateOf<String?>(null) }
+    var seenBalance by remember { mutableStateOf(balance) }
+    var rolling by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(balance) {
-        val target = (balance ?: 0).toFloat()
-        if (shown.value != target && balance != null) {
-            cue = if (target > shown.value) "incoming" else "outgoing"
-            shown.animateTo(target, tween(900))
-            cue = null
-        } else shown.snapTo(target)
+        val target = balance ?: run { seenBalance = null; return@LaunchedEffect }
+        val first = seenBalance == null
+        seenBalance = target
+        if (first || shown.value == target.toFloat()) { shown.snapTo(target.toFloat()); return@LaunchedEffect }
+        rolling = if (target > shown.value) "incoming" else "outgoing"
+        shown.animateTo(target.toFloat(), tween(600, easing = EaseOutCubic))
+        rolling = null
     }
+    // Payment cue: lives as long as the payment notice (3.8s), like the web's `cue`.
+    var cue by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        c.wallet.notices.collectLatest { n -> cue = if (n.type == "payment_received") "incoming" else "outgoing"; delay(3800); cue = null }
+    }
+    val motion = rolling ?: cue
+    var glowColor by remember { mutableStateOf(Lw.Green) }
+    LaunchedEffect(motion) { if (motion != null) glowColor = if (motion == "incoming") Lw.Green else Lw.Orange }
+    val glowAlpha by animateFloatAsState(if (cue != null) 1f else 0f, tween(450), label = "glow")
+    val numberColor by animateColorAsState(
+        when (motion) { "incoming" -> Lw.Green; "outgoing" -> Lw.Orange; else -> Lw.Foreground }, tween(300), label = "tint",
+    )
 
     val hasNwc = client != null
     val autoCreate = settings?.lncurlAutoCreate == true
@@ -148,17 +167,26 @@ fun HomeScreen() {
                     RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }
                 }
             }
-            Box(Modifier.fillMaxWidth().heightIn(min = 56.dp), contentAlignment = Alignment.Center) {
-                if (cue != null) Box(Modifier.size(112.dp).blur(40.dp).clip(CircleShape).background((if (cue == "incoming") Lw.Green else Lw.Orange).copy(alpha = 0.25f)))
+            // Fixed-height slot: the glow is painted behind it (never measured), so a payment
+            // cue can't push the layout around or get clipped to a square like Modifier.blur.
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = 64.dp).drawBehind {
+                    if (glowAlpha > 0f) {
+                        val r = 104.dp.toPx()
+                        drawCircle(Brush.radialGradient(0f to glowColor.copy(alpha = 0.26f * glowAlpha), 1f to Color.Transparent, center = center, radius = r), r, center)
+                    }
+                },
+                contentAlignment = Alignment.Center,
+            ) {
                 when {
                     balance == null && hasNwc && loadingBalance -> Box(Modifier.width(160.dp).height(36.dp).clip(RoundedCornerShape(8.dp)).background(Lw.Card))
                     balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
-                    else -> Row(verticalAlignment = Alignment.Bottom) {
+                    else -> Row {
                         val text = if (hidden) "•••••" else Currencies.format(shown.value.toLong(), code, rates)
-                        val color = when (cue) { "incoming" -> Lw.Green; "outgoing" -> Lw.Orange; else -> Lw.Foreground }
-                        if (code == "BTC" && !hidden) BtcEmphasis(text, color) else Txt(text, size = 48.sp, weight = FontWeight.SemiBold, color = color, modifier = Modifier.testTag("balance"))
+                        if (code == "BTC" && !hidden) BtcEmphasis(text, numberColor, Modifier.alignByBaseline())
+                        else Txt(text, Modifier.alignByBaseline().testTag("balance"), size = 48.sp, weight = FontWeight.SemiBold, color = numberColor, lineHeight = 52.sp)
                         Spacer(Modifier.width(8.dp))
-                        Txt(Currencies.unitLabel(code), Modifier.padding(bottom = 8.dp), size = 16.sp, color = Lw.MutedFg)
+                        Txt(Currencies.unitLabel(code), Modifier.alignByBaseline(), size = 16.sp, color = Lw.MutedFg)
                     }
                 }
             }
@@ -237,11 +265,11 @@ fun HomeScreen() {
 
 /** BTC: mute the leading zeros (splitBtcForEmphasis). */
 @Composable
-private fun BtcEmphasis(text: String, color: Color) {
+private fun BtcEmphasis(text: String, color: Color, modifier: Modifier = Modifier) {
     val idx = text.indexOfFirst { it in '1'..'9' }.let { if (it < 0) text.length else it }
-    Row {
-        Txt(text.substring(0, idx), size = 48.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg.copy(alpha = 0.6f))
-        Txt(text.substring(idx), size = 48.sp, weight = FontWeight.SemiBold, color = color, modifier = Modifier.testTag("balance"))
+    Row(modifier) {
+        Txt(text.substring(0, idx), Modifier.alignByBaseline(), size = 48.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg.copy(alpha = 0.6f), lineHeight = 52.sp)
+        Txt(text.substring(idx), Modifier.alignByBaseline().testTag("balance"), size = 48.sp, weight = FontWeight.SemiBold, color = color, lineHeight = 52.sp)
     }
 }
 

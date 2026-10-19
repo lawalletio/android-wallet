@@ -192,7 +192,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
-            AnimatedVisibility(notice != null, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+            // Over the header row (avatar/logo), so the pill never covers the balance it is announcing.
+            AnimatedVisibility(notice != null, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats) }
             }
         }

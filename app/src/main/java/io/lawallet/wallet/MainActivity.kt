@@ -20,6 +20,7 @@ import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
 import io.lawallet.wallet.ui.Intents
 import io.lawallet.wallet.ui.LaWalletRoot
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private val container get() = (application as LaWalletApp).container
@@ -79,6 +80,10 @@ class MainActivity : AppCompatActivity() {
     private fun handle(intent: Intent?) {
         intent ?: return
         intent.getStringExtra("route")?.let { Intents.routes.trySend(it); return }
+        if (BuildConfig.DEBUG) intent.getStringExtra("devPayment")?.let { type ->
+            container.scope.launch { container.wallet.simulatePayment(type != "outgoing", intent.getLongExtra("devSats", 2_100)) }
+            return
+        }
         when (intent.action) {
             NfcAdapter.ACTION_NDEF_DISCOVERED -> {
                 val msgs = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
