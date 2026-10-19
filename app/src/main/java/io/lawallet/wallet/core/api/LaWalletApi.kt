@@ -38,6 +38,8 @@ class LaWalletApi(
     private val http: OkHttpClient,
     private val signerProvider: () -> Signer?,
     private val tokenStore: TokenStore,
+    /** Origin the server accepts in the NIP-98 `u` tag (its configured `endpoint`); defaults to [baseUrl]. */
+    private val authOrigin: () -> String? = { null },
 ) {
     interface TokenStore {
         fun load(): String?
@@ -68,7 +70,7 @@ class LaWalletApi(
         val signer = signerProvider() ?: throw ApiException(401, "Not signed in")
         val url = "$baseUrl/api/jwt"
         val body = """{"expiresIn":"24h"}""".toByteArray()
-        val auth = signer.nip98Header(url, "POST", body)
+        val auth = signer.nip98Header((authOrigin()?.trimEnd('/') ?: baseUrl) + "/api/jwt", "POST", body)
         val res = execute(Request.Builder().url(url).header("Authorization", auth).post(body.toRequestBody(jsonType)).build())
         val token = json.decodeFromString(JwtResponse.serializer(), res).token
         tokenStore.save(token)
@@ -144,8 +146,15 @@ class LaWalletApi(
         }, JsonElement.serializer())
     suspend fun setNotificationEnabled(id: String, notificationId: String, enabled: Boolean) =
         send("PATCH", "/api/remote-wallets/${enc(id)}/notifications/${enc(notificationId)}", buildJsonObject { put("enabled", enabled) }, JsonElement.serializer())
-    suspend fun deleteNotification(id: String, notificationId: String) =
-        send("DELETE", "/api/remote-wallets/${enc(id)}/notifications/${enc(notificationId)}", null, JsonElement.serializer())
+
+    suspend fun receiveAction(id: String) = get("/api/remote-wallets/${enc(id)}/receive-action", ReceiveAction.serializer())
+    suspend fun saveReceiveAction(id: String, feeBps: Int, baseFeeSats: Long, destinations: List<ForwardDestination>) =
+        send("PUT", "/api/remote-wallets/${enc(id)}/receive-action", buildJsonObject {
+            put("feeBps", feeBps); put("baseFeeSats", baseFeeSats); put("enabled", true)
+            putJsonArray("destinations") { destinations.forEach { d -> add(buildJsonObject { put("address", d.address); put("allocationBps", d.allocationBps) }) } }
+        }, JsonElement.serializer())
+    suspend fun toggleReceiveAction(id: String, enabled: Boolean) =
+        send("PATCH", "/api/remote-wallets/${enc(id)}/receive-action", buildJsonObject { put("enabled", enabled) }, JsonElement.serializer())
 
     // ---------- cards ----------
     suspend fun cards() = get("/api/wallet/cards", ListSerializer(WalletCard.serializer()))
@@ -197,6 +206,7 @@ class LaWalletApi(
                     else -> null
                 } ?: "Request failed (${res.code})"
                 val code = (err as? JsonObject)?.get("code")?.jsonPrimitive?.contentOrNull
+                android.util.Log.w("LaWalletApi", "${request.method} ${request.url.encodedPath} -> ${res.code} $message")
                 throw ApiException(res.code, message, code)
             }
             text

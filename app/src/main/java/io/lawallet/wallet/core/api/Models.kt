@@ -185,3 +185,17 @@ data class WalletNotification(
 )
 
 @Serializable data class AccountSummary(val role: String? = null)
+
+@Serializable data class ForwardDestination(val address: String, val allocationBps: Int)
+@Serializable data class ForwardRevision(val number: Int = 0, val feeBps: Int = 0, val baseFeeSats: Double = 0.0, val destinations: List<ForwardDestination> = emptyList())
+
+@Serializable
+data class ReceiveAction(
+    val eligible: Boolean = false,
+    val reason: String? = null,
+    val configured: Boolean = false,
+    val enabled: Boolean = false,
+    val pendingReceipts: Int = 0,
+    val pendingAmountMsats: Long = 0,
+    val revision: ForwardRevision? = null,
+)
