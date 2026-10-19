@@ -186,7 +186,7 @@ fun CreateAccountScreen() {
 fun CreatePasskeyScreen() {
     val nav = LocalNav.current
     val c = LocalContainer.current
-    val activity = LocalContext.current as Activity
+    val activity = androidx.activity.compose.LocalActivity.current!!
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -240,7 +240,7 @@ fun LoginScreen() {
     val nav = LocalNav.current
     val c = LocalContainer.current
     val brand = LocalBrand.current
-    val activity = LocalContext.current as Activity
+    val activity = androidx.activity.compose.LocalActivity.current!!
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

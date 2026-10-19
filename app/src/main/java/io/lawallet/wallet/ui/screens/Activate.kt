@@ -61,7 +61,7 @@ fun ActivateScreen(tokenId: String) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val brand = LocalBrand.current
-    val activity = LocalContext.current as Activity
+    val activity = androidx.activity.compose.LocalActivity.current!!
     val scope = rememberCoroutineScope()
     val auth by c.session.auth.collectAsState()
     var preview by remember { mutableStateOf<ActivationPreview?>(null) }

@@ -289,6 +289,7 @@ fun PaymentReceiptCard(
 ) {
     val brand = LocalBrand.current
     val context = LocalContext.current
+    val copiedMsg = stringResource(R.string.common_copied)
     Column(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth().shadow(20.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).background(Lw.Card).border(1.dp, Lw.Border, RoundedCornerShape(24.dp))
@@ -329,7 +330,7 @@ fun PaymentReceiptCard(
                         Txt(label.uppercase(), Modifier.weight(1f), size = 10.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, letterSpacing = 1.2.sp)
                         if (value != null) {
                             Box(Modifier.size(28.dp).clip(CircleShape).clickable { shown = !shown }, contentAlignment = Alignment.Center) { LwIcon(if (shown) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, size = 16.dp, tint = Lw.MutedFg) }
-                            Box(Modifier.size(28.dp).clip(CircleShape).clickable { context.copyToClipboard(value, context.getString(R.string.common_copied)) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg) }
+                            Box(Modifier.size(28.dp).clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg) }
                         }
                     }
                     Txt(

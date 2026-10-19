@@ -228,7 +228,7 @@ private fun unlock(activity: FragmentActivity, title: String, onOk: () -> Unit) 
 fun SecurityScreen() {
     val c = LocalContainer.current
     val context = LocalContext.current
-    val activity = context as FragmentActivity
+    val activity = androidx.activity.compose.LocalActivity.current as FragmentActivity
     val scope = rememberCoroutineScope()
     val signer by c.session.signer.collectAsState()
     var role by remember { mutableStateOf<String?>(null) }
@@ -418,6 +418,7 @@ fun CurrenciesScreen() {
 fun LanguageScreen() {
     val current = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" }
     var selected by remember { mutableStateOf(current) }
+    val deviceLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     SettingsPage(stringResource(R.string.settings_language)) {
         SettingsGroup {
             listOf("auto" to stringResource(R.string.settings_languageScreen_automatic), "en" to "English", "es" to "Español").forEachIndexed { i, (tag, label) ->
@@ -425,7 +426,7 @@ fun LanguageScreen() {
                 SettingsRow(label, {
                     selected = tag
                     AppCompatDelegate.setApplicationLocales(if (tag == "auto") LocaleListCompat.getEmptyLocaleList() else LocaleListCompat.forLanguageTags(tag))
-                }, value = if (tag == "auto") Locale.getDefault().displayLanguage else null) {
+                }, value = if (tag == "auto") deviceLocale.displayLanguage else null) {
                     RadioButton(selected == tag, null, colors = RadioButtonDefaults.colors(selectedColor = LocalBrand.current.t400))
                 }
             }

@@ -91,6 +91,7 @@ suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: Stri
     }
 }
 
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 fun ScanScreen() {
     val c = LocalContainer.current

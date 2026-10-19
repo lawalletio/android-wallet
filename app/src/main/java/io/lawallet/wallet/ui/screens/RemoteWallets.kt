@@ -26,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -141,7 +142,7 @@ private fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
 private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     val c = LocalContainer.current
     val scope = rememberCoroutineScope()
-    val settings = c.session.settings.value
+    val settings by c.session.settings.collectAsState()
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("SEND_RECEIVE") }
@@ -207,6 +208,7 @@ fun RemoteWalletDetailScreen(id: String) {
     var editingPlan by remember { mutableStateOf(false) }
     var addingHook by remember { mutableStateOf(false) }
     val copied = stringResource(R.string.common_copied)
+    val planSaved = stringResource(R.string.remoteWallets_forwarding_planSaved)
     suspend fun load() {
         val api = c.session.api.value
         runCatching { api.remoteWallet(id) }.onSuccess { wallet = it }.onFailure { notFound = true; return }
@@ -327,7 +329,7 @@ fun RemoteWalletDetailScreen(id: String) {
     )
     if (editingPlan) ForwardPlanDialog(action, onDismiss = { editingPlan = false }) { fee, base, dests ->
         editingPlan = false
-        scope.launch { runCatching { c.session.api.value.saveReceiveAction(id, fee, base, dests) }.onSuccess { context.toast(context.getString(R.string.remoteWallets_forwarding_planSaved)) }.onFailure { context.toast(it.message ?: "") }; load() }
+        scope.launch { runCatching { c.session.api.value.saveReceiveAction(id, fee, base, dests) }.onSuccess { context.toast(planSaved) }.onFailure { context.toast(it.message ?: "") }; load() }
     }
     if (addingHook) WebhookDialog(onDismiss = { addingHook = false }) { name, action2, url ->
         addingHook = false

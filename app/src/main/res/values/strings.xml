@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">LaWallet</string>
+    <string name="app_name" translatable="false">LaWallet</string>
     <string name="notif_channel_payments">Payments</string>
     <string name="notif_channel_listener">Background payment listener</string>
     <string name="notif_listener_title">Listening for payments</string>
