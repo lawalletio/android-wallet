@@ -19,6 +19,11 @@ to upload to Play automatically.
   Play Console → Test and release → App integrity → App signing → SHA-256 certificate fingerprint. Put that value
   (and the upload key's, for sideloaded builds) in the instance's `ANDROID_APP_CERT_SHA256`
   (lawallet-nwc PR #366) so `/.well-known/assetlinks.json` lists it.
+- Current values (both public), ready to paste:
+  ```
+  ANDROID_APP_CERT_SHA256=BC:7C:69:49:A7:E6:36:FA:15:42:20:E8:E1:DB:19:F4:58:D7:1E:56:AF:70:B2:BF:3B:D5:2D:18:9C:EA:C1:F7,9B:D5:EB:E8:D4:AD:36:91:EB:94:DF:48:8C:BB:EE:88:5D:E5:F3:1D:80:E2:2A:95:9E:55:5F:35:42:AD:81:13
+  ```
+  The first is the Play app signing key, the second the upload key.
 
 ## Already checked
 - Target SDK 37 and min SDK 28; R8-minified; native libraries are 16 KB page-aligned (verified with `llvm-readelf`).
