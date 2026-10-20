@@ -43,4 +43,4 @@ Settings → Remove wallet erases everything stored by the app on your device. D
 provider is governed by them; contact your community operator.
 
 ## Contact
-contact@lacrypta.ar — or open an issue at https://github.com/lawalletio/android-wallet/issues
+info@lacrypta.ar — or open an issue at https://github.com/lawalletio/android-wallet/issues

@@ -26,7 +26,7 @@ to upload to Play automatically.
 - No analytics or ads SDKs. Backups and device-to-device transfers are excluded (`data_extraction_rules.xml`).
 
 ## Store listing
-`fastlane/metadata/android/{en-US,es-ES}` holds the title, short and full descriptions, the 512×512 icon, the
+`fastlane/metadata/android/{en-US,es-419}` holds the title, short and full descriptions, the 512×512 icon, the
 1024×500 feature graphic, phone screenshots and changelogs.
 The privacy policy URL is https://github.com/lawalletio/android-wallet/blob/main/PRIVACY.md.
 
