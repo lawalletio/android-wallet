@@ -57,4 +57,10 @@
     <string name="rw_forward_split">Split %</string>
     <string name="rw_recent_tx">Recent transactions</string>
     <string name="rw_scan_connection">Scan connection QR</string>
+    <string name="security_delete_account">Delete account</string>
+    <string name="security_delete_confirm">Permanently delete your account on this instance? Your Lightning addresses are released and your cards unpaired. This can\'t be undone. Funds in a connected wallet stay with that wallet\'s provider: move them out first.</string>
+    <string name="security_delete_done">Account deleted</string>
+    <string name="security_delete_failed">Couldn\'t delete the account</string>
+    <string name="security_delete_unsupported">This instance can\'t delete accounts from the app yet. You can request deletion by email instead.</string>
+    <string name="security_delete_steps">View steps</string>
 </resources>

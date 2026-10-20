@@ -242,6 +242,11 @@ fun SecurityScreen() {
     var busy by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PasskeyCredential?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var deleteUnsupported by remember { mutableStateOf(false) }
+    val deletedMsg = stringResource(R.string.security_delete_done)
+    val deleteFailed = stringResource(R.string.security_delete_failed)
     val npubCopied = stringResource(R.string.settings_securityScreen_npubCopied)
     val added = stringResource(R.string.settings_passkeysScreen_added)
     val addFailed = stringResource(R.string.settings_passkeysScreen_addFailed)
@@ -312,7 +317,42 @@ fun SecurityScreen() {
         SettingsGroup(stringResource(R.string.settings_securityScreen_device)) {
             SettingsRow(stringResource(R.string.settings_securityScreen_removeDevice), { confirmRemove = true }, labelColor = Lw.Red, icon = L.drawable.lucide_ic_log_out)
         }
+        SettingsGroup(stringResource(R.string.settings_dangerZone)) {
+            SettingsRow(stringResource(R.string.security_delete_account), { confirmDelete = true }, Modifier.testTag("delete-account"), labelColor = Lw.Red, icon = L.drawable.lucide_ic_trash_2)
+        }
     }
+    // Modal while the request runs (back is ignored), so the screen can't be left with the account gone but the session kept.
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { if (!deleting) confirmDelete = false },
+        title = { Txt(stringResource(R.string.security_delete_account), weight = FontWeight.SemiBold) },
+        text = { Txt(stringResource(R.string.security_delete_confirm)) },
+        confirmButton = {
+            TextButton({
+                deleting = true
+                scope.launch {
+                    runCatching { c.session.api.value.deleteAccount() }
+                        .onSuccess { ok -> if (ok) { context.toast(deletedMsg); c.session.logout() } else deleteUnsupported = true }
+                        .onFailure { context.toast(it.message ?: deleteFailed) }
+                    deleting = false
+                    confirmDelete = false
+                }
+            }, Modifier.testTag("confirm-delete-account"), enabled = !deleting) { Txt(stringResource(R.string.security_delete_account), color = Lw.Red) }
+        },
+        dismissButton = { TextButton({ confirmDelete = false }, enabled = !deleting) { Txt(stringResource(R.string.common_cancel)) } },
+        containerColor = Glass.Dialog,
+    )
+    if (deleteUnsupported) AlertDialog(
+        onDismissRequest = { deleteUnsupported = false },
+        text = { Txt(stringResource(R.string.security_delete_unsupported)) },
+        confirmButton = {
+            TextButton({
+                deleteUnsupported = false
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/blob/main/PRIVACY.md#account-deletion")))
+            }) { Txt(stringResource(R.string.security_delete_steps)) }
+        },
+        dismissButton = { TextButton({ deleteUnsupported = false }) { Txt(stringResource(R.string.common_cancel)) } },
+        containerColor = Glass.Dialog,
+    )
     editing?.let { pk -> PasskeyDialog(pk, passkeys?.size ?: 0, onDone = { changed -> editing = null; if (changed) scope.launch { passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull() } }) }
     if (confirmRemove) AlertDialog(
         onDismissRequest = { confirmRemove = false },

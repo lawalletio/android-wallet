@@ -93,6 +93,16 @@ class LaWalletApi(
             }
         }, JsonElement.serializer())
     suspend fun jwtInfo() = get("/api/jwt", JwtInfo.serializer())
+    /**
+     * Permanently deletes the account (addresses released, cards unpaired). Returns false on 404/405: the
+     * instance predates the endpoint, so deletion goes through the email process in PRIVACY.md.
+     */
+    suspend fun deleteAccount(): Boolean = try {
+        send("DELETE", "/api/account", buildJsonObject { put("confirm", "DELETE") }, JsonElement.serializer())
+        true
+    } catch (e: ApiException) {
+        if (e.status == 404 || e.status == 405) false else throw e
+    }
     suspend fun profiles(pubkeys: List<String>) =
         send("POST", "/api/nostr/profiles", buildJsonObject { putJsonArray("pubkeys") { pubkeys.forEach { add(JsonPrimitive(it)) } } }, NostrProfiles.serializer()).profiles
 

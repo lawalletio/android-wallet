@@ -56,4 +56,10 @@
     <string name="rw_forward_split">Reparto %</string>
     <string name="rw_recent_tx">Transacciones recientes</string>
     <string name="rw_scan_connection">Escanear QR de conexión</string>
+    <string name="security_delete_account">Eliminar cuenta</string>
+    <string name="security_delete_confirm">¿Eliminar tu cuenta de esta instancia para siempre? Tus direcciones Lightning se liberan y tus tarjetas se desvinculan. No se puede deshacer. Los fondos de una billetera conectada quedan con su proveedor: retíralos antes.</string>
+    <string name="security_delete_done">Cuenta eliminada</string>
+    <string name="security_delete_failed">No se pudo eliminar la cuenta</string>
+    <string name="security_delete_unsupported">Esta instancia todavía no permite eliminar cuentas desde la app. Puedes pedir la eliminación por email.</string>
+    <string name="security_delete_steps">Ver pasos</string>
 </resources>

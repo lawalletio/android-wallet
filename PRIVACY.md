@@ -40,20 +40,29 @@ the instance receives it.
 
 ## Deleting your data
 Settings → Remove wallet erases everything stored by the app on your device. Data held by your instance or wallet
-provider is governed by them; contact your community operator.
+provider is governed by them; to delete your account on the instance too, see [Account deletion](#account-deletion).
 
 ## Account deletion
-To delete your LaWallet account on the default instance (`beta.lawallet.io`, run by La Crypta):
+### In the app
+Open Settings → Security → Delete account and confirm. The instance deletes your account immediately: the account
+record and linked public keys, Lightning addresses (the names become free again), remote wallet connections and their
+forwarding and notification settings, passkeys, connected-app grants and preferences. Your cards are unpaired. Payment
+records and activity logs the operator keeps for accounting stay on the instance, no longer linked to your account. The
+app then signs out and erases everything it stored on your device.
+
+### By email
+If the app says your instance can't delete accounts yet, request it by email. For the default instance
+(`beta.lawallet.io`, run by La Crypta):
 
 1. Open the app, go to Settings → Security and copy your public key (`npub…`).
 2. Email info@lacrypta.ar with the subject "Delete my LaWallet account" and include that `npub`.
 3. We may ask you to confirm with a message signed by that key, to prove the account is yours.
 
-We delete your account record and linked public keys, Lightning addresses, card links, remote wallet connections,
-passkeys and preferences within 30 days of confirming the request, and reply when it's done. Lightning payments
-already made can't be reversed and stay in the records of the wallets and nodes that handled them. Funds held in a
-connected wallet stay with that wallet's provider: move them out before deleting. For other instances, contact that
-community's operator.
+We delete the same data listed above within 30 days of confirming the request, and reply when it's done. For other
+instances, contact that community's operator.
+
+Either way, Lightning payments already made can't be reversed and stay in the records of the wallets and nodes that
+handled them. Funds held in a connected wallet stay with that wallet's provider: move them out before deleting.
 
 ## Contact
 info@lacrypta.ar — or open an issue at https://github.com/lawalletio/android-wallet/issues

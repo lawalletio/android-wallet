@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,6 +61,28 @@ class LaWalletApiTest {
         server.enqueue(MockResponse().setBody("""[]"""))
         assertEquals(0, api.remoteWallets().size)
         assertEquals(fresh, stored)
+    }
+
+    @Test fun deletesAccountWithBearerAndConfirmation() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""{"deleted":true}"""))
+        assertTrue(api.deleteAccount())
+        val req = server.takeRequest()
+        assertEquals("DELETE", req.method)
+        assertEquals("/api/account", req.path)
+        assertEquals("Bearer $stored", req.getHeader("Authorization"))
+        assertEquals("""{"confirm":"DELETE"}""", req.body.readUtf8())
+    }
+
+    @Test fun deleteAccountFallsBackWhenEndpointMissing() {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(MockResponse().setResponseCode(405))
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"message":"Cannot delete the last admin account","code":"AUTHORIZATION_ERROR"}}"""))
+        assertFalse(runBlocking { api.deleteAccount() })
+        assertFalse(runBlocking { api.deleteAccount() })
+        val e = assertThrows(ApiException::class.java) { runBlocking { api.deleteAccount() } }
+        assertEquals(403, e.status)
     }
 
     @Test fun surfacesPaymentRequiredForPaidAddresses() {
