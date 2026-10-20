@@ -1,0 +1,1 @@
+Lightning wallet for your community: address, cards, Nostr Wallet Connect.

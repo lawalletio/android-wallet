@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "lawallet-android"
 include(":app")
+include(":baselineprofile")

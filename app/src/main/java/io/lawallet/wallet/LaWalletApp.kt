@@ -1,6 +1,15 @@
 package io.lawallet.wallet
 
 import android.app.Application
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
+import okio.Path.Companion.toOkioPath
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -13,9 +22,20 @@ import io.lawallet.wallet.service.PaymentSound
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
-class LaWalletApp : Application() {
+class LaWalletApp : Application(), SingletonImageLoader.Factory {
     lateinit var container: AppContainer
         private set
+
+    /** One image pipeline: the app's OkHttp pool, memory + disk caches, SVG for community logos. */
+    override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
+        .components {
+            add(OkHttpNetworkFetcherFactory(callFactory = { container.http }))
+            add(SvgDecoder.Factory())
+        }
+        .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.15).build() }
+        .diskCache { DiskCache.Builder().directory(context.cacheDir.resolve("images").toOkioPath()).maxSizeBytes(32L * 1024 * 1024).build() }
+        .crossfade(180)
+        .build()
 
     val inForeground: Boolean
         get() = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
@@ -34,8 +54,9 @@ class LaWalletApp : Application() {
 
             override fun onStop(owner: LifecycleOwner) {
                 c.rates.active.value = false
-                // The foreground service keeps the wallet active in the background when enabled.
-                c.wallet.active.value = c.prefs.backgroundListener.value && c.session.auth.value == AuthState.LoggedIn
+                // Balance polling stops in the background; the relay notification stream keeps
+                // running (kept alive by the listener service when enabled).
+                c.wallet.active.value = false
             }
         })
 

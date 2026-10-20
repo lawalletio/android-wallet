@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,7 +89,7 @@ fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onSca
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 16.dp, top = 12.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
             Modifier.widthIn(max = 286.dp).fillMaxWidth().height(64.dp)
-                .shadow(28.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+                .shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                 .frosted(haze, CircleShape)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -344,13 +345,17 @@ fun PaymentReceiptCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                         if (value != null) {
-                            Box(Modifier.size(28.dp).clip(CircleShape).clickable { shown = !shown }, contentAlignment = Alignment.Center) { LwIcon(if (shown) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, size = 16.dp, tint = Lw.MutedFg) }
-                            Box(Modifier.size(28.dp).clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg) }
+                            Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable(onClickLabel = label) { shown = !shown }.testTag("proof-toggle-$label"), contentAlignment = Alignment.Center) {
+                                LwIcon(if (shown) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(if (shown) R.string.shared_receipt_hide else R.string.shared_receipt_show, label))
+                            }
+                            Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
+                                LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
+                            }
                         }
                     }
                     Txt(
                         when { value == null -> stringResource(R.string.shared_receipt_notProvided); shown -> value; else -> "•".repeat(24) },
-                        size = 10.sp, mono = true, color = if (value == null) Lw.MutedFg else Lw.Foreground,
+                        Modifier.testTag("proof-$label"), size = 11.sp, mono = true, color = if (value == null) Lw.MutedFg else Lw.Foreground,
                     )
                 }
             }

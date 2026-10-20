@@ -43,6 +43,7 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
     private var encryption: Enc? = null
     private val infoLock = Mutex()
     private val conversationKey by lazy { Nip44.conversationKey(keys, uri.walletPubkey) }
+    private val nip04Secret by lazy { keys.sharedX(uri.walletPubkey) }
 
     fun close() = relay.close()
 
@@ -157,12 +158,12 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
     }
 
     private fun encrypt(plain: String, enc: Enc) =
-        if (enc == Enc.NIP44) Nip44.encrypt(plain, conversationKey) else Nip04.encrypt(plain, keys, uri.walletPubkey)
+        if (enc == Enc.NIP44) Nip44.encrypt(plain, conversationKey) else Nip04.encrypt(plain, nip04Secret)
 
     /** NIP-04 payloads carry `?iv=`; anything else is NIP-44. */
     private fun decrypt(content: String, hint: Enc?): String {
         val enc = hint ?: if (content.contains("?iv=")) Enc.NIP04 else Enc.NIP44
-        return if (enc == Enc.NIP44) Nip44.decrypt(content, conversationKey) else Nip04.decrypt(content, keys, uri.walletPubkey)
+        return if (enc == Enc.NIP44) Nip44.decrypt(content, conversationKey) else Nip04.decrypt(content, nip04Secret)
     }
 
     companion object {

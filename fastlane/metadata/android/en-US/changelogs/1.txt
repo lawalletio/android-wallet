@@ -1,0 +1,1 @@
+First release of LaWallet for Android: send and receive over Nostr Wallet Connect, Lightning addresses, QR scan, NFC cards, passkeys, and real-time payment notifications.

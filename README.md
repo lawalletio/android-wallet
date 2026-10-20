@@ -46,11 +46,23 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 
 Debug builds allow cleartext HTTP, so you can point the instance at a local dev server: `http://10.0.2.2:<port>` from the emulator. Release builds require HTTPS.
 
+## Performance
+
+- **Cold start:** the stored key is unwrapped off the main thread, and the session restores optimistically (no network
+  wait). ML Kit and Emoji2 no longer initialize at startup. A launch splash is held only until the key is ready.
+- **Rendering:** the prism background is rendered once into a quarter-resolution bitmap and blitted every frame. Frosted
+  overlays blur a 0.4× copy of what's behind them. The balance roll recomposes only the number.
+  On the reference emulator, jank in a scripted session dropped from 31% to 7%, and p90 frame time from 77 ms to 24 ms.
+- **Baseline profile:** `./gradlew :app:generateReleaseBaselineProfile` regenerates
+  `app/src/release/generated/baselineProfiles`. `:baselineprofile:connectedBenchmarkReleaseAndroidTest` measures startup
+  and frame timing. Both install a side-by-side `.bench` build, so a real install is never touched.
+
 ## Signing and passkeys
 
 To use passkeys and App Links, the instance must serve `/.well-known/assetlinks.json` listing this app's signing certificate. Server support for that is in lawallet-nwc PR #366 (`ANDROID_APP_PACKAGE` / `ANDROID_APP_CERT_SHA256`).
 
-1. Sign with a **private** keystore that is never committed. Create `keystore.properties` at the repo root:
+1. Sign with a **private** keystore that is never committed. Either point `LAWALLET_SIGNING_PROPERTIES` at a
+   properties file kept outside the repo, or create `keystore.properties` at the repo root:
 
    ```properties
    storeFile=/absolute/path/lawallet-wallet.jks
@@ -77,5 +89,7 @@ app/         session, wallet repository, flow store
 service/     payment listener (foreground), notifications, sounds
 ui/          theme, components, one screen file per /wallet route
 ```
+
+Publishing steps are in [PLAY_STORE.md](PLAY_STORE.md). The privacy policy is [PRIVACY.md](PRIVACY.md).
 
 MIT licensed.

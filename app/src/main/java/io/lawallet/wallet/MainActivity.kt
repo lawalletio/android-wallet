@@ -20,6 +20,8 @@ import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
 import io.lawallet.wallet.ui.Intents
 import io.lawallet.wallet.ui.LaWalletRoot
+import io.lawallet.wallet.app.AuthState
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -31,6 +33,8 @@ class MainActivity : AppCompatActivity() {
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Hold the launch splash only while the stored key is unwrapped (no network wait).
+        installSplashScreen().setKeepOnScreenCondition { container.session.auth.value == AuthState.Loading }
         // Dark-only UI: light status/nav bar icons regardless of the system theme.
         enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         super.onCreate(savedInstanceState)

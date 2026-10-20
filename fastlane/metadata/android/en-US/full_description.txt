@@ -1,0 +1,25 @@
+LaWallet is a Lightning wallet built for communities. Get a Lightning address on your community's domain, pay and get paid in seconds, and tap a card to pay — all from one simple, private app.
+
+Send and receive
+• Pay Lightning addresses, invoices and LNURL in a couple of taps
+• Receive at your own Lightning address or with an invoice for an exact amount
+• See your balance in sats, BTC or your local currency
+
+Real time
+• Incoming and outgoing payments appear instantly, with an optional sound and notification
+
+Cards and NFC
+• Activate a LaWallet card by scanning its QR
+• Charge an invoice by tapping a Bolt card on your phone
+• Tap a voucher or card to claim sats (LNURL-withdraw)
+
+Your keys, your wallet
+• Sign in with a passkey, a Nostr key you already have, or a new key the app creates for you
+• Payments go straight from your phone to your wallet over Nostr Wallet Connect (NWC); the community server never moves your money
+• Connect any NWC wallet, or start with a free one
+• Back up your secret key behind your device lock
+
+Made for communities
+• Works with any LaWallet instance — switch servers in Settings
+• Open source (MIT): github.com/lawalletio/android-wallet
+• No ads, no trackers

@@ -28,7 +28,6 @@ class PaymentListenerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         goForeground()
-        (application as LaWalletApp).container.wallet.active.value = true
         return START_STICKY
     }
 

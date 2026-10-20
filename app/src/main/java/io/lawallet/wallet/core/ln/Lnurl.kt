@@ -94,11 +94,7 @@ class Lnurl(private val http: OkHttpClient) {
     }
 
     suspend fun payMetadata(lnurlpUrl: String): PayMetadata {
-        val meta = try {
-            http.getJsonObject(lnurlpUrl)
-        } catch (e: HttpStatusException) {
-            throw LnurlException("Recipient returned ${e.status}", "httpStatus", e.status)
-        }
+        val meta = fetch(lnurlpUrl) { "Recipient returned $it" }
         if (meta.str("tag") != "payRequest") throw LnurlException("Recipient is not a Lightning address", "notPay")
         var description: String? = null
         var image: String? = null
@@ -148,16 +144,23 @@ class Lnurl(private val http: OkHttpClient) {
     }
 
     private suspend fun fetchInvoice(url: String, comment: String?): LnurlInvoice {
-        val json = try {
-            http.getJsonObject(url)
-        } catch (e: HttpStatusException) {
-            throw LnurlException("Recipient callback returned ${e.status}", "httpStatus", e.status)
-        }
+        val json = fetch(url) { "Recipient callback returned $it" }
         val pr = json.str("pr")
         if (json.str("status") == "ERROR" || pr.isNullOrBlank()) {
             throw LnurlException(json.str("reason") ?: "Recipient refused the invoice request", "refused")
         }
         return LnurlInvoice(pr, comment, json.str("verify"))
+    }
+
+    /** GET a JSON object, mapping every transport/format failure to an [LnurlException] the UI can show. */
+    private suspend fun fetch(url: String, statusMessage: (Int) -> String): JsonObject = try {
+        http.getJsonObject(url)
+    } catch (e: HttpStatusException) {
+        throw LnurlException(statusMessage(e.status), "httpStatus", e.status)
+    } catch (e: IOException) {
+        throw LnurlException("Could not reach the recipient", "unreachable")
+    } catch (e: IllegalStateException) {
+        throw LnurlException("The recipient returned an invalid response", "invalidResponse")
     }
 
     /** LUD-21 single check: `{settled, preimage}`. */

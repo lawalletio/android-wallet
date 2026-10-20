@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon foreground — matches branding/app-icon.svg (isotype at 55% of the visible tile). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="43.840" android:translateY="33.891" android:scaleX="0.30011" android:scaleY="0.30011">
+        <group android:translateX="-981.4" android:translateY="-0.97">
+            <path android:fillColor="#FFE95052" android:pathData="M1003.53,83.69c4.44,0,8.06,3.61,8.06,8.06s-3.61,8.06-8.06,8.06v33.3c22.8,0,41.36-18.55,41.36-41.36,0-9.25-3.06-17.81-8.21-24.71-7.55,10.1-19.6,16.65-33.15,16.65Z" />
+            <path android:fillColor="#FF55B68C" android:pathData="M1036.68,67.04c5.16-6.9,8.21-15.45,8.21-24.71,0-22.8-18.55-41.36-41.36-41.36v33.3c4.44,0,8.06,3.61,8.06,8.06s-3.61,8.06-8.06,8.06c13.55,0,25.6,6.55,33.15,16.65Z" />
+            <path android:fillColor="#FFFDC800" android:pathData="M1036.68,67.04c-7.55-10.1-19.6-16.65-33.15-16.65h-22.13v33.3h22.13c13.55,0,25.6-6.55,33.15-16.65Z" />
+        </group>
+    </group>
+</vector>

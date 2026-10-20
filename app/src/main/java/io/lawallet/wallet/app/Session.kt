@@ -13,7 +13,9 @@ import io.lawallet.wallet.core.store.SecretStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 
@@ -26,7 +28,7 @@ class Session(
     private val scope: CoroutineScope,
     private val amber: AmberSigner.Factory,
 ) {
-    private val _signer = MutableStateFlow<Signer?>(loadSigner())
+    private val _signer = MutableStateFlow<Signer?>(null)
     val signer: StateFlow<Signer?> = _signer
 
     private val _api = MutableStateFlow(buildApi(prefs.instanceUrl))
@@ -38,7 +40,7 @@ class Session(
     private val _me = MutableStateFlow<CurrentUser?>(null)
     val me: StateFlow<CurrentUser?> = _me
 
-    private val _auth = MutableStateFlow(if (_signer.value == null) AuthState.LoggedOut else AuthState.Loading)
+    private val _auth = MutableStateFlow(if (prefs.loginMethod == null) AuthState.LoggedOut else AuthState.Loading)
     val auth: StateFlow<AuthState> = _auth
 
     val loginMethod get() = prefs.loginMethod
@@ -54,11 +56,15 @@ class Session(
 
     init {
         scope.launch { refreshSettings() }
-        if (_signer.value != null) scope.launch {
-            // Restore: a stored JWT is enough to show the wallet; me() re-mints when it expired.
-            runCatching { refreshMe() }
-                .onSuccess { _auth.value = AuthState.LoggedIn }
-                .onFailure { _auth.value = if (it is ApiException && it.status in 401..403) AuthState.LoggedOut else AuthState.LoggedIn }
+        if (prefs.loginMethod != null) scope.launch {
+            // Keystore unwrap is IPC — keep it off the main thread during cold start.
+            val signer = withContext(Dispatchers.IO) { loadSigner() }
+            if (signer == null) { _auth.value = AuthState.LoggedOut; return@launch }
+            _signer.value = signer
+            // Optimistic restore: show the wallet now (cached balance/activity), validate in the
+            // background. Only an explicit 401/403 ends the session.
+            _auth.value = AuthState.LoggedIn
+            runCatching { refreshMe() }.onFailure { if (it is ApiException && it.status in 401..403) logout() }
         }
     }
 

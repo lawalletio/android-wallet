@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
+import com.google.mlkit.common.MlKit
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -135,6 +136,7 @@ fun ScanScreen() {
                             providerFuture.addListener({
                                 val provider = providerFuture.get()
                                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
+                                MlKit.initialize(ctx.applicationContext) // provider removed from startup
                                 val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
                                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                                 analysis.setAnalyzer(analyzerExecutor) { proxy ->

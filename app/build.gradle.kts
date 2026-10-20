@@ -1,17 +1,39 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.baselineprofile)
 }
 
-// Signing: a private keystore (never committed) described by keystore.properties.
-// Its SHA-256 fingerprint is what an instance lists in /.well-known/assetlinks.json
-// for passkeys + App Links. Without it, builds fall back to the default debug key.
+// Signing: a private keystore (never committed), from keystore.properties locally or the
+// LAWALLET_* environment in CI. Its SHA-256 (or Play App Signing's, once enrolled) is what an
+// instance lists in /.well-known/assetlinks.json for passkeys + App Links.
+// Without either, builds fall back to the default debug key.
 val keystoreProps = Properties().apply {
-    rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    // keystore.properties at the repo root, or LAWALLET_SIGNING_PROPERTIES=/path/to/x.properties
+    // (storeFile may be relative to that file) — secrets never need to live in the repo.
+    val propsFile = System.getenv("LAWALLET_SIGNING_PROPERTIES")?.let(::File) ?: rootProject.file("keystore.properties")
+    if (propsFile.exists()) {
+        propsFile.inputStream().use { load(it) }
+        getProperty("storeFile")?.let { sf ->
+            val f = File(sf)
+            if (!f.isAbsolute || !f.exists()) setProperty("storeFile", File(propsFile.parentFile, f.name).absolutePath)
+        }
+    }
+    System.getenv("LAWALLET_KEYSTORE")?.let {
+        setProperty("storeFile", it)
+        setProperty("storePassword", System.getenv("LAWALLET_KEYSTORE_PASSWORD"))
+        setProperty("keyAlias", System.getenv("LAWALLET_KEY_ALIAS"))
+        setProperty("keyPassword", System.getenv("LAWALLET_KEY_PASSWORD"))
+    }
 }
+
+// CI passes -PversionCode=<n> -PversionName=<tag>; local builds use the defaults.
+val appVersionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+val appVersionName = (findProperty("versionName") as String?)?.removePrefix("v") ?: "1.0.0"
 
 android {
     namespace = "io.lawallet.wallet"
@@ -21,8 +43,8 @@ android {
         applicationId = "io.lawallet.wallet"
         minSdk = 28
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_INSTANCE", "\"https://beta.lawallet.io\"")
     }
@@ -47,6 +69,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // Native symbols ship inside the AAB so Play can symbolicate native crashes/ANRs.
+            ndk { debugSymbolLevel = "FULL" }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("lawallet") ?: signingConfigs.getByName("debug")
         }
@@ -63,6 +87,24 @@ android {
     androidResources {
         generateLocaleConfig = true
     }
+    bundle {
+        // The in-app language picker switches to any bundled locale, so every device needs all of
+        // them — Play must not strip unused languages from the install.
+        language { enableSplit = false }
+    }
+    // GitHub/Zapstore APKs: -PabiSplits produces one APK per ABI (Play uses the AAB instead).
+    if (hasProperty("abiSplits")) splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -75,6 +117,17 @@ kotlin {
     jvmToolchain(17)
 }
 
+// Profile/benchmark builds (created by the baseline-profile plugin) install side by side as
+// ".bench", so measuring never replaces — or, when Gradle uninstalls after the run, wipes — a
+// real logged-in install. Set on the variant: the plugin configures these build types late.
+androidComponents {
+    onVariants { variant ->
+        if (variant.buildType == "nonMinifiedRelease" || variant.buildType == "benchmarkRelease") {
+            variant.applicationId.set("io.lawallet.wallet.bench")
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -83,7 +136,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play)
     implementation(libs.androidx.biometric)
@@ -111,11 +163,12 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.lucide)
     implementation(libs.haze)
+    implementation(libs.androidx.splashscreen)
+    implementation(libs.androidx.profileinstaller)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm)
     testImplementation(libs.okhttp.mockwebserver)
-    testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
@@ -123,4 +176,5 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso)
     androidTestImplementation(libs.androidx.test.rules)
     debugImplementation(libs.compose.ui.test.manifest)
+    baselineProfile(project(":baselineprofile"))
 }

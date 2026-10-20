@@ -1,6 +1,13 @@
 package io.lawallet.wallet.ui.theme
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -31,14 +39,15 @@ enum class GlassLevel { Thin, Regular, Strong }
 
 /** Translucent panels over the prism light; the edge is brighter on top, like a lit bevel. */
 object Glass {
-    fun fill(level: GlassLevel) = Color.White.copy(alpha = when (level) { GlassLevel.Thin -> 0.04f; GlassLevel.Regular -> 0.065f; GlassLevel.Strong -> 0.11f })
-    fun edge(level: GlassLevel) = Brush.verticalGradient(
-        when (level) {
-            GlassLevel.Thin -> listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.03f))
-            GlassLevel.Regular -> listOf(Color.White.copy(alpha = 0.16f), Color.White.copy(alpha = 0.04f))
-            GlassLevel.Strong -> listOf(Color.White.copy(alpha = 0.26f), Color.White.copy(alpha = 0.07f))
-        },
+    // Precomputed: glass() runs on every panel in every recomposition.
+    private val fills = arrayOf(Color.White.copy(alpha = 0.04f), Color.White.copy(alpha = 0.065f), Color.White.copy(alpha = 0.11f))
+    private val edges = arrayOf(
+        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.03f))),
+        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.16f), Color.White.copy(alpha = 0.04f))),
+        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.26f), Color.White.copy(alpha = 0.07f))),
     )
+    fun fill(level: GlassLevel) = fills[level.ordinal]
+    fun edge(level: GlassLevel) = edges[level.ordinal]
     val Sheen = Brush.verticalGradient(0f to Color.White.copy(alpha = 0.05f), 0.45f to Color.Transparent)
     /** Opaque-ish surface for dialogs/menus, which sit in their own window (no backdrop to frost). */
     val Dialog = Color(0xFF16181B)
@@ -50,8 +59,18 @@ fun Modifier.glass(shape: Shape = Glass.Shape, level: GlassLevel = GlassLevel.Re
     clip(shape)
         .background(Glass.fill(level), shape)
         .then(if (tint != null) Modifier.background(tint, shape) else Modifier)
-        .drawBehind { drawRect(Glass.Sheen) }
+        .drawBehind(DrawSheen)
         .border(1.dp, Glass.edge(level), shape)
+
+private val DrawSheen: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = { drawRect(Glass.Sheen) }
+
+private val FrostedStyle = HazeStyle(
+    backgroundColor = Lw.Background,
+    tint = HazeTint(Color(0xFF0E1012).copy(alpha = 0.62f)),
+    blurRadius = 26.dp,
+    noiseFactor = 0.07f,
+    fallbackTint = HazeTint(Color(0xF2141618)),
+)
 
 /** Haze source for overlays that float over scrolling content (tab bar, notices). */
 val LocalHaze = staticCompositionLocalOf<HazeState?> { null }
@@ -60,35 +79,42 @@ val LocalHaze = staticCompositionLocalOf<HazeState?> { null }
 fun Modifier.frosted(state: HazeState?, shape: Shape): Modifier =
     clip(shape)
         .then(
-            if (state != null) Modifier.hazeEffect(
-                state,
-                HazeStyle(
-                    backgroundColor = Lw.Background,
-                    tint = HazeTint(Color(0xFF0E1012).copy(alpha = 0.62f)),
-                    blurRadius = 26.dp,
-                    noiseFactor = 0.07f,
-                    fallbackTint = HazeTint(Color(0xF2141618)),
-                ),
-            ) else Modifier.background(Color(0xF2141618)),
+            if (state != null) Modifier.hazeEffect(state, FrostedStyle) { inputScale = HazeInputScale.Fixed(0.4f) } else Modifier.background(Color(0xF2141618)),
         )
-        .drawBehind { drawRect(Glass.Sheen) }
+        .drawBehind(DrawSheen)
         .border(1.dp, Glass.edge(GlassLevel.Regular), shape)
 
 /**
  * The app's backdrop: ink with the isotype's lights refracted behind the glass. The brand
  * theme colour leads (top-left) so communities with another theme keep their identity.
+ *
+ * Rendered once per size into a quarter-resolution bitmap and blitted (bilinear) every frame:
+ * four full-screen radial gradients are smooth enough that the downscale is invisible, and a
+ * blit is far cheaper than re-shading every pixel on each frame (fill-rate bound on low-end GPUs).
  */
 @Composable
 fun PrismBackground(brand: Brand, modifier: Modifier = Modifier) {
-    Canvas(modifier.fillMaxSize()) {
-        drawRect(Lw.Background)
-        fun light(color: Color, alpha: Float, cx: Float, cy: Float, r: Float) =
-            drawCircle(Brush.radialGradient(0f to color.copy(alpha = alpha), 1f to Color.Transparent, center = Offset(cx, cy), radius = r), r, Offset(cx, cy))
-        val w = size.width
-        val h = size.height
-        light(brand.t400, 0.30f, w * 0.10f, h * 0.06f, w * 0.95f)
-        light(Prism.Sun, 0.10f, w * 0.98f, h * 0.10f, w * 0.62f)
-        light(Prism.Coral, 0.11f, w * 1.02f, h * 0.58f, w * 0.72f)
-        light(Prism.Mint, 0.12f, w * 0.02f, h * 0.98f, w * 0.85f)
-    }
+    val t400 = brand.t400
+    Spacer(
+        modifier.fillMaxSize().drawWithCache {
+            val scale = 0.25f
+            val w = (size.width * scale).toInt().coerceAtLeast(1)
+            val h = (size.height * scale).toInt().coerceAtLeast(1)
+            val bitmap = ImageBitmap(w, h)
+            CanvasDrawScope().draw(this, layoutDirection, Canvas(bitmap), Size(w.toFloat(), h.toFloat())) {
+                drawRect(Lw.Background)
+                fun light(color: Color, alpha: Float, cx: Float, cy: Float, r: Float) =
+                    drawCircle(Brush.radialGradient(0f to color.copy(alpha = alpha), 1f to Color.Transparent, center = Offset(cx, cy), radius = r), r, Offset(cx, cy))
+                val bw = this.size.width
+                val bh = this.size.height
+                light(t400, 0.30f, bw * 0.10f, bh * 0.06f, bw * 0.95f)
+                light(Prism.Sun, 0.10f, bw * 0.98f, bh * 0.10f, bw * 0.62f)
+                light(Prism.Coral, 0.11f, bw * 1.02f, bh * 0.58f, bw * 0.72f)
+                light(Prism.Mint, 0.12f, bw * 0.02f, bh * 0.98f, bw * 0.85f)
+            }
+            onDrawBehind {
+                drawImage(bitmap, dstSize = IntSize(size.width.toInt(), size.height.toInt()), filterQuality = FilterQuality.Low)
+            }
+        },
+    )
 }

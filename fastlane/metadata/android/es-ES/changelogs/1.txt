@@ -1,0 +1,1 @@
+Primera versión de LaWallet para Android: enviá y recibí por Nostr Wallet Connect, direcciones Lightning, escaneo QR, tarjetas NFC, passkeys y notificaciones de pagos en tiempo real.

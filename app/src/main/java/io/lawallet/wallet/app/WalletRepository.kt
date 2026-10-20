@@ -86,7 +86,7 @@ class WalletRepository(
     private val _notices = MutableSharedFlow<PaymentNotice>(extraBufferCapacity = 16)
     val notices: SharedFlow<PaymentNotice> = _notices
 
-    /** True while the UI or the background service wants a live connection. */
+    /** True while the app is visible: drives balance polling (notifications stream regardless). */
     val active = MutableStateFlow(false)
     private var jobs: List<Job> = emptyList()
 

@@ -5,6 +5,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -162,7 +166,13 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
             // Fixed for the NavHost's lifetime: changing it would reset the back stack on login
             // (skipping the welcome screen / pending activation).
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
-            NavHost(nav, startDestination = start, modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+            NavHost(
+                nav, startDestination = start, modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                enterTransition = { fadeIn(tween(220, delayMillis = 40)) + slideInHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
+                exitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
+                popEnterTransition = { fadeIn(tween(220, delayMillis = 40)) + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
+                popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
+            ) {
                 composable(R0.LANDING) { LandingScreen() }
                 composable(R0.SIGNUP) { SignupChoiceScreen() }
                 composable(R0.CREATE_ACCOUNT) { CreateAccountScreen() }

@@ -133,9 +133,6 @@ fun HomeScreen() {
     var glowColor by remember { mutableStateOf(Lw.Green) }
     LaunchedEffect(motion) { if (motion != null) glowColor = if (motion == "incoming") Lw.Green else Lw.Orange }
     val glowAlpha by animateFloatAsState(if (cue != null) 1f else 0f, tween(450), label = "glow")
-    val numberColor by animateColorAsState(
-        when (motion) { "incoming" -> Lw.Green; "outgoing" -> Lw.Orange; else -> Lw.Foreground }, tween(300), label = "tint",
-    )
 
     val hasNwc = client != null
     val autoCreate = settings?.lncurlAutoCreate == true
@@ -191,13 +188,7 @@ fun HomeScreen() {
                     when {
                         balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
                         balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
-                        else -> Row {
-                            val text = if (hidden) "•••••" else Currencies.format(shown.value.toLong(), code, rates)
-                            if (code == "BTC" && !hidden) BtcEmphasis(text, numberColor, Modifier.alignByBaseline())
-                            else Txt(text, Modifier.alignByBaseline().testTag("balance"), size = 56.sp, weight = FontWeight.SemiBold, color = numberColor, lineHeight = 60.sp, letterSpacing = (-1.5).sp)
-                            Spacer(Modifier.width(8.dp))
-                            Txt(Currencies.unitLabel(code), Modifier.alignByBaseline(), size = 18.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                        }
+                        else -> BalanceFigure({ shown.value.toLong() }, code, rates, hidden, motion)
                     }
                 }
                 bonus?.let { b ->
@@ -265,6 +256,24 @@ fun HomeScreen() {
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
         containerColor = Glass.Dialog,
     )
+}
+
+/**
+ * The rolling number. Reads the animated value through [sats] inside its own scope, so a
+ * 600ms roll recomposes only this row — not the whole home screen — on every frame.
+ */
+@Composable
+private fun BalanceFigure(sats: () -> Long, code: String, rates: io.lawallet.wallet.core.fx.Rates?, hidden: Boolean, motion: String?) {
+    val color by animateColorAsState(
+        when (motion) { "incoming" -> Lw.Green; "outgoing" -> Lw.Orange; else -> Lw.Foreground }, tween(300), label = "tint",
+    )
+    Row {
+        val text = if (hidden) "•••••" else Currencies.format(sats(), code, rates)
+        if (code == "BTC" && !hidden) BtcEmphasis(text, color, Modifier.alignByBaseline())
+        else Txt(text, Modifier.alignByBaseline().testTag("balance"), size = 56.sp, weight = FontWeight.SemiBold, color = color, lineHeight = 60.sp, letterSpacing = (-1.5).sp)
+        Spacer(Modifier.width(8.dp))
+        Txt(Currencies.unitLabel(code), Modifier.alignByBaseline(), size = 18.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+    }
 }
 
 /** BTC: mute the leading zeros (splitBtcForEmphasis). */

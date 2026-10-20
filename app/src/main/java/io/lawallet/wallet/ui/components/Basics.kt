@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -86,8 +87,11 @@ fun Txt(
 ) = Text(
     text, modifier, color = color, fontSize = size, fontWeight = weight, textAlign = align, maxLines = maxLines,
     overflow = TextOverflow.Ellipsis, letterSpacing = letterSpacing, lineHeight = lineHeight,
-    style = TextStyle(fontFamily = if (mono) FontFamily.Monospace else Inter, fontFeatureSettings = "tnum"),
+    style = if (mono) MonoStyle else InterStyle,
 )
+
+private val InterStyle = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum")
+private val MonoStyle = TextStyle(fontFamily = FontFamily.Monospace)
 
 enum class BtnVariant { Default, Theme, Secondary, Destructive, Outline, Ghost }
 
@@ -150,7 +154,8 @@ fun LwButton(
 /** A round glass icon button (44dp), used for back/close and header actions. */
 @Composable
 fun GlassIconButton(@DrawableRes icon: Int, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, contentDescription: String? = null) {
-    Box(modifier.size(size).glass(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    // Visual size may be 40-44dp; the touch target is always at least 48dp.
+    Box(modifier.minimumInteractiveComponentSize().size(size).glass(CircleShape).clickable(onClick = onClick, role = Role.Button), contentAlignment = Alignment.Center) {
         LwIcon(icon, size = 20.dp, contentDescription = contentDescription)
     }
 }
@@ -232,7 +237,9 @@ fun LwCard(modifier: Modifier = Modifier, radius: Dp = 20.dp, level: GlassLevel 
 /** Community image (logotype/isotype) from settings, falling back to the bundled LaWallet art. */
 @Composable
 fun BrandImage(url: String?, fallbackAsset: String, modifier: Modifier = Modifier, contentDescription: String? = null) {
-    AsyncImage(model = url ?: "file:///android_asset/brand/$fallbackAsset", contentDescription = contentDescription, modifier = modifier)
+    if (url == null && fallbackAsset == "isotype.svg") {
+        androidx.compose.foundation.Image(painterResource(io.lawallet.wallet.R.drawable.ic_isotype), contentDescription, modifier, contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+    } else AsyncImage(model = url ?: "file:///android_asset/brand/$fallbackAsset", contentDescription = contentDescription, modifier = modifier)
 }
 
 @Composable
