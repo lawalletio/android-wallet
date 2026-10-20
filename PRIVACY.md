@@ -42,5 +42,18 @@ the instance receives it.
 Settings → Remove wallet erases everything stored by the app on your device. Data held by your instance or wallet
 provider is governed by them; contact your community operator.
 
+## Account deletion
+To delete your LaWallet account on the default instance (`beta.lawallet.io`, run by La Crypta):
+
+1. Open the app, go to Settings → Security and copy your public key (`npub…`).
+2. Email info@lacrypta.ar with the subject "Delete my LaWallet account" and include that `npub`.
+3. We may ask you to confirm with a message signed by that key, to prove the account is yours.
+
+We delete your account record and linked public keys, Lightning addresses, card links, remote wallet connections,
+passkeys and preferences within 30 days of confirming the request, and reply when it's done. Lightning payments
+already made can't be reversed and stay in the records of the wallets and nodes that handled them. Funds held in a
+connected wallet stay with that wallet's provider: move them out before deleting. For other instances, contact that
+community's operator.
+
 ## Contact
 info@lacrypta.ar — or open an issue at https://github.com/lawalletio/android-wallet/issues
