@@ -27,7 +27,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URLEncoder
 import java.util.Base64
 
-class ApiException(val status: Int, message: String, val code: String? = null) : Exception(message)
+/** [details]: the error envelope's `error.details` (e.g. `{ reason: RECOVERY_MERGE_REQUIRED }`). */
+class ApiException(val status: Int, message: String, val code: String? = null, val details: JsonElement? = null) : Exception(message) {
+    /** `error.details.reason`, when the server sent one. */
+    val reason: String? get() = (details as? JsonObject)?.get("reason")?.jsonPrimitive?.contentOrNull
+}
 
 /**
  * LaWallet REST client for one instance. Auth = NIP-98-signed `POST /api/jwt` → Bearer.
@@ -93,6 +97,10 @@ class LaWalletApi(
             }
         }, JsonElement.serializer())
     suspend fun jwtInfo() = get("/api/jwt", JwtInfo.serializer())
+    suspend fun setCardRecovery(enabled: Boolean) =
+        send("PUT", "/api/users/me/card-recovery", buildJsonObject { put("enabled", enabled) }, CardRecoverySetting.serializer()).cardRecoveryEnabled
+    suspend fun dismissAccountTransfer() =
+        send("POST", "/api/users/me/account-transfer/dismiss", null, JsonElement.serializer())
     /**
      * Permanently deletes the account (addresses released, cards unpaired). Returns false on 404/405: the
      * instance predates the endpoint, so deletion goes through the email process in PRIVACY.md.
@@ -172,8 +180,13 @@ class LaWalletApi(
         send("PATCH", "/api/wallet/cards/${enc(id)}", buildJsonObject { put("enabled", enabled) }, WalletCard.serializer())
     suspend fun linkCardToDefaultWallet(id: String) =
         send("PATCH", "/api/wallet/cards/${enc(id)}", buildJsonObject { put("linkDefaultWallet", true) }, WalletCard.serializer())
-    suspend fun claimActivation(id: String) =
-        send("POST", "/api/activation-tokens/${enc(id)}/claim", buildJsonObject { put("remoteWalletId", JsonNull) }, ActivationClaim.serializer())
+    suspend fun claimActivation(id: String, confirmMerge: Boolean? = null) =
+        send("POST", "/api/activation-tokens/${enc(id)}/claim", buildJsonObject {
+            put("remoteWalletId", JsonNull)
+            if (confirmMerge != null) put("confirmMerge", confirmMerge)
+        }, ActivationClaim.serializer())
+    /** RECOVER QRs: whether the claim needs a merge prompt, or the card is already this account's. */
+    suspend fun recoveryCheck(id: String) = get("/api/activation-tokens/${enc(id)}/recovery-check", RecoveryCheck.serializer())
 
     // ---------- passkeys / oauth ----------
     suspend fun passkeyRegistrationVerify(body: JsonObject, authenticated: Boolean) =
@@ -217,7 +230,7 @@ class LaWalletApi(
                 } ?: "Request failed (${res.code})"
                 val code = (err as? JsonObject)?.get("code")?.jsonPrimitive?.contentOrNull
                 android.util.Log.w("LaWalletApi", "${request.method} ${request.url.encodedPath} -> ${res.code} $message")
-                throw ApiException(res.code, message, code)
+                throw ApiException(res.code, message, code, (err as? JsonObject)?.get("details"))
             }
             text
         }

@@ -222,6 +222,9 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
             }
         }
     }
+    // A card recovery moved this account to another key: tell the old owner until they acknowledge.
+    val me by container.session.me.collectAsState()
+    if (loggedIn) me?.accountTransfer?.let { AccountTransferredDialog(it) }
 }
 
 private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, "activate/{id}")

@@ -39,6 +39,10 @@ data class CurrentUser(
     val primaryAddressMode: String? = null,
     val primaryUsername: String? = null,
     val currencyPrefs: CurrencyPrefs? = null,
+    /** Null on servers without card recovery — hide the Security toggle. */
+    val cardRecoveryEnabled: Boolean? = null,
+    /** Set when a card recovery moved this account away; shown until dismissed. */
+    val accountTransfer: AccountTransfer? = null,
 ) {
     /** The connection the wallet uses: effectiveNwcString || nwcString (wallet-nwc.ts). */
     val nwc: String? get() = effectiveNwcString?.takeIf { it.isNotBlank() } ?: nwcString?.takeIf { it.isNotBlank() }
@@ -117,6 +121,8 @@ data class ActivationPreview(
     val qrKind: String = "ONE_TIME",
     val status: String = "PENDING",
     val card: ActivationCard? = null,
+    /** `RECOVER` for a card-manager recovery QR. Never trust the URL's `?tag`; this decides. */
+    val purpose: String = "ACTIVATE",
 )
 
 @Serializable data class ActivationCard(val id: String = "", val title: String? = null, val kind: String = "SIMPLE", val design: CardDesign? = null)
@@ -127,7 +133,46 @@ data class ActivationClaim(
     val card: ActivationCard? = null,
     val bonuses: ActivationBonuses? = null,
     val needsLightningAddress: Boolean = false,
+    /** RECOVER only: `recovered`, or `same-account` (the card was already ours; nothing moved). */
+    val outcome: String? = null,
+    val recovery: RecoveredAccount? = null,
 )
+
+/** Addresses are full `user@domain`. */
+@Serializable data class RecoverySide(val lightningAddresses: List<String> = emptyList(), val cards: Int = 0, val remoteWallets: Int = 0)
+
+@Serializable
+data class RecoveryCheck(
+    val sameAccount: Boolean = false,
+    val mergeRequired: Boolean = false,
+    val existing: RecoverySide = RecoverySide(),
+    val incoming: RecoverySide = RecoverySide(),
+)
+
+@Serializable data class RecoveredCard(val id: String, val title: String? = null, val designImageUrl: String? = null)
+@Serializable data class RecoveredWallet(val id: String, val name: String, val isDefault: Boolean = false)
+
+@Serializable
+data class RecoveredAccount(
+    val lightningAddresses: List<String> = emptyList(),
+    val primaryAddress: String? = null,
+    val cards: List<RecoveredCard> = emptyList(),
+    val remoteWallets: List<RecoveredWallet> = emptyList(),
+    val vouchers: Int = 0,
+    val mergedIntoExisting: Boolean = false,
+)
+
+@Serializable
+data class AccountTransfer(
+    val id: String,
+    val transferredAt: String,
+    val cardTitle: String? = null,
+    val lightningAddresses: List<String> = emptyList(),
+    val cards: Int = 0,
+    val remoteWallets: Int = 0,
+)
+
+@Serializable data class CardRecoverySetting(val cardRecoveryEnabled: Boolean)
 
 @Serializable data class ActivationBonuses(val freeLightningAddress: Boolean = false, val sats: SatsBonus? = null)
 @Serializable data class SatsBonus(val granted: Boolean = false, val amountSats: Long? = null)

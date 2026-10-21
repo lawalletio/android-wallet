@@ -63,4 +63,18 @@
     <string name="security_delete_failed">Couldn\'t delete the account</string>
     <string name="security_delete_unsupported">This instance can\'t delete accounts from the app yet. You can request deletion by email instead.</string>
     <string name="security_delete_steps">View steps</string>
+
+    <!-- Card recovery counts. The generated web strings flatten their singular/plural functions to one form. -->
+    <plurals name="recovery_cards">
+        <item quantity="one">1 card</item>
+        <item quantity="other">%d cards</item>
+    </plurals>
+    <plurals name="recovery_wallets">
+        <item quantity="one">1 wallet</item>
+        <item quantity="other">%d wallets</item>
+    </plurals>
+    <plurals name="recovery_vouchers">
+        <item quantity="one">1 voucher</item>
+        <item quantity="other">%d vouchers</item>
+    </plurals>
 </resources>

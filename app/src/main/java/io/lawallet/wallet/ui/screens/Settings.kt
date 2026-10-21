@@ -252,6 +252,12 @@ fun SecurityScreen() {
     val addFailed = stringResource(R.string.settings_passkeysScreen_addFailed)
     val unlockTitle = stringResource(R.string.backup_auth_title)
     val method = c.session.loginMethod
+    val me by c.session.me.collectAsState()
+    // Optimistic: shows the switched value while the PUT runs, reverts on failure.
+    var recoveryOverride by remember { mutableStateOf<Boolean?>(null) }
+    val recoveryOn = stringResource(R.string.settings_securityScreen_cardRecovery_enabled)
+    val recoveryOff = stringResource(R.string.settings_securityScreen_cardRecovery_disabled)
+    val recoveryFailed = stringResource(R.string.settings_securityScreen_cardRecovery_failed)
     LaunchedEffect(Unit) {
         role = runCatching { c.session.api.value.jwtInfo().role }.getOrNull()
         passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull()
@@ -316,6 +322,24 @@ fun SecurityScreen() {
         }
         SettingsGroup(stringResource(R.string.settings_securityScreen_device)) {
             SettingsRow(stringResource(R.string.settings_securityScreen_removeDevice), { confirmRemove = true }, labelColor = Lw.Red, icon = L.drawable.lucide_ic_log_out)
+        }
+        // Absent on servers without card recovery.
+        me?.cardRecoveryEnabled?.let { stored ->
+            val enabled = recoveryOverride ?: stored
+            SettingsGroup(stringResource(R.string.settings_securityScreen_cardRecovery_title)) {
+                SettingsRow(stringResource(R.string.settings_securityScreen_cardRecovery_toggle), null, icon = L.drawable.lucide_ic_life_buoy) {
+                    Switch(enabled, { on ->
+                        recoveryOverride = on
+                        scope.launch {
+                            runCatching { c.session.api.value.setCardRecovery(on); c.session.refreshMe() }
+                                .onSuccess { context.toast(if (on) recoveryOn else recoveryOff) }
+                                .onFailure { context.toast(it.message ?: recoveryFailed) }
+                            recoveryOverride = null
+                        }
+                    }, Modifier.testTag("card-recovery-toggle"), enabled = recoveryOverride == null, colors = lwSwitchColors())
+                }
+                MutedText(stringResource(R.string.settings_securityScreen_cardRecovery_hint), Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), size = 13.sp)
+            }
         }
         SettingsGroup(stringResource(R.string.settings_dangerZone)) {
             SettingsRow(stringResource(R.string.security_delete_account), { confirmDelete = true }, Modifier.testTag("delete-account"), labelColor = Lw.Red, icon = L.drawable.lucide_ic_trash_2)
