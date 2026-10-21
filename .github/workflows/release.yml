@@ -39,8 +39,10 @@ jobs:
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION_NAME="0.0.0-$(git rev-parse --short HEAD)"
           VERSION_CODE=$(git rev-list --count HEAD)
-          ./gradlew testDebugUnitTest lintRelease bundleRelease assembleRelease \
-            -PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE" -PabiSplits
+          ARGS=(-PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE")
+          # Separate runs: AGP refuses to bundle while ABI splits are on (issuetracker 402800800).
+          ./gradlew testDebugUnitTest lintRelease bundleRelease "${ARGS[@]}"
+          ./gradlew assembleRelease "${ARGS[@]}" -PabiSplits
       - uses: actions/upload-artifact@v4
         with:
           name: release
