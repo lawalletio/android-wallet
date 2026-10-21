@@ -62,4 +62,21 @@
     <string name="security_delete_failed">No se pudo eliminar la cuenta</string>
     <string name="security_delete_unsupported">Esta instancia todavía no permite eliminar cuentas desde la app. Puedes pedir la eliminación por email.</string>
     <string name="security_delete_steps">Ver pasos</string>
+
+    <!-- Card recovery counts. The generated web strings flatten their singular/plural functions to one form. -->
+    <plurals name="recovery_cards">
+        <item quantity="one">1 tarjeta</item>
+        <item quantity="many">%d tarjetas</item>
+        <item quantity="other">%d tarjetas</item>
+    </plurals>
+    <plurals name="recovery_wallets">
+        <item quantity="one">1 billetera</item>
+        <item quantity="many">%d billeteras</item>
+        <item quantity="other">%d billeteras</item>
+    </plurals>
+    <plurals name="recovery_vouchers">
+        <item quantity="one">1 cupón</item>
+        <item quantity="many">%d cupones</item>
+        <item quantity="other">%d cupones</item>
+    </plurals>
 </resources>

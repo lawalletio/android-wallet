@@ -87,10 +87,15 @@ class Session(
     /** Re-reads /api/users/me — also creates the account + courtesy wallet on first call. */
     suspend fun refreshMe(): CurrentUser = _api.value.me().also { _me.value = it }
 
-    /** nsec / passkey login. Mints the JWT and materializes the account before returning. */
-    suspend fun loginWithSecret(secretHex: String, method: String) {
+    /**
+     * nsec / passkey login. Mints the JWT and materializes the account before returning — unless
+     * [loadMe] is false: a card-recovery claim must be the account's first sight of a brand-new key,
+     * or `/me` would mint a courtesy wallet the recovered wallets then sit next to. Call
+     * [refreshMe] after the claim.
+     */
+    suspend fun loginWithSecret(secretHex: String, method: String, loadMe: Boolean = true) {
         val keys = Keys.fromHex(secretHex)
-        login(LocalSigner(keys), method) {
+        login(LocalSigner(keys), method, loadMe) {
             prefs.signerSecretBlob = SecretStore.encrypt(keys.secretHex)
         }
     }
@@ -99,13 +104,13 @@ class Session(
         prefs.externalSigner = pubkey to pkg
     }
 
-    private suspend fun login(signer: Signer, method: String, persist: () -> Unit) {
+    private suspend fun login(signer: Signer, method: String, loadMe: Boolean = true, persist: () -> Unit) {
         val previous = _signer.value
         _signer.value = signer
         prefs.jwt = null
         try {
             _api.value.login()
-            refreshMe()
+            if (loadMe) refreshMe()
         } catch (e: Exception) {
             _signer.value = previous
             prefs.jwt = null
