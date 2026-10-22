@@ -35,11 +35,15 @@ jobs:
           LAWALLET_KEYSTORE_PASSWORD: ${{ secrets.LAWALLET_KEYSTORE_PASSWORD }}
           LAWALLET_KEY_ALIAS: ${{ secrets.LAWALLET_KEY_ALIAS }}
           LAWALLET_KEY_PASSWORD: ${{ secrets.LAWALLET_KEY_PASSWORD }}
+          # Crash reports: the DSN turns the opt-in reporter on; the token uploads each run's R8
+          # mapping to Sentry (la-crypta/lawallet-android). Without them the build still passes.
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           VERSION_NAME="${GITHUB_REF_NAME#v}"
           [[ "$GITHUB_REF" == refs/tags/* ]] || VERSION_NAME="0.0.0-$(git rev-parse --short HEAD)"
           VERSION_CODE=$(git rev-list --count HEAD)
-          ARGS=(-PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE")
+          ARGS=(-PversionName="$VERSION_NAME" -PversionCode="$VERSION_CODE" -PsentryDsn="$SENTRY_DSN")
           # Separate runs: AGP refuses to bundle while ABI splits are on (issuetracker 402800800).
           ./gradlew testDebugUnitTest lintRelease bundleRelease "${ARGS[@]}"
           ./gradlew assembleRelease "${ARGS[@]}" -PabiSplits

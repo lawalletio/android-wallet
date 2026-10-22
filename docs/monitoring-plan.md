@@ -1,6 +1,7 @@
 # Crash, process-death and performance monitoring — plan
 
-_Status: draft for review. Nothing here is implemented yet._
+_Status: Phases 1–2 implemented (see [Implementation notes](#implementation-notes)). Phase 3 (tracing) and Phase 4
+(review) are still to do._
 
 **The problem.** After running for hours, the app dies with no visible error, and the payment-listener
 foreground service notification disappears with it. The suspected cause is memory. Today we can't tell a crash, an
@@ -19,6 +20,56 @@ the first gap to close.
    the monitoring work.
 
 ---
+
+## Implementation notes
+
+**Where things are:**
+- **Fixes:** `PaymentListenerService`, `LaWalletApp` and `AppContainer`.
+- **Exit recorder, state summary and Sentry setup:** `app/Diagnostics.kt`.
+- **Scrubber:** `core/diag/Scrubber.kt`, tested by `ScrubberTest`.
+- **UI:** Settings → Diagnostics, plus the prompt after an unexpected exit.
+
+**Sentry project:** `la-crypta/lawallet-android`. The existing la-crypta org is in the **US** region, not the EU region
+this plan proposed. `PRIVACY.md` says US.
+
+**Where the implementation differs from the plan below:**
+- **ANR thread dump:** `isAttachAnrThreadDump` is **off**. The raw dump is an attachment `beforeSend` can't scrub,
+  and OkHttp names its threads after URLs. The ANR event's own threads are scrubbed and are enough. The on-device
+  report keeps a redacted main-thread stack of the newest ANR instead.
+- **Plugin config:** the org and project names are hard-coded in the Gradle `sentry {}` block. CI only needs
+  `SENTRY_AUTH_TOKEN` (secret) and `SENTRY_DSN` (variable).
+- **Relay breadcrumbs:** only connected/disconnected, without close codes or reconnect counts. `Relay` stays free of
+  Sentry.
+- **Foreground-service crash found in Phase 0:** the stop-before-`startForeground()` crash is guarded. A `stop()`
+  that arrives while a start is pending is deferred until the service has gone foreground.
+
+**Before the first release with reports on:**
+- In Sentry → project settings → Security & Privacy, turn on "Prevent Storing of IP Addresses" and the data
+  scrubbers. The Sentry MCP can't set these.
+- Add the `SENTRY_AUTH_TOKEN` secret and the `SENTRY_DSN` variable to the GitHub repo.
+
+## Phase 0 results (Oct 22)
+
+The connected test phone (Z92, API 33) doesn't have the wallet installed. The development emulator (API 36) had:
+
+| When | Reason | Importance | Detail |
+|---|---|---|---|
+| Oct 20 03:24 | `CRASH` | 400 (background) | `ForegroundServiceDidNotStartInTimeException: Context.startForegroundService() did not then call Service.startForeground()`, for `PaymentListenerService` |
+| Oct 22 19:30 and 19:31 | `ANR` | 400 | "bg anr: … failed to complete startup", right after a system_server restart |
+
+The crash kills the app whenever a start races a stop, or whenever the main thread is too slow to reach
+`startForeground()` in time. That makes it a direct candidate for "the notification stopped".
+
+**First end-to-end run:** I installed a debug build with the DSN on the emulator, accepted the prompt, and the history
+above arrived in Sentry.
+- **The background ANRs aren't app code.** Sentry's ANR event (LAWALLET-ANDROID-5) shows the main thread inside
+  `handleBindApplication` → `DexFile::CalculateChecksum` → `adler32`. ART was checksumming the 90 MB debug APK's dex on
+  an emulator with a load average of 12, so none of our code had run yet.
+- **Two privacy gaps:**
+  - The SDK's `device.id` (an installation id) was being sent. The scrubber now removes it, and `ScrubberTest`
+    covers it.
+  - Sentry derived `user.geo` from the IP address on the server. Only the project setting "Prevent Storing of IP
+    Addresses" stops that, which is why it's listed above as required before release.
 
 ## Code review findings
 

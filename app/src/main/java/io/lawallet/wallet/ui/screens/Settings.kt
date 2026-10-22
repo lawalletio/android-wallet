@@ -60,6 +60,7 @@ import androidx.core.os.LocaleListCompat
 import androidx.fragment.app.FragmentActivity
 import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.R
+import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.core.api.OAuthGrant
 import io.lawallet.wallet.core.api.PasskeyCredential
 import io.lawallet.wallet.core.api.WalletCard
@@ -141,6 +142,8 @@ fun SettingsScreen() {
                 SettingsRow(stringResource(R.string.settings_helpCenter), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.lawallet.io"))) }, icon = L.drawable.lucide_ic_info, external = true)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.settings_reportBug), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/issues"))) }, icon = L.drawable.lucide_ic_circle_alert, external = true)
+                GroupDivider()
+                SettingsRow(stringResource(R.string.diag_title), { nav.navigate(R0.DIAGNOSTICS) }, Modifier.testTag("settings-diagnostics"), icon = L.drawable.lucide_ic_activity)
             }
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BrandImage(brand.isotype, "isotype.svg", Modifier.size(32.dp))
@@ -558,5 +561,41 @@ fun InstanceScreen() {
             if (c.session.instanceUrl != BuildConfig.DEFAULT_INSTANCE) LwButton(stringResource(R.string.instance_reset, BuildConfig.DEFAULT_INSTANCE.removePrefix("https://")), { url = BuildConfig.DEFAULT_INSTANCE; switch(BuildConfig.DEFAULT_INSTANCE) }, Modifier.fillMaxWidth(), BtnVariant.Ghost)
         }
         LwButton(stringResource(R.string.instance_save), { switch(url) }, Modifier.fillMaxWidth().padding(16.dp).testTag("instance-save"), BtnVariant.Theme, enabled = url.isNotBlank(), loading = loading)
+    }
+}
+
+@Composable
+fun DiagnosticsScreen() {
+    val c = LocalContainer.current
+    val context = LocalContext.current
+    val reports by c.prefs.crashReports.collectAsState()
+    val exits = remember { Diagnostics.exits(c.prefs).asReversed() }
+    val copied = stringResource(R.string.diag_copied)
+    SettingsPage(stringResource(R.string.diag_title)) {
+        if (Diagnostics.available) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsGroup {
+                SettingsRow(stringResource(R.string.diag_crash_reports), { c.prefs.setCrashReports(!reports) }, Modifier.testTag("diag-reports"), icon = L.drawable.lucide_ic_bug) {
+                    Switch(reports, { c.prefs.setCrashReports(it) }, colors = lwSwitchColors())
+                }
+            }
+            MutedText(stringResource(R.string.diag_crash_reports_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsGroup(stringResource(R.string.diag_exits)) {
+                when {
+                    android.os.Build.VERSION.SDK_INT < 30 -> MutedText(stringResource(R.string.diag_exits_unsupported), Modifier.padding(16.dp))
+                    exits.isEmpty() -> MutedText(stringResource(R.string.diag_exits_empty), Modifier.padding(16.dp))
+                    else -> exits.forEachIndexed { i, e ->
+                        if (i > 0) GroupDivider()
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).testTag("exit-$i")) {
+                            Txt(e.reason.replace('_', ' ').uppercase(), size = 14.sp, weight = FontWeight.SemiBold, color = if (e.abnormal) Lw.Red else Lw.Foreground)
+                            Txt(Diagnostics.summary(e), size = 12.sp, color = Lw.MutedFg)
+                        }
+                    }
+                }
+            }
+            MutedText(stringResource(R.string.diag_exits_hint), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+        }
+        LwButton(stringResource(R.string.diag_copy), { context.copyToClipboard(Diagnostics.report(c.prefs), copied) }, Modifier.fillMaxWidth().testTag("diag-copy"), BtnVariant.Secondary)
     }
 }

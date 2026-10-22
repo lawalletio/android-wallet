@@ -1,5 +1,14 @@
 package io.lawallet.wallet.ui
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import io.lawallet.wallet.R
+import io.lawallet.wallet.app.Diagnostics
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.screens.DiagnosticsScreen
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -100,6 +109,7 @@ object R0 {
     const val LANGUAGE = "settings/language"
     const val SOUND = "settings/payment-sound"
     const val INSTANCE = "settings/instance"
+    const val DIAGNOSTICS = "settings/diagnostics"
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
@@ -204,6 +214,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.LANGUAGE) { LanguageScreen() }
                 composable(R0.SOUND) { PaymentSoundScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
+                composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
             }
           }
             if (route == R0.HOME || route == R0.SETTINGS) {
@@ -225,6 +236,22 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     // A card recovery moved this account to another key: tell the old owner until they acknowledge.
     val me by container.session.me.collectAsState()
     if (loggedIn) me?.accountTransfer?.let { AccountTransferredDialog(it) }
+    // The last run ended in a crash / ANR / kill and reports are off: ask once.
+    val crashed by Diagnostics.prompt.collectAsState()
+    if (crashed.isNotEmpty()) CrashReportDialog()
+}
+
+@Composable
+private fun CrashReportDialog() {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { Diagnostics.decline() },
+        title = { Txt(stringResource(R.string.diag_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
+        text = { Txt(stringResource(R.string.diag_prompt_body), color = Lw.MutedFg) },
+        confirmButton = { TextButton({ Diagnostics.accept(context) }) { Txt(stringResource(R.string.diag_prompt_send)) } },
+        dismissButton = { TextButton({ Diagnostics.decline() }) { Txt(stringResource(R.string.diag_prompt_no)) } },
+        containerColor = Glass.Dialog,
+    )
 }
 
 private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, "activate/{id}")

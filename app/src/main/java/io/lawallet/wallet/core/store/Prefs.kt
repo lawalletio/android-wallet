@@ -71,6 +71,30 @@ class Prefs(context: Context) {
     val backgroundListener: StateFlow<Boolean> = _bgListener
     fun setBackgroundListener(v: Boolean) { _bgListener.value = v; sp.edit { putBoolean("bg-listener", v) } }
 
+    /** Opt-in crash reporting (docs/monitoring-plan.md). Device-level: survives logout. */
+    private val _crashReports = MutableStateFlow(sp.getBoolean("crash-reports", false))
+    val crashReports: StateFlow<Boolean> = _crashReports
+    fun setCrashReports(v: Boolean) { _crashReports.value = v; sp.edit { putBoolean("crash-reports", v) } }
+
+    var crashPromptDeclined: Boolean
+        get() = sp.getBoolean("crash-prompt-declined", false)
+        set(v) = sp.edit { putBoolean("crash-prompt-declined", v) }
+
+    /** Newest ApplicationExitInfo timestamp already recorded. */
+    var lastExitTs: Long
+        get() = sp.getLong("last-exit-ts", 0)
+        set(v) = sp.edit { putLong("last-exit-ts", v) }
+
+    /** On-device exit history (Diagnostics.ExitRecord lines), newest last. */
+    var exitLog: List<String>
+        get() = sp.getString("exit-log", null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+        set(v) = sp.edit { putString("exit-log", v.takeLast(20).joinToString("\n")) }
+
+    /** Main-thread stack of the newest ANR, redacted — the part of the trace worth copying. */
+    var lastAnrTrace: String?
+        get() = sp.getString("last-anr-trace", null)
+        set(v) = sp.edit { putString("last-anr-trace", v) }
+
     var contacts: List<Contact>
         get() = sp.getString("contacts", null)?.let { runCatching { json.decodeFromString(ListSerializer(Contact.serializer()), it) }.getOrNull() } ?: emptyList()
         set(v) = sp.edit { putString("contacts", json.encodeToString(ListSerializer(Contact.serializer()), v.take(12))) }
@@ -102,13 +126,17 @@ class Prefs(context: Context) {
 
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener")
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
     }
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg")
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
+    }
+
+    private companion object {
+        val DIAGNOSTICS_KEYS = setOf("crash-reports", "crash-prompt-declined", "last-exit-ts", "exit-log", "last-anr-trace")
     }
 }
