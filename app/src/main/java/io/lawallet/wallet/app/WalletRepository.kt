@@ -192,6 +192,8 @@ class WalletRepository(
 
     private fun merge(txs: List<Tx>) {
         val merged = (txs + _recent.value).distinctBy { it.paymentHash.ifEmpty { it.createdAt.toString() } }.sortedByDescending { it.createdAt }.take(200)
+        // Every Home visit refetches the same page: skip re-encoding up to 200 txs on the main thread.
+        if (merged == _recent.value) return
         _recent.value = merged
         nwcKey?.let { prefs.setActivityCache(it, json.encodeToString(ListSerializer(Tx.serializer()), merged)) }
     }

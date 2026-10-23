@@ -6,9 +6,14 @@ import io.lawallet.wallet.core.nostr.Nip44
 import io.lawallet.wallet.core.nostr.NostrEvent
 import io.lawallet.wallet.core.nostr.randomBytes
 import io.lawallet.wallet.core.nostr.toHex
+import io.sentry.Sentry
+import io.sentry.SpanStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -95,6 +100,7 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
                 }.getOrNull()
             }
             .onCompletion { relay.unsubscribe(subId) }
+            .flowOn(Dispatchers.Default)
     }
 
     private suspend inline fun <reified T> request(method: String, params: JsonObject = JsonObject(emptyMap())): T {
@@ -105,20 +111,26 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
     /** One NIP-47 round trip, recorded in the [Trail] by method, outcome and duration (balance polls only when slow). */
     suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = 60_000): JsonElement {
         val started = System.currentTimeMillis()
+        // Child of the current screen's transaction (Diagnostics.screen), if one is open: op + method only.
+        val span = Sentry.getSpan()?.startChild("nwc.request", method)
         return try {
             send(method, params, timeoutMs).also {
+                span?.finish(SpanStatus.OK)
                 val ms = System.currentTimeMillis() - started
                 if (method != "get_balance" || ms > 5_000) Trail.add("nwc", "$method ok ${ms}ms")
             }
         } catch (e: Exception) {
             // A cancelled caller isn't a wallet failure; a timeout is.
-            if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+            val cancelled = e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException
+            span?.finish(if (cancelled) SpanStatus.CANCELLED else SpanStatus.INTERNAL_ERROR)
+            if (cancelled) throw e
             Trail.add("nwc", "$method failed ${(e as? NwcException)?.code ?: e.javaClass.simpleName} ${System.currentTimeMillis() - started}ms", error = true)
             throw e
         }
     }
 
-    private suspend fun send(method: String, params: JsonObject, timeoutMs: Long): JsonElement {
+    // Signing, NIP-44/04 and JSON are CPU work; callers sit on the main scope, mid screen transition.
+    private suspend fun send(method: String, params: JsonObject, timeoutMs: Long): JsonElement = withContext(Dispatchers.Default) {
         val enc = encryption()
         val body = buildJsonObject { put("method", method); put("params", params) }.toString()
         val tags = buildList {
@@ -127,7 +139,7 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
         }
         val request = NostrEvent.sign(keys, 23194, encrypt(body, enc), tags)
         val subId = "rsp-" + request.id.take(12)
-        return kotlinx.coroutines.coroutineScope {
+        kotlinx.coroutines.coroutineScope {
             val response = async(start = CoroutineStart.UNDISPATCHED) {
                 relay.messages.filterIsInstance<Relay.Msg.Event>()
                     .first { it.subId == subId && it.event.pubkey == uri.walletPubkey && it.event.tag("e") == request.id }

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -237,22 +238,24 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
     }
 }
 
-fun qrBitmap(data: String, size: Int = 720): Bitmap {
-    val m = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0))
-    val px = IntArray(size * size) { if (m[it % size, it / size]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt() }
-    return Bitmap.createBitmap(px, size, size, Bitmap.Config.ARGB_8888)
+/** One pixel per module (size 0): drawn scaled with [FilterQuality.None]. A 720px render cost ~4 MB and a 518k-pixel loop on the main thread per open. */
+fun qrBitmap(data: String): Bitmap {
+    val m = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0))
+    val w = m.width
+    val px = IntArray(w * w) { if (m[it % w, it / w]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt() }
+    return Bitmap.createBitmap(px, w, w, Bitmap.Config.ARGB_8888)
 }
 
 /** qr-display.tsx — 240dp QR on a white rounded-2xl tile, caption, Copy / Share. */
 @Composable
 fun QrDisplay(data: String, caption: String?, copyValue: String = data, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bmp = remember(data) { qrBitmap(data) }
+    val bmp = remember(data) { qrBitmap(data).asImageBitmap() }
     val copied = stringResource(R.string.common_copied)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.glass(RoundedCornerShape(32.dp), GlassLevel.Regular).padding(12.dp)) {
             Box(Modifier.clip(RoundedCornerShape(22.dp)).background(Color.White).padding(16.dp).clickable { context.copyToClipboard(copyValue, copied) }) {
-                Image(bmp.asImageBitmap(), null, Modifier.size(232.dp).testTag("qr"))
+                Image(bmp, null, Modifier.size(232.dp).testTag("qr"), filterQuality = FilterQuality.None)
             }
         }
         if (caption != null) {

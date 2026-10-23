@@ -161,8 +161,14 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    // The route pattern (`activity/{hash}`), never its arguments.
-    LaunchedEffect(route) { route?.let { Trail.add("navigation", it) } }
+    // The route pattern (`activity/{hash}`), never its arguments. Traced for its first second:
+    // the transition and the screen's first load.
+    LaunchedEffect(route) {
+        route ?: return@LaunchedEffect
+        Trail.add("navigation", route)
+        val tx = Diagnostics.screen(route)
+        try { delay(1000) } finally { tx?.finish() }
+    }
     var notice by remember { mutableStateOf<PaymentNotice?>(null) }
 
     // Logging in navigates from the auth screens themselves (welcome / pending activation);

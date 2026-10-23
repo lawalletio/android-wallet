@@ -33,6 +33,12 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.screens.SecretKeyReveal
 import io.lawallet.wallet.ui.theme.LaWalletTheme
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeReader
+import io.lawallet.wallet.ui.components.qrBitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -146,5 +152,14 @@ class WalletComponentsTest {
         rule.setContent { LaWalletTheme { io.lawallet.wallet.ui.components.PaymentNoticePill("payment_sent", 2_100, null) } }
         rule.onNodeWithText("Sent").assertExists()
         rule.onNodeWithText("−2,100").assertExists()
+    }
+
+    /** The QR is one pixel per module, drawn scaled up unfiltered: at its on-screen size it must still scan. */
+    @Test fun qrScansAtDisplaySize() {
+        val data = "LIGHTNING:LNBC10U1P" + "QQQSYQCYQ5RQWZQF".repeat(20)
+        val bmp = android.graphics.Bitmap.createScaledBitmap(qrBitmap(data), 696, 696, false) // 232dp @ 3x
+        val px = IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
+        val src = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bmp.width, bmp.height, px)))
+        assertEquals(data, QRCodeReader().decode(src, mapOf(DecodeHintType.PURE_BARCODE to true)).text)
     }
 }
