@@ -61,18 +61,25 @@ class Updater(private val context: Context, private val http: OkHttpClient) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
 
-    /** "Later" on the launch prompt: quiet until the next process start. */
-    val dismissed = MutableStateFlow(false)
+    /**
+     * "Later" on the launch prompt: the version it dismissed. A newer release prompts again — the
+     * payment listener keeps this process alive for days, so "until the next start" meant never.
+     */
+    val dismissed = MutableStateFlow<String?>(null)
 
     private var release: GithubRelease? = null
+    private var etag: String? = null
     private var playInfo: AppUpdateInfo? = null
     private var lastCheck = 0L
 
     val fromPlay: Boolean by lazy { installer() == PLAY_STORE }
 
-    /** Launch / foreground check: at most hourly (GitHub allows 60 anonymous calls an hour). */
+    /**
+     * Every foreground, at most every 5 min. GitHub allows 60 anonymous calls an hour, but a
+     * conditional request answered 304 doesn't count, so only a new release costs one.
+     */
     suspend fun checkIfDue() {
-        if (lastCheck != 0L && SystemClock.elapsedRealtime() - lastCheck < 3_600_000) return
+        if (lastCheck != 0L && SystemClock.elapsedRealtime() - lastCheck < 300_000) return
         checkNow()
     }
 
@@ -92,9 +99,14 @@ class Updater(private val context: Context, private val http: OkHttpClient) {
     }
 
     private suspend fun checkGithub(): State {
+        val cached = release
         val r = withContext(Dispatchers.IO) {
-            http.newCall(Request.Builder().url(BuildConfig.UPDATE_FEED).header("accept", "application/vnd.github+json").build()).execute().use { res ->
+            val req = Request.Builder().url(BuildConfig.UPDATE_FEED).header("accept", "application/vnd.github+json")
+            if (cached != null) etag?.let { req.header("if-none-match", it) }
+            http.newCall(req.build()).execute().use { res ->
+                if (res.code == 304 && cached != null) return@use cached
                 check(res.isSuccessful) { "GitHub answered ${res.code}" }
+                etag = res.header("etag")
                 json.decodeFromString(GithubRelease.serializer(), res.body.string())
             }
         }
