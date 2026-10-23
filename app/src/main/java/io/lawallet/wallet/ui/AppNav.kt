@@ -264,9 +264,11 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val crashed by Diagnostics.prompt.collectAsState()
     if (crashed.isNotEmpty()) CrashReportDialog()
     // Checked on every app open (LaWalletApp); "Later" keeps that version quiet, a newer one prompts again.
+    // Local debug builds are always "1.0.0" and can't install a release over themselves: no prompt (-PselfUpdate keeps it).
     val update by container.updater.state.collectAsState()
     val laterTapped by container.updater.dismissed.collectAsState()
-    (update as? Updater.State.Available)?.takeIf { it.version != laterTapped && route != R0.UPDATES }?.let { UpdateDialog(it, container, nav) }
+    val localDebug = BuildConfig.DEBUG && !BuildConfig.SELF_UPDATE
+    (update as? Updater.State.Available)?.takeIf { !localDebug && it.version != laterTapped && route != R0.UPDATES }?.let { UpdateDialog(it, container, nav) }
 }
 
 @Composable
