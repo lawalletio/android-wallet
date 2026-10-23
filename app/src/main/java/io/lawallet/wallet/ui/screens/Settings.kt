@@ -578,10 +578,10 @@ fun DiagnosticsScreen() {
         if (Diagnostics.available) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup {
                 SettingsRow(stringResource(R.string.diag_crash_reports), { c.prefs.setCrashReports(!reports) }, Modifier.testTag("diag-reports"), icon = L.drawable.lucide_ic_bug) {
-                    Switch(reports, { c.prefs.setCrashReports(it) }, colors = lwSwitchColors())
+                    Switch(reports, { c.prefs.setCrashReports(it) }, enabled = !BuildConfig.BETA, colors = lwSwitchColors())
                 }
             }
-            MutedText(stringResource(R.string.diag_crash_reports_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+            MutedText(stringResource(if (BuildConfig.BETA) R.string.diag_crash_reports_beta else R.string.diag_crash_reports_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup(stringResource(R.string.diag_exits)) {
