@@ -71,10 +71,11 @@ class Prefs(context: Context) {
     val backgroundListener: StateFlow<Boolean> = _bgListener
     fun setBackgroundListener(v: Boolean) { _bgListener.value = v; sp.edit { putBoolean("bg-listener", v) } }
 
-    /** Opt-in crash reporting (docs/monitoring-plan.md). Device-level: survives logout. */
-    private val _crashReports = MutableStateFlow(sp.getBoolean("crash-reports", false))
+    /** Opt-in crash reporting (docs/monitoring-plan.md). Device-level: survives logout. Forced on in beta builds;
+     *  the stored choice is untouched, so it applies again once BETA is off. */
+    private val _crashReports = MutableStateFlow(BuildConfig.BETA || sp.getBoolean("crash-reports", false))
     val crashReports: StateFlow<Boolean> = _crashReports
-    fun setCrashReports(v: Boolean) { _crashReports.value = v; sp.edit { putBoolean("crash-reports", v) } }
+    fun setCrashReports(v: Boolean) { if (BuildConfig.BETA) return; _crashReports.value = v; sp.edit { putBoolean("crash-reports", v) } }
 
     var crashPromptDeclined: Boolean
         get() = sp.getBoolean("crash-prompt-declined", false)
