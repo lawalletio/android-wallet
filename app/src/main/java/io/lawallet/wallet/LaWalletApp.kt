@@ -1,6 +1,7 @@
 package io.lawallet.wallet
 
 import android.app.Application
+import android.os.StrictMode
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -16,6 +17,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.app.AuthState
+import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.service.Notifications
 import io.lawallet.wallet.service.PaymentListenerService
 import io.lawallet.wallet.service.PaymentSound
@@ -40,16 +42,27 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
     val inForeground: Boolean
         get() = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
+    /** Logged in, listener enabled and a wallet connected. */
+    private fun shouldListen() = container.let { it.session.auth.value == AuthState.LoggedIn && it.prefs.backgroundListener.value && it.wallet.client.value != null }
+
     override fun onCreate() {
         super.onCreate()
+        if (BuildConfig.DEBUG) {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectDiskReads().detectDiskWrites().detectNetwork().penaltyLog().build())
+            StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder().detectLeakedClosableObjects().detectLeakedRegistrationObjects().penaltyLog().build())
+        }
         container = AppContainer(this)
         Notifications.createChannels(this)
         val c = container
+        Diagnostics.start(this, c)
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 c.wallet.active.value = true
                 c.rates.active.value = true
+                // The listener may have stopped while the process lived on (task-manager stop, a
+                // denied restart); the combine below only reacts to changes, so re-assert it here.
+                if (shouldListen()) PaymentListenerService.start(this@LaWalletApp)
             }
 
             override fun onStop(owner: LifecycleOwner) {
@@ -62,15 +75,14 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
 
         c.scope.launch {
             c.wallet.notices.collect { notice ->
-                PaymentSound.play(this@LaWalletApp, c.prefs.paymentSound.value, notice.id)
-                if (!inForeground) Notifications.showPayment(this@LaWalletApp, notice)
+                // An escaped exception would end this collector — and every later payment notice.
+                runCatching { PaymentSound.play(this@LaWalletApp, c.prefs.paymentSound.value, notice.id) }.onFailure { Diagnostics.nonFatal(it) }
+                if (!inForeground) runCatching { Notifications.showPayment(this@LaWalletApp, notice) }.onFailure { Diagnostics.nonFatal(it) }
             }
         }
 
         c.scope.launch {
-            combine(c.session.auth, c.prefs.backgroundListener, c.wallet.client) { auth, bg, client ->
-                auth == AuthState.LoggedIn && bg && client != null
-            }.collect { listen ->
+            combine(c.session.auth, c.prefs.backgroundListener, c.wallet.client) { _, _, _ -> shouldListen() }.collect { listen ->
                 if (listen) { if (inForeground) PaymentListenerService.start(this@LaWalletApp) } else PaymentListenerService.stop(this@LaWalletApp)
             }
         }

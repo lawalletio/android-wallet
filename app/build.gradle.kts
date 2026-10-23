@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
+    alias(libs.plugins.sentry)
 }
 
 // Signing: a private keystore (never committed), from keystore.properties locally or the
@@ -47,6 +48,9 @@ android {
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "DEFAULT_INSTANCE", "\"https://beta.lawallet.io\"")
+        // Crash reports (opt-in): CI passes -PsentryDsn. Local and F-Droid source builds have none,
+        // so the reporter never starts there.
+        buildConfigField("String", "SENTRY_DSN", "\"${findProperty("sentryDsn") ?: ""}\"")
     }
 
     signingConfigs {
@@ -117,6 +121,21 @@ kotlin {
     jvmToolchain(17)
 }
 
+// Only the R8 mapping upload (CI, when SENTRY_AUTH_TOKEN is set). No auto-installed integrations
+// or bytecode instrumentation: OkHttp URLs carry invoices and LNURL k1s (docs/monitoring-plan.md).
+sentry {
+    org.set("la-crypta")
+    projectName.set("lawallet-android")
+    autoInstallation { enabled.set(false) }
+    tracingInstrumentation { enabled.set(false) }
+    includeSourceContext.set(false)
+    includeDependenciesReport.set(false)
+    includeProguardMapping.set(true)
+    autoUploadProguardMapping.set(!System.getenv("SENTRY_AUTH_TOKEN").isNullOrEmpty())
+    ignoredBuildTypes.set(setOf("debug"))
+    telemetry.set(false)
+}
+
 // Profile/benchmark builds (created by the baseline-profile plugin) install side by side as
 // ".bench", so measuring never replaces — or, when Gradle uninstalls after the run, wipes — a
 // real logged-in install. Set on the variant: the plugin configures these build types late.
@@ -165,6 +184,7 @@ dependencies {
     implementation(libs.haze)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.profileinstaller)
+    implementation(libs.sentry.android.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm)
@@ -176,5 +196,6 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso)
     androidTestImplementation(libs.androidx.test.rules)
     debugImplementation(libs.compose.ui.test.manifest)
+    debugImplementation(libs.leakcanary)
     baselineProfile(project(":baselineprofile"))
 }

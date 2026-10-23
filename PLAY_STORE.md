@@ -28,7 +28,7 @@ to upload to Play automatically.
 ## Already checked
 - Target SDK 37 and min SDK 28; R8-minified; native libraries are 16 KB page-aligned (verified with `llvm-readelf`).
 - The App Bundle keeps every language: the in-app language picker needs them all.
-- No analytics or ads SDKs. Backups and device-to-device transfers are excluded (`data_extraction_rules.xml`).
+- No analytics or ads SDKs. An opt-in crash reporter (Sentry) is off until the user turns it on. Backups and device-to-device transfers are excluded (`data_extraction_rules.xml`).
 
 ## Store listing
 `fastlane/metadata/android/{en-US,es-419}` holds the title, short and full descriptions, the 512×512 icon, the
@@ -41,6 +41,12 @@ The privacy policy URL is https://github.com/lawalletio/android-wallet/blob/main
     requests the user makes).
   - Data is encrypted in transit. Users can request deletion by removing the wallet in the app.
   - No data is collected for ads or analytics.
+  - **App info and performance → Crash logs; Diagnostics**: collected, not shared (Sentry is a service provider),
+    **optional** (off by default; Settings → Diagnostics, or the prompt after an unexpected exit). Purposes: App
+    functionality, Analytics. Encrypted in transit. Contents: stack traces, exit reasons, memory use, app/OS version,
+    device model. Never keys, NWC strings, invoices, amounts or addresses (see `core/diag/Scrubber.kt`).
+  - **Device or other IDs**: not collected — the reporter drops the SDK's installation id and sends no sessions. If
+    sessions are ever turned on, this answer must change.
 - **Foreground service (`specialUse`)**: "Keeps the user's Nostr Wallet Connect relay subscription open so incoming
   Lightning payments are notified in real time; there is no server push." It is user-visible: the listener can be
   turned off in Settings, and a persistent notification shows while it runs.

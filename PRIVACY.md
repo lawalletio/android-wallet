@@ -1,6 +1,6 @@
 # LaWallet for Android — Privacy Policy
 
-_Last updated: October 20, 2026_
+_Last updated: October 22, 2026_
 
 LaWallet is an open-source Lightning wallet client (MIT license, source at
 https://github.com/lawalletio/android-wallet). This policy explains what the app handles and where it goes.
@@ -25,7 +25,24 @@ https://github.com/lawalletio/android-wallet). This policy explains what the app
 - **Exchange rates**: if you enable fiat currencies, rates are fetched from `api.yadio.io` (no account data is sent).
 - **Images**: community logos, card designs and avatars are loaded from the URLs the instance provides.
 
-The app contains **no analytics, advertising or tracking SDKs**, and does not sell or share personal data.
+The app contains **no analytics or advertising SDKs**, and does not sell or share personal data. It includes an
+optional crash reporter, off unless you turn it on (below).
+
+## Crash reports (optional)
+Off by default. If the app closes unexpectedly it asks once whether to send a report; you can also turn reports on or
+off at any time in Settings → Diagnostics.
+
+- **What is sent**: stack traces of crashes and freezes, the reason Android gave for closing the app, memory use, app
+  and Android version, device model, and whether the payment listener and wallet relay were connected.
+- **What is never sent**: your keys, wallet connection strings, invoices, payment amounts, balances, Lightning
+  addresses, public keys, screenshots or the screens you visited. Exception messages are dropped before sending,
+  and the app removes anything that looks like a key, invoice, address or URL from what remains.
+- **Who processes it**: Functional Software, Inc. (Sentry), in the United States, on La Crypta's behalf. IP
+  addresses are not stored with reports.
+- **Retention**: up to 90 days.
+
+Whether or not reports are on, the app keeps a short history of why Android closed it on your device (Settings →
+Diagnostics). It never leaves the device unless you copy it yourself.
 
 ## Permissions
 - **Camera**: only to scan QR codes, while the scanner is open. Frames are processed on the device and never stored.
