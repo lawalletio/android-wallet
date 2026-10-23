@@ -6,6 +6,7 @@ import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.core.fx.Currencies
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -101,6 +102,14 @@ class Prefs(context: Context) {
     var contacts: List<Contact>
         get() = sp.getString("contacts", null)?.let { runCatching { json.decodeFromString(ListSerializer(Contact.serializer()), it) }.getOrNull() } ?: emptyList()
         set(v) = sp.edit { putString("contacts", json.encodeToString(ListSerializer(Contact.serializer()), v.take(12))) }
+
+    /** Last good server response per screen ("cache:" keys go with the session), so it opens filled offline. */
+    fun <T> cached(name: String, ser: KSerializer<T>): T? = sp.getString("cache:$name", null)?.let { runCatching { json.decodeFromString(ser, it) }.getOrNull() }
+    fun <T> setCached(name: String, ser: KSerializer<T>, v: T) = sp.edit { putString("cache:$name", json.encodeToString(ser, v)) }
+
+    /** Same, Keystore-wrapped — for responses carrying an NWC secret. Blocking (Keystore IPC): call off the main thread. */
+    fun secretCached(name: String): String? = sp.getString("cache:$name", null)?.let { runCatching { SecretStore.decrypt(it) }.getOrNull() }
+    fun setSecretCached(name: String, v: String) = sp.edit { putString("cache:$name", SecretStore.encrypt(v)) }
 
     private val _destinations = MutableStateFlow(
         sp.getString("payment-destinations", null)?.let { runCatching { json.decodeFromString(DESTINATIONS, it) }.getOrNull() } ?: emptyMap(),

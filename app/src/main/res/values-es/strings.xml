@@ -43,6 +43,7 @@
     <string name="update_prompt_title">Actualización disponible</string>
     <string name="update_prompt_body">Está disponible LaWallet %1$s. Tenés la %2$s.</string>
     <string name="update_prompt_later">Más tarde</string>
+    <string name="offline_mode">Modo sin conexión</string>
     <string name="update_prompt_update">Actualizar</string>
     <string name="login_amber">Continuar con Amber</string>
     <string name="login_amber_missing">Instalá un firmante NIP-55 como Amber para usar esta opción.</string>

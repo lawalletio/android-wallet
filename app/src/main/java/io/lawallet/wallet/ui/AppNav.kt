@@ -12,6 +12,8 @@ import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.GlassLevel
+import androidx.compose.foundation.shape.CircleShape
 import io.lawallet.wallet.ui.screens.DiagnosticsScreen
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -238,6 +240,12 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 )
             }
             // Over the header row (avatar/logo), so the pill never covers the balance it is announcing.
+            val offline by container.session.offline.collectAsState()
+            AnimatedVisibility(offline && loggedIn, Modifier.align(Alignment.TopCenter).statusBarsPadding(), enter = fadeIn(), exit = fadeOut()) {
+                Box(Modifier.clip(CircleShape).background(Glass.Dialog).glass(CircleShape, GlassLevel.Thin, tint = Lw.Orange.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 3.dp).testTag("offline-badge")) {
+                    Txt(stringResource(R.string.offline_mode), size = 11.sp, color = Lw.Orange)
+                }
+            }
             AnimatedVisibility(notice != null, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
