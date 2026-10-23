@@ -3,13 +3,19 @@ package io.lawallet.wallet.ui.screens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +33,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -74,11 +85,13 @@ import io.lawallet.wallet.ui.theme.glass
 import io.lawallet.wallet.ui.components.CurrencyToggle
 import io.lawallet.wallet.ui.components.GlassIconButton
 import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen() {
     val c = LocalContainer.current
@@ -99,6 +112,8 @@ fun HomeScreen() {
     var confirmLogout by remember { mutableStateOf(false) }
     var avatar by remember { mutableStateOf<String?>(null) }
     var bonus by remember { mutableStateOf(c.prefs.bonusSats.takeIf { it > 0 }) }
+    var refreshing by remember { mutableStateOf(false) }
+    val pull = rememberPullToRefreshState()
 
     LaunchedEffect(Unit) {
         runCatching { c.session.refreshMe() }
@@ -139,114 +154,132 @@ fun HomeScreen() {
     val canReceive = hasNwc || autoCreate
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 140.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box {
-                Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
-                    if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                    else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
-                }
-                DropdownMenu(menu, { menu = false }, containerColor = Glass.Dialog, shape = RoundedCornerShape(16.dp)) {
-                    DropdownMenuItem(
-                        { Txt(stringResource(R.string.home_logOut)) },
-                        { menu = false; confirmLogout = true },
-                        leadingIcon = { LwIcon(L.drawable.lucide_ic_log_out, size = 16.dp) },
-                    )
-                }
+    // Pull-to-refresh: force-reload everything Home shows, and recheck releases (re-arming a "Later"d prompt).
+    val onRefresh: () -> Unit = {
+        refreshing = true
+        c.updater.dismissed.value = null
+        c.scope.launch { c.updater.checkNow() }
+        scope.launch {
+            coroutineScope {
+                launch { runCatching { c.session.refreshMe() } }
+                launch { c.session.refreshSettings() }
+                launch { c.wallet.refreshBalance() }
+                launch { c.wallet.refreshActivity() }
             }
-            Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
-                BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
-            }
-            GlassIconButton(
-                if (hidden) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, { c.prefs.setHideBalance(!hidden) },
-                Modifier.testTag("toggle-balance"), contentDescription = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance),
-            )
+            refreshing = false
         }
+    }
 
-        // The balance slab: glass over the prism light, which blooms green/coral on a payment.
-        Box(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
-                if (glowAlpha > 0f) {
-                    val r = size.width * 0.75f
-                    drawCircle(Brush.radialGradient(0f to glowColor.copy(alpha = 0.42f * glowAlpha), 1f to Color.Transparent, center = Offset(size.width / 2, size.height * 0.38f), radius = r), r, Offset(size.width / 2, size.height * 0.38f))
-                }
-            },
-        ) {
-            Column(
-                Modifier.fillMaxWidth().glass(RoundedCornerShape(32.dp)).padding(start = 18.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Txt(stringResource(R.string.home_yourBalance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                    if (relayError != null && hasNwc) {
-                        Spacer(Modifier.width(8.dp))
-                        RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }
+    PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize().testTag("home-refresh"), state = pull, indicator = { RefreshOrb(pull, refreshing) }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 140.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box {
+                    Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
+                        if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                        else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
+                    }
+                    DropdownMenu(menu, { menu = false }, containerColor = Glass.Dialog, shape = RoundedCornerShape(16.dp)) {
+                        DropdownMenuItem(
+                            { Txt(stringResource(R.string.home_logOut)) },
+                            { menu = false; confirmLogout = true },
+                            leadingIcon = { LwIcon(L.drawable.lucide_ic_log_out, size = 16.dp) },
+                        )
                     }
                 }
-                // Fixed-height slot: cue effects never resize it.
-                Box(Modifier.fillMaxWidth().heightIn(min = 76.dp), contentAlignment = Alignment.Center) {
-                    when {
-                        balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
-                        balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
-                        else -> BalanceFigure({ shown.value.toLong() }, code, rates, hidden, motion)
+                Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
+                    BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+                }
+                GlassIconButton(
+                    if (hidden) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, { c.prefs.setHideBalance(!hidden) },
+                    Modifier.testTag("toggle-balance"), contentDescription = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance),
+                )
+            }
+
+            // The balance slab: glass over the prism light, which blooms green/coral on a payment.
+            Box(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
+                    if (glowAlpha > 0f) {
+                        val r = size.width * 0.75f
+                        drawCircle(Brush.radialGradient(0f to glowColor.copy(alpha = 0.42f * glowAlpha), 1f to Color.Transparent, center = Offset(size.width / 2, size.height * 0.38f), radius = r), r, Offset(size.width / 2, size.height * 0.38f))
+                    }
+                },
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().glass(RoundedCornerShape(32.dp)).padding(start = 18.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Txt(stringResource(R.string.home_yourBalance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                        if (relayError != null && hasNwc) {
+                            Spacer(Modifier.width(8.dp))
+                            RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }
+                        }
+                    }
+                    // Fixed-height slot: cue effects never resize it.
+                    Box(Modifier.fillMaxWidth().heightIn(min = 76.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
+                            balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
+                            else -> BalanceFigure({ shown.value.toLong() }, code, rates, hidden, motion)
+                        }
+                    }
+                    bonus?.let { b ->
+                        Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
+                            Txt(stringResource(R.string.home_bonusNote, Currencies.formatSats(b)), size = 12.sp, color = Lw.MutedFg)
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
+                        }
+                    }
+                    if (currencies.active.size >= 2) CurrencyToggle(currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) })
+                    Spacer(Modifier.height(20.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LwButton(stringResource(R.string.home_receive), { nav.navigate(R0.RECEIVE) }, Modifier.weight(1f).testTag("home-receive"), BtnVariant.Secondary, enabled = canReceive, height = 52.dp, icon = L.drawable.lucide_ic_arrow_down_left)
+                        LwButton(stringResource(R.string.home_send), { nav.navigate(R0.SEND) }, Modifier.weight(1f).testTag("home-send"), BtnVariant.Theme, enabled = hasNwc, height = 52.dp, icon = L.drawable.lucide_ic_arrow_up_right)
                     }
                 }
-                bonus?.let { b ->
-                    Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
-                        Txt(stringResource(R.string.home_bonusNote, Currencies.formatSats(b)), size = 12.sp, color = Lw.MutedFg)
-                        Spacer(Modifier.width(6.dp))
-                        Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
+            }
+
+            val address = me?.lightningAddress
+            when {
+                me == null -> {}
+                address != null -> Row(
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp))
+                        .clickable { nav.navigate(R0.RECEIVE) }.padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Txt(stringResource(R.string.home_address), size = 12.sp, color = Lw.MutedFg)
+                        Txt(address, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("home-address"))
+                    }
+                    Box(Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_qr_code, size = 20.dp) }
+                }
+                else -> Row(
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
+                        .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(40.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Thin, tint = Lw.NwcPurple.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
+                        LwIcon(L.drawable.lucide_ic_sparkles, size = 18.dp, tint = Lw.NwcPurple)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Txt(stringResource(R.string.home_claimAddress), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
+                    LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+                }
+            }
+            if (me != null && !hasNwc) {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
+                    Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    Txt(stringResource(if (autoCreate) R.string.home_autoCreateBody else R.string.home_noWalletBody), size = 13.sp, color = Lw.MutedFg, lineHeight = 18.sp)
+                    if (!autoCreate) {
+                        Spacer(Modifier.height(12.dp))
+                        LwButton(stringResource(R.string.home_connectWallet), { nav.navigate(R0.REMOTE_WALLETS) }, variant = BtnVariant.Secondary, height = 40.dp)
                     }
                 }
-                if (currencies.active.size >= 2) CurrencyToggle(currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) })
-                Spacer(Modifier.height(20.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LwButton(stringResource(R.string.home_receive), { nav.navigate(R0.RECEIVE) }, Modifier.weight(1f).testTag("home-receive"), BtnVariant.Secondary, enabled = canReceive, height = 52.dp, icon = L.drawable.lucide_ic_arrow_down_left)
-                    LwButton(stringResource(R.string.home_send), { nav.navigate(R0.SEND) }, Modifier.weight(1f).testTag("home-send"), BtnVariant.Theme, enabled = hasNwc, height = 52.dp, icon = L.drawable.lucide_ic_arrow_up_right)
-                }
             }
-        }
 
-        val address = me?.lightningAddress
-        when {
-            me == null -> {}
-            address != null -> Row(
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp))
-                    .clickable { nav.navigate(R0.RECEIVE) }.padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Txt(stringResource(R.string.home_address), size = 12.sp, color = Lw.MutedFg)
-                    Txt(address, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("home-address"))
-                }
-                Box(Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_qr_code, size = 20.dp) }
-            }
-            else -> Row(
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
-                    .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(40.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Thin, tint = Lw.NwcPurple.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
-                    LwIcon(L.drawable.lucide_ic_sparkles, size = 18.dp, tint = Lw.NwcPurple)
-                }
-                Spacer(Modifier.width(12.dp))
-                Txt(stringResource(R.string.home_claimAddress), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
-                LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
-            }
+            ActivityPreview(recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
         }
-        if (me != null && !hasNwc) {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
-                Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                Txt(stringResource(if (autoCreate) R.string.home_autoCreateBody else R.string.home_noWalletBody), size = 13.sp, color = Lw.MutedFg, lineHeight = 18.sp)
-                if (!autoCreate) {
-                    Spacer(Modifier.height(12.dp))
-                    LwButton(stringResource(R.string.home_connectWallet), { nav.navigate(R0.REMOTE_WALLETS) }, variant = BtnVariant.Secondary, height = 40.dp)
-                }
-            }
-        }
-
-        ActivityPreview(recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
     }
 
     if (confirmLogout) AlertDialog(
@@ -256,6 +289,31 @@ fun HomeScreen() {
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
         containerColor = Glass.Dialog,
     )
+}
+
+/** Glass orb that drops in with the pull, winds its arrow up to full length, then spins while refreshing. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BoxScope.RefreshOrb(state: PullToRefreshState, refreshing: Boolean) {
+    val spin by rememberInfiniteTransition(label = "orb").animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin")
+    val ready = refreshing || state.distanceFraction >= 1f
+    val tint by animateColorAsState(if (ready) Lw.Green else Lw.MutedFg, tween(200), label = "orbTint")
+    Box(
+        Modifier.align(Alignment.TopCenter).graphicsLayer {
+            val f = if (refreshing) 1f else state.distanceFraction.coerceIn(0f, 1.4f)
+            translationY = f * 72.dp.toPx() - 44.dp.toPx()
+            alpha = f.coerceAtMost(1f)
+            val s = 0.6f + 0.4f * f.coerceAtMost(1f) + if (f > 1f) (f - 1f) * 0.25f else 0f
+            scaleX = s; scaleY = s
+        }.size(44.dp).glass(CircleShape, GlassLevel.Strong),
+        contentAlignment = Alignment.Center,
+    ) {
+        LwIcon(
+            L.drawable.lucide_ic_refresh_cw,
+            Modifier.graphicsLayer { rotationZ = if (refreshing) spin else state.distanceFraction * 270f },
+            size = 20.dp, tint = tint,
+        )
+    }
 }
 
 /**
