@@ -22,6 +22,8 @@ import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.store.Prefs
 import io.lawallet.wallet.service.PaymentListenerService
 import io.sentry.Breadcrumb
+import io.sentry.ITransaction
+import io.sentry.TransactionOptions
 import io.sentry.Sentry
 import io.sentry.SentryEvent
 import io.sentry.SentryLevel
@@ -138,6 +140,25 @@ object Diagnostics {
         Log.e(TAG, "non-fatal", e)
         Trail.add("error", "${e.javaClass.name} at ${e.stackTrace.firstOrNull()}", error = true)
         if (sentryOn) Sentry.captureException(e)
+    }
+
+    private var navigations = 0
+
+    /**
+     * A transaction over a screen's opening (transition + first load), named by route pattern;
+     * the SDK adds its slow/frozen frames and frame delay, NWC requests add `nwc.request` spans.
+     * The measurements show whether jank grows with session age. Null with reports off.
+     */
+    fun screen(route: String): ITransaction? {
+        navigations++
+        if (!sentryOn) return null
+        return Sentry.startTransaction(route, "ui.load", TransactionOptions().apply { isBindToScope = true }).apply {
+            setMeasurement("nav_count", navigations)
+            setMeasurement("uptime_min", (SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000)
+            setMeasurement("heap_mb", (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) shr 20)
+            setMeasurement("native_mb", Debug.getNativeHeapAllocatedSize() shr 20)
+            setMeasurement("recent_txs", container.wallet.recent.value.size)
+        }
     }
 
     /** One of our own named events ("fgs.start_denied"); the name is all it carries. */

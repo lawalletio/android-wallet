@@ -43,6 +43,11 @@ the first gap to close.
     both trails.
 - **Tracing:** `tracesSampleRate = 0.2` (app start, screen loads, slow/frozen frames). `Scrubber.transaction` drops
   any span whose description would need redacting, and clears span data.
+  - **Screens:** every navigation opens a `ui.load` transaction named by route pattern (`Diagnostics.screen`) for
+    its first second, so its `frames_slow` / `frames_frozen` / `frames_delay` cover the transition and first load.
+    `nwc.request` child spans (description = method) show wallet round trips during it. Measurements `nav_count`,
+    `uptime_min`, `heap_mb`, `native_mb` and `recent_txs` tell whether jank grows with session age: in Discover, chart
+    `p75(measurements.frames_delay)` by transaction against `nav_count`.
 - **Alerts:** "lawallet-android: new crash, ANR or kill" emails active members on every new issue at warning level
   or above. "lawallet-android: issue spiking (>10/h)" covers spikes. Both are `production` only, so debug and
   emulator events stay quiet. Sentry's default "high priority issues" alert also stays on.
