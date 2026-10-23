@@ -50,6 +50,9 @@ The privacy policy URL is https://github.com/lawalletio/android-wallet/blob/main
 - **Foreground service (`specialUse`)**: "Keeps the user's Nostr Wallet Connect relay subscription open so incoming
   Lightning payments are notified in real time; there is no server push." It is user-visible: the listener can be
   turned off in Settings, and a persistent notification shows while it runs.
+- **Updates**: the Play build updates through Play only, using Play's in-app update flow from `com.google.android.play:app-update`.
+  It never downloads or installs APKs, and the AAB does not declare `REQUEST_INSTALL_PACKAGES`. Only the GitHub/Zapstore APKs
+  (built with `-PabiSplits`) carry that permission and install their own updates.
 - **Permissions**:
   - CAMERA: QR scanning only.
   - NFC: Bolt card / LNURL-withdraw tags.

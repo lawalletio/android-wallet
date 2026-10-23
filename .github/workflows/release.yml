@@ -47,6 +47,10 @@ jobs:
           # Separate runs: AGP refuses to bundle while ABI splits are on (issuetracker 402800800).
           ./gradlew testDebugUnitTest lintRelease bundleRelease "${ARGS[@]}"
           ./gradlew assembleRelease "${ARGS[@]}" -PabiSplits
+          # Release asset names the in-app updater matches (lawallet-<version>-<abi>.apk) + checksums.
+          cd app/build/outputs/apk/release
+          for f in app-*-release.apk; do abi="${f#app-}"; mv "$f" "lawallet-${VERSION_NAME}-${abi%-release.apk}.apk"; done
+          sha256sum lawallet-*.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: release
@@ -60,6 +64,7 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
             app/build/outputs/bundle/release/*.aab
           generate_release_notes: true
       - name: Upload to Google Play

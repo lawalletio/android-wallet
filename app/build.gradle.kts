@@ -35,6 +35,9 @@ val keystoreProps = Properties().apply {
 // CI passes -PversionCode=<n> -PversionName=<tag>; local builds use the defaults.
 val appVersionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
 val appVersionName = (findProperty("versionName") as String?)?.removePrefix("v") ?: "1.0.0"
+// GitHub/Zapstore APKs (-PabiSplits, or -PselfUpdate for local testing) download and install their
+// own updates. Only they get REQUEST_INSTALL_PACKAGES: Play forbids it and updates Play installs itself.
+val selfUpdate = hasProperty("abiSplits") || hasProperty("selfUpdate")
 
 android {
     namespace = "io.lawallet.wallet"
@@ -50,6 +53,9 @@ android {
         buildConfigField("String", "DEFAULT_INSTANCE", "\"https://beta.lawallet.io\"")
         // Crash reports (opt-in): CI passes -PsentryDsn. Local and F-Droid source builds have none,
         // so the reporter never starts there.
+        buildConfigField("boolean", "SELF_UPDATE", "$selfUpdate")
+        // GitHub's latest-release API; -PupdateFeed points a test build at a local copy.
+        buildConfigField("String", "UPDATE_FEED", "\"${findProperty("updateFeed") ?: "https://api.github.com/repos/lawalletio/android-wallet/releases/latest"}\"")
         buildConfigField("String", "SENTRY_DSN", "\"${findProperty("sentryDsn") ?: ""}\"")
     }
 
@@ -104,6 +110,10 @@ android {
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
         }
+    }
+    if (selfUpdate) sourceSets {
+        getByName("debug").manifest.srcFile("src/selfUpdate/AndroidManifest.xml")
+        getByName("release").manifest.srcFile("src/selfUpdate/AndroidManifest.xml")
     }
     lint {
         abortOnError = true
@@ -185,6 +195,7 @@ dependencies {
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.sentry.android.core)
+    implementation(libs.play.app.update)
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm)

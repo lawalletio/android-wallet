@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui
 
+import androidx.compose.ui.platform.testTag
+import io.lawallet.wallet.app.Updater
+import io.lawallet.wallet.ui.screens.UpdatesScreen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +113,7 @@ object R0 {
     const val SOUND = "settings/payment-sound"
     const val INSTANCE = "settings/instance"
     const val DIAGNOSTICS = "settings/diagnostics"
+    const val UPDATES = "settings/updates"
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
@@ -215,6 +219,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.SOUND) { PaymentSoundScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
+                composable(R0.UPDATES) { UpdatesScreen() }
             }
           }
             if (route == R0.HOME || route == R0.SETTINGS) {
@@ -239,6 +244,36 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     // The last run ended in a crash / ANR / kill and reports are off: ask once.
     val crashed by Diagnostics.prompt.collectAsState()
     if (crashed.isNotEmpty()) CrashReportDialog()
+    // Checked on every app open (LaWalletApp); "Later" keeps it quiet until the next launch.
+    val update by container.updater.state.collectAsState()
+    val laterTapped by container.updater.dismissed.collectAsState()
+    (update as? Updater.State.Available)?.takeIf { !laterTapped && route != R0.UPDATES }?.let { UpdateDialog(it, container, nav) }
+}
+
+@Composable
+private fun UpdateDialog(available: Updater.State.Available, container: AppContainer, nav: NavHostController) {
+    val activity = androidx.activity.compose.LocalActivity.current
+    AlertDialog(
+        onDismissRequest = { container.updater.dismissed.value = true },
+        title = { Txt(stringResource(R.string.update_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
+        text = {
+            Txt(
+                if (available.via == Updater.Via.PLAY) stringResource(R.string.update_available_play)
+                else stringResource(R.string.update_prompt_body, available.version, BuildConfig.VERSION_NAME),
+                color = Lw.MutedFg,
+            )
+        },
+        confirmButton = {
+            TextButton({
+                container.updater.dismissed.value = true
+                // The download shows its progress on the Updates screen.
+                if (available.via == Updater.Via.DOWNLOAD) nav.navigate(R0.UPDATES) { launchSingleTop = true }
+                activity?.let { container.updater.start(it, container.scope) }
+            }, Modifier.testTag("update-prompt-update")) { Txt(stringResource(R.string.update_prompt_update)) }
+        },
+        dismissButton = { TextButton({ container.updater.dismissed.value = true }) { Txt(stringResource(R.string.update_prompt_later)) } },
+        containerColor = Glass.Dialog,
+    )
 }
 
 @Composable

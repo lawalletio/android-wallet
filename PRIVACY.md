@@ -24,6 +24,10 @@ https://github.com/lawalletio/android-wallet). This policy explains what the app
   voucher, the app talks directly to that service.
 - **Exchange rates**: if you enable fiat currencies, rates are fetched from `api.yadio.io` (no account data is sent).
 - **Images**: community logos, card designs and avatars are loaded from the URLs the instance provides.
+- **Update checks**: when the app opens (at most once an hour) and when you tap Settings → Updates → Check for updates,
+  it asks for the latest version. If you installed from Google Play, it asks Google Play. Otherwise it asks GitHub
+  (`api.github.com`), and the update is downloaded from `github.com`. No account or wallet data is sent, only the
+  request itself.
 
 The app contains **no analytics or advertising SDKs**, and does not sell or share personal data. It includes an
 optional crash reporter, off unless you turn it on (below).
