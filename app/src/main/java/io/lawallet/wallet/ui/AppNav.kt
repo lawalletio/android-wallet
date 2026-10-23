@@ -117,6 +117,7 @@ object R0 {
     const val INSTANCE = "settings/instance"
     const val DIAGNOSTICS = "settings/diagnostics"
     const val UPDATES = "settings/updates"
+    const val FEEDBACK = "settings/feedback"
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
@@ -225,6 +226,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.INSTANCE) { InstanceScreen() }
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
                 composable(R0.UPDATES) { UpdatesScreen() }
+                composable(R0.FEEDBACK) { FeedbackScreen() }
             }
           }
             if (route == R0.HOME || route == R0.SETTINGS) {

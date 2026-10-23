@@ -66,9 +66,18 @@ import io.lawallet.wallet.core.api.OAuthGrant
 import io.lawallet.wallet.core.api.PasskeyCredential
 import io.lawallet.wallet.core.api.WalletCard
 import io.lawallet.wallet.core.fx.Currencies
+import io.lawallet.wallet.core.nostr.Bech32
+import io.lawallet.wallet.core.nostr.Keys
+import io.lawallet.wallet.core.nostr.Nip04
 import io.lawallet.wallet.core.nostr.Nip19
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
+import io.lawallet.wallet.core.nostr.NostrEvent
+import io.lawallet.wallet.core.nostr.toHex
+import io.lawallet.wallet.core.nwc.Relay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import io.lawallet.wallet.service.PaymentSound
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -146,6 +155,11 @@ fun SettingsScreen() {
                 GroupDivider()
                 SettingsRow(stringResource(R.string.settings_reportBug), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/issues"))) }, icon = L.drawable.lucide_ic_circle_alert, external = true)
                 GroupDivider()
+                // NIP-04 needs the raw key: Amber logins don't get the row.
+                if (c.session.secretHex() != null) {
+                    SettingsRow(stringResource(R.string.feedback_title), { nav.navigate(R0.FEEDBACK) }, Modifier.testTag("settings-feedback"), icon = L.drawable.lucide_ic_message_square)
+                    GroupDivider()
+                }
                 SettingsRow(stringResource(R.string.diag_title), { nav.navigate(R0.DIAGNOSTICS) }, Modifier.testTag("settings-diagnostics"), icon = L.drawable.lucide_ic_activity)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.update_title), { nav.navigate(R0.UPDATES) }, Modifier.testTag("settings-updates"), icon = L.drawable.lucide_ic_download, value = "v${BuildConfig.VERSION_NAME}")
@@ -570,6 +584,55 @@ fun InstanceScreen() {
             if (c.session.instanceUrl != BuildConfig.DEFAULT_INSTANCE) LwButton(stringResource(R.string.instance_reset, BuildConfig.DEFAULT_INSTANCE.removePrefix("https://")), { url = BuildConfig.DEFAULT_INSTANCE; switch(BuildConfig.DEFAULT_INSTANCE) }, Modifier.fillMaxWidth(), BtnVariant.Ghost)
         }
         LwButton(stringResource(R.string.instance_save), { switch(url) }, Modifier.fillMaxWidth().padding(16.dp).testTag("instance-save"), BtnVariant.Theme, enabled = url.isNotBlank(), loading = loading)
+    }
+}
+
+private const val FEEDBACK_NPUB = "npub1ek4262k6nv3l9axh403w2e66pzl2pqhhnjrhgv2wpzx2akak285scxv4pd"
+private val FEEDBACK_RELAYS = listOf("wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net")
+
+/** NIP-04 DM (kind 4) to the team, signed with the user's key. Succeeds if any relay accepts it. */
+private suspend fun sendFeedback(c: io.lawallet.wallet.app.AppContainer, message: String) {
+    val keys = Keys.fromHex(c.session.secretHex() ?: error("no local key"))
+    val to = Bech32.decodeBytes(FEEDBACK_NPUB).second.toHex()
+    val event = NostrEvent.sign(keys, 4, Nip04.encrypt(message, keys, to), listOf(listOf("p", to)))
+    coroutineScope {
+        val relays = FEEDBACK_RELAYS.map { Relay(it, c.http, this) }
+        try {
+            val results = relays.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
+            if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
+        } finally {
+            relays.forEach { it.close() }
+        }
+    }
+}
+
+@Composable
+fun FeedbackScreen() {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val sent = stringResource(R.string.feedback_sent)
+    val failed = stringResource(R.string.feedback_failed)
+    Column(Modifier.fillMaxSize().imePadding()) {
+        SettingsHeader(stringResource(R.string.feedback_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            MutedText(stringResource(R.string.feedback_description))
+            OutlinedTextField(text, { text = it; error = null }, Modifier.fillMaxWidth().weight(1f).testTag("feedback-input"), placeholder = { Txt(stringResource(R.string.feedback_placeholder), color = Lw.MutedFg) }, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
+            ErrorText(error, Modifier.fillMaxWidth())
+        }
+        LwButton(stringResource(R.string.feedback_send), {
+            loading = true; error = null
+            scope.launch {
+                runCatching { sendFeedback(c, text.trim()) }
+                    .onSuccess { context.toast(sent); nav.popBackStack() }
+                    .onFailure { error = failed }
+                loading = false
+            }
+        }, Modifier.fillMaxWidth().padding(16.dp).testTag("feedback-send"), BtnVariant.Theme, enabled = text.isNotBlank(), loading = loading)
     }
 }
 

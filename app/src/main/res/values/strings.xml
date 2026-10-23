@@ -109,4 +109,10 @@
         <item quantity="one">1 voucher</item>
         <item quantity="other">%d vouchers</item>
     </plurals>
+    <string name="feedback_title">Send feedback</string>
+    <string name="feedback_description">Tell us what works, what doesn\'t, or what you\'d like to see. It\'s sent as an encrypted Nostr direct message from your account.</string>
+    <string name="feedback_placeholder">Write your feedback…</string>
+    <string name="feedback_send">Send</string>
+    <string name="feedback_sent">Thanks for your feedback!</string>
+    <string name="feedback_failed">Couldn\'t send your feedback. Check your connection and try again.</string>
 </resources>
