@@ -110,4 +110,10 @@
         <item quantity="many">%d cupones</item>
         <item quantity="other">%d cupones</item>
     </plurals>
+    <string name="feedback_title">Enviar comentarios</string>
+    <string name="feedback_description">Contanos qué funciona, qué no, o qué te gustaría ver. Se envía como un mensaje directo de Nostr cifrado desde tu cuenta.</string>
+    <string name="feedback_placeholder">Escribí tus comentarios…</string>
+    <string name="feedback_send">Enviar</string>
+    <string name="feedback_sent">¡Gracias por tus comentarios!</string>
+    <string name="feedback_failed">No se pudieron enviar tus comentarios. Revisá tu conexión e intentá de nuevo.</string>
 </resources>
