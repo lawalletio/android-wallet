@@ -1,5 +1,10 @@
 package io.lawallet.wallet.ui.components
 
+import io.lawallet.wallet.ui.LocalContainer
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -201,14 +206,27 @@ fun relativeTime(ms: Long): String {
 /** transaction-row.tsx */
 @Composable
 fun TransactionRow(tx: Tx, onClick: () -> Unit) {
+    val c = LocalContainer.current
     val color = if (tx.incoming) Lw.Green else Lw.Orange
+    val icon = if (tx.incoming) L.drawable.lucide_ic_arrow_down_left else L.drawable.lucide_ic_arrow_up_right
+    // Lightning Address sends are remembered at pay time; everything else only has the invoice description.
+    val destinations by c.prefs.paymentDestinations.collectAsState()
+    val dest = if (tx.incoming) null else destinations[tx.paymentHash]
+    val (label, describedComment) = splitPaymentDescription(tx.description)
+    val comment = if (dest != null) dest.comment else describedComment
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("tx-row"), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            LwIcon(if (tx.incoming) L.drawable.lucide_ic_arrow_down_left else L.drawable.lucide_ic_arrow_up_right, size = 20.dp, tint = color)
+        if (dest != null) Box {
+            AsyncImage(c.avatars.of(dest.address), null, Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong).clip(CircleShape), contentScale = ContentScale.Crop)
+            Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+                LwIcon(icon, size = 10.dp, tint = Lw.Background)
+            }
+        } else Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+            LwIcon(icon, size = 20.dp, tint = color)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Txt(tx.description ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+            Txt(dest?.name ?: dest?.address ?: label.ifEmpty { null } ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+            if (comment != null) Txt("“$comment”", size = 12.sp, color = Lw.Foreground.copy(alpha = 0.8f), maxLines = 1)
             Txt(if (tx.state == "pending") stringResource(R.string.shared_receipt_pending) else if (tx.state == "failed") stringResource(R.string.shared_receipt_failed) else relativeTime(tx.settledAt ?: tx.createdAt), size = 12.sp, color = Lw.MutedFg)
         }
         Row(verticalAlignment = Alignment.Bottom) {
@@ -302,6 +320,8 @@ fun PaymentReceiptCard(
     onCurrency: (String) -> Unit,
     rows: List<Pair<String, String>>,
     proofs: List<Pair<String, String?>>,
+    /** Replaces a row's plain value, keyed by its label — e.g. a tappable recipient. */
+    valueNodes: Map<String, @Composable () -> Unit> = emptyMap(),
 ) {
     val brand = LocalBrand.current
     val context = LocalContext.current
@@ -311,9 +331,11 @@ fun PaymentReceiptCard(
             Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))
                 .drawBehind { drawRect(Brush.horizontalGradient(listOf(Color.Transparent, brand.t400, Color.Transparent)), size = size.copy(height = 1.5.dp.toPx())) },
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 32.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatusMark(status)
-                Txt(title, size = 24.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
+            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatusMark(status)
+                    Txt(title, size = 20.sp, weight = FontWeight.SemiBold)
+                }
                 Row(verticalAlignment = Alignment.Bottom) {
                     Txt(Currencies.format(amountSats, currency, rates), size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("receipt-amount"))
                     Spacer(Modifier.width(8.dp))
@@ -327,7 +349,9 @@ fun PaymentReceiptCard(
                     rows.forEach { (k, v) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Txt(k, size = 14.sp, color = Lw.MutedFg)
-                            Txt(v, Modifier.weight(1f), size = 14.sp, align = TextAlign.End, maxLines = 3)
+                            val node = valueNodes[k]
+                            if (node != null) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { node() }
+                            else Txt(v, Modifier.weight(1f), size = 14.sp, align = TextAlign.End, maxLines = 3)
                         }
                     }
                 }
@@ -371,7 +395,7 @@ private fun StatusMark(status: String) {
         "failed" -> Triple(Lw.Destructive.copy(alpha = 0.15f), L.drawable.lucide_ic_x, Lw.Red)
         else -> Triple(brand.t400.copy(alpha = 0.15f), L.drawable.lucide_ic_check, brand.t400)
     }
-    Box(Modifier.size(80.dp).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = 38.dp, tint = tint) }
+    Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = 20.dp, tint = tint) }
 }
 
 /** Receipt footer: Share | View activity, then Done. */

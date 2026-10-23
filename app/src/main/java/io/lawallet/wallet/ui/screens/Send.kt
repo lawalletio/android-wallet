@@ -53,6 +53,7 @@ import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.core.ln.DestinationException
 import io.lawallet.wallet.core.ln.DestinationParser
 import io.lawallet.wallet.core.store.Contact
+import io.lawallet.wallet.core.store.PaymentDestination
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
@@ -83,8 +84,6 @@ import java.util.Date
 import com.composables.icons.lucide.R as L
 
 private val SUGGESTED_DOMAINS = listOf("lacrypta.ar", "lawallet.io", "walletofsatoshi.com", "blink.sv", "strike.me", "getalby.com", "ln.tips", "stacker.news", "primal.net", "fountain.fm", "coinos.io", "bitrefill.me", "zbd.gg", "npub.cash")
-
-private fun domainAvatar(domain: String) = "https://raw.githubusercontent.com/lawalletio/static/main/public/img/domains/${if (domain == "lawallet.io") "lawallet.ar" else domain}.png"
 
 /** Resolves a parsed destination into the send flow; returns the next route. */
 suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination): String {
@@ -144,8 +143,8 @@ fun SendRecipientScreen() {
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
-            if (suggestions.isNotEmpty()) AddressGroup(stringResource(R.string.shared_addressInput_suggestions), suggestions.map { "$user@$it" to domainAvatar(it) }) { input = it; submit(it) }
-            if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to (it.picture ?: domainAvatar(it.address.substringAfter('@'))) }) { input = it; submit(it) }
+            if (suggestions.isNotEmpty()) AddressGroup(stringResource(R.string.shared_addressInput_suggestions), suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }) { input = it; submit(it) }
+            if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { input = it; submit(it) }
         }
         LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
     }
@@ -254,7 +253,10 @@ fun SendPreviewScreen() {
                 val hash = runCatching { Bolt11.decode(invoice).paymentHash }.getOrNull()
                 c.flow.send = s.copy(result = FlowStore.SendResult(amount, (res.feesPaid ?: 0) / 1000, res.preimage.ifEmpty { null }, hash, s.recipientLabel ?: "", sentComment, System.currentTimeMillis()))
                 (s.destination as? Destination.LnurlPay)?.address?.let { addr ->
-                    c.prefs.contacts = listOf(Contact(addr, null, s.meta?.imageDataUri?.takeIf { it.length < 4000 }, System.currentTimeMillis())) + c.prefs.contacts.filter { it.address != addr }
+                    val now = System.currentTimeMillis()
+                    if (hash != null) c.prefs.rememberDestination(hash, PaymentDestination(addr, s.meta?.identifier?.takeIf { it != addr }, sentComment, now))
+                    c.prefs.contacts = listOf(Contact(addr, null, null, now)) + c.prefs.contacts.filter { it.address != addr }
+                    runCatching { c.avatars.save(addr, s.meta?.imageDataUri) }
                 }
             }.onSuccess {
                 done = true

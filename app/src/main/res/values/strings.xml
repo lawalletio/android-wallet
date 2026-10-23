@@ -17,6 +17,7 @@
     <string name="diag_title">Diagnostics</string>
     <string name="diag_crash_reports">Send crash reports</string>
     <string name="diag_crash_reports_body">Anonymous crash and app-exit reports, sent to Sentry. They never include keys, invoices, amounts or addresses.</string>
+    <string name="diag_crash_reports_beta">Always on during the beta. Anonymous crash and app-exit reports, sent to Sentry. They never include keys, invoices, amounts or addresses.</string>
     <string name="diag_exits">Recent app exits</string>
     <string name="diag_exits_empty">No app exits recorded yet.</string>
     <string name="diag_exits_unsupported">The exit history needs Android 11 or newer.</string>

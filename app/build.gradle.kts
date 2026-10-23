@@ -56,6 +56,8 @@ android {
         buildConfigField("boolean", "SELF_UPDATE", "$selfUpdate")
         // GitHub's latest-release API; -PupdateFeed points a test build at a local copy.
         buildConfigField("String", "UPDATE_FEED", "\"${findProperty("updateFeed") ?: "https://api.github.com/repos/lawalletio/android-wallet/releases/latest"}\"")
+        // Beta: crash reports are always on (no opt-out). Flip to false at the stable release.
+        buildConfigField("boolean", "BETA", "true")
         buildConfigField("String", "SENTRY_DSN", "\"${findProperty("sentryDsn") ?: ""}\"")
     }
 

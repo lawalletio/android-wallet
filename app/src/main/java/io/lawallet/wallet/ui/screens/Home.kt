@@ -305,24 +305,17 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
 
 @Composable
 fun ActivityPreview(recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit, onAll: () -> Unit) {
-    var tab by remember { mutableStateOf("activity") }
-    val items = (if (tab == "transfers") recent.filter { !it.incoming } else recent).take(5)
+    val items = recent.take(5)
     Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
-                listOf("activity" to R.string.home_tabActivity, "transfers" to R.string.home_tabTransfers).forEach { (k, label) ->
-                    Box(Modifier.clip(CircleShape).then(if (tab == k) Modifier.glass(CircleShape, GlassLevel.Strong) else Modifier).clickable { tab = k }.padding(horizontal = 14.dp, vertical = 7.dp)) {
-                        Txt(stringResource(label), size = 13.sp, weight = FontWeight.SemiBold, color = if (tab == k) Lw.Foreground else Lw.MutedFg)
-                    }
-                }
-            }
+            Txt(stringResource(R.string.home_activityTitle), size = 14.sp, weight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
             Txt(stringResource(R.string.home_viewAll), Modifier.clip(CircleShape).clickable(onClick = onAll).padding(horizontal = 10.dp, vertical = 8.dp).testTag("view-all"), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         }
         Spacer(Modifier.height(12.dp))
         val empty = when {
-            !hasNwc -> stringResource(if (tab == "activity") R.string.home_list_activity_connect else R.string.home_list_transfers_connect)
-            items.isEmpty() -> stringResource(if (tab == "activity") R.string.home_list_activity_empty else R.string.home_list_transfers_empty)
+            !hasNwc -> stringResource(R.string.home_list_activity_connect)
+            items.isEmpty() -> stringResource(R.string.home_list_activity_empty)
             else -> null
         }
         if (empty != null) Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
