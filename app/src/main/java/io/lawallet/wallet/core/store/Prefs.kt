@@ -13,6 +13,8 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 @Serializable data class CurrencyState(val active: List<String> = Currencies.DEFAULT_ACTIVE, val selected: String = Currencies.DEFAULT_SELECTED, val localEdit: Boolean = false)
+/** What we knew about a Lightning Address send at pay time (payment-destinations.ts) — NWC only returns the invoice description. */
+@Serializable data class PaymentDestination(val address: String, val name: String? = null, val comment: String? = null, val savedAt: Long = 0)
 @Serializable data class Contact(val address: String, val name: String? = null, val picture: String? = null, val savedAt: Long = 0)
 
 /** Small typed wrapper over SharedPreferences — the Android twin of the web wallet's localStorage keys. */
@@ -100,6 +102,17 @@ class Prefs(context: Context) {
         get() = sp.getString("contacts", null)?.let { runCatching { json.decodeFromString(ListSerializer(Contact.serializer()), it) }.getOrNull() } ?: emptyList()
         set(v) = sp.edit { putString("contacts", json.encodeToString(ListSerializer(Contact.serializer()), v.take(12))) }
 
+    private val _destinations = MutableStateFlow(
+        sp.getString("payment-destinations", null)?.let { runCatching { json.decodeFromString(DESTINATIONS, it) }.getOrNull() } ?: emptyMap(),
+    )
+    /** By payment hash, newest 500. */
+    val paymentDestinations: StateFlow<Map<String, PaymentDestination>> = _destinations
+    fun rememberDestination(paymentHash: String, d: PaymentDestination) {
+        val next = (_destinations.value + (paymentHash to d)).entries.sortedByDescending { it.value.savedAt }.take(500).associate { it.toPair() }
+        _destinations.value = next
+        sp.edit { putString("payment-destinations", json.encodeToString(DESTINATIONS, next)) }
+    }
+
     fun cachedBalance(nwcKey: String): Long? = sp.getLong("balance:$nwcKey", -1).takeIf { it >= 0 }
     fun setCachedBalance(nwcKey: String, sats: Long) = sp.edit { putLong("balance:$nwcKey", sats) }
 
@@ -129,15 +142,18 @@ class Prefs(context: Context) {
     fun clearSession() {
         val keep = setOf("instance", "payment-sound", "currencies", "bg-listener") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
+        _destinations.value = emptyMap()
     }
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
         val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
+        _destinations.value = emptyMap()
     }
 
     private companion object {
+        val DESTINATIONS = MapSerializer(String.serializer(), PaymentDestination.serializer())
         val DIAGNOSTICS_KEYS = setOf("crash-reports", "crash-prompt-declined", "last-exit-ts", "exit-log", "last-anr-trace")
     }
 }

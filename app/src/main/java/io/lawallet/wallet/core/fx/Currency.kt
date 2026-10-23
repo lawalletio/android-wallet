@@ -21,7 +21,7 @@ typealias Rates = Map<String, Double>
 object Currencies {
     /** currencies-store.ts catalog. SAT is locked first. */
     val CATALOG = listOf("SAT", "BTC", "ARS", "BRL", "CLP", "COP", "EUR", "GBP", "JPY", "MXN", "PEN", "USD", "UYU", "VES")
-    val DEFAULT_ACTIVE = listOf("SAT", "BTC")
+    val DEFAULT_ACTIVE = listOf("SAT", "USD", "ARS")
     const val DEFAULT_SELECTED = "SAT"
 
     fun unitLabel(code: String) = if (code == "SAT") "sats" else code

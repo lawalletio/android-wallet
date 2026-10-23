@@ -47,3 +47,15 @@ object DestinationParser {
         url.takeIf { Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(it) }
     }.getOrNull()
 }
+
+private val LUD16_COMMENT = Regex("^(Payment to @[^:\\s]+): ([\\s\\S]+)$")
+
+/**
+ * Our LUD-16 callback describes invoices as `Payment to @user: <comment>`; splits that into the
+ * label and the payer's comment. Any other description comes back whole with no comment.
+ */
+fun splitPaymentDescription(description: String?): Pair<String, String?> {
+    val trimmed = description?.trim().orEmpty()
+    val m = LUD16_COMMENT.matchEntire(trimmed) ?: return trimmed to null
+    return m.groupValues[1] to m.groupValues[2].trim().ifEmpty { null }
+}

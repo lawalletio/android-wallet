@@ -161,17 +161,12 @@
     <string name="home_noWalletTitle">No hay billetera conectada</string>
     <string name="home_noWalletBody">Conecta una URI de Nostr Wallet Connect para empezar a enviar y recibir.</string>
     <string name="home_connectWallet">Conectar una billetera</string>
-    <string name="home_tabActivity">Actividad</string>
-    <string name="home_tabTransfers">Transferencias</string>
+    <string name="home_activityTitle">Actividad</string>
     <string name="home_viewAll">Ver todo</string>
     <string name="home_list_activity_connect">Conecta una billetera para ver tu actividad.</string>
     <string name="home_list_activity_loading">Cargando actividad…</string>
     <string name="home_list_activity_error">No se pudo cargar la actividad.</string>
     <string name="home_list_activity_empty">Todavía no hay actividad.</string>
-    <string name="home_list_transfers_connect">Conecta una billetera para ver tus transferencias.</string>
-    <string name="home_list_transfers_loading">Cargando transferencias…</string>
-    <string name="home_list_transfers_error">No se pudieron cargar las transferencias.</string>
-    <string name="home_list_transfers_empty">Todavía no hay transferencias.</string>
     <string name="home_install_nativeTitle">Instala la billetera</string>
     <string name="home_install_nativeBody">Agrégala a tu pantalla de inicio para acceder rápido.</string>
     <string name="home_install_iosTitle">Agrégala a tu pantalla de inicio</string>
@@ -191,6 +186,7 @@
     <string name="activity_loadMore">Cargar más</string>
     <string name="activity_today">Hoy</string>
     <string name="activity_yesterday">Ayer</string>
+    <string name="activity_detail_sendAgain">Enviar de nuevo a %1$s</string>
     <string name="activity_detail_loading">Cargando transacción…</string>
     <string name="activity_detail_notFound">Transacción no encontrada.</string>
     <string name="activity_detail_backToActivity">Volver a la actividad</string>
