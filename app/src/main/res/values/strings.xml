@@ -43,6 +43,7 @@
     <string name="update_prompt_title">Update available</string>
     <string name="update_prompt_body">LaWallet %1$s is available. You have %2$s.</string>
     <string name="update_prompt_later">Later</string>
+    <string name="offline_mode">Offline mode</string>
     <string name="update_prompt_update">Update</string>
     <string name="login_amber">Continue with Amber</string>
     <string name="login_amber_missing">Install a NIP-55 signer such as Amber to use this option.</string>

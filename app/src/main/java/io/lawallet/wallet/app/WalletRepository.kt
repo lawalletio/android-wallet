@@ -7,6 +7,7 @@ import io.lawallet.wallet.core.nwc.NwcTransaction
 import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.core.store.Prefs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -112,7 +114,11 @@ class WalletRepository(
             val wallet = api.remoteWallets().filter { it.status == "ACTIVE" && it.type == "NWC" }
                 .sortedByDescending { it.isDefault }.firstOrNull() ?: return null
             api.remoteWalletConnectionString(wallet.id)
-        }.getOrNull()
+        }.fold(
+            { nwc -> nwc.also { withContext(Dispatchers.IO) { prefs.setSecretCached("nwc", it) } } },
+            // Offline: keep using the last connection we resolved.
+            { withContext(Dispatchers.IO) { prefs.secretCached("nwc") } },
+        )
     }
 
     /** Idempotent: callers that just refreshed `me` use it to get the client without waiting for the collector. */

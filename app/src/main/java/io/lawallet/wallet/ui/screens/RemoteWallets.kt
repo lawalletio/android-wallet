@@ -53,6 +53,7 @@ import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.nwc.NwcClient
 import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.ui.LocalContainer
+import kotlinx.serialization.builtins.ListSerializer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.BtnVariant
@@ -83,14 +84,15 @@ fun RemoteWalletsScreen() {
     val nav = LocalNav.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var wallets by remember { mutableStateOf<List<RemoteWallet>?>(null) }
+    val walletsSer = ListSerializer(RemoteWallet.serializer())
+    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", walletsSer)) }
     var failed by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     val nowPrimary = stringResource(R.string.remoteWallets_list_nowPrimary)
     val enabledFmt = stringResource(R.string.remoteWallets_list_enabledToast)
     val disabledFmt = stringResource(R.string.remoteWallets_list_disabledToast)
     val updateFailed = stringResource(R.string.remoteWallets_list_updateFailed)
-    suspend fun load() { runCatching { c.session.api.value.remoteWallets() }.onSuccess { wallets = it; failed = false }.onFailure { failed = true } }
+    suspend fun load() { runCatching { c.session.api.value.remoteWallets() }.onSuccess { wallets = it; failed = false; c.prefs.setCached("remote-wallets", walletsSer, it) }.onFailure { failed = true } }
     suspend fun changed() { load(); runCatching { c.session.refreshMe() } }
     LaunchedEffect(Unit) { load() }
     Column(Modifier.fillMaxSize()) {

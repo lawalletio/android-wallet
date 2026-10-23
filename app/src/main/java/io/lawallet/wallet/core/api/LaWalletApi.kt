@@ -46,6 +46,8 @@ class LaWalletApi(
     private val tokenStore: TokenStore,
     /** Origin the server accepts in the NIP-98 `u` tag (its configured `endpoint`); defaults to [baseUrl]. */
     private val authOrigin: () -> String? = { null },
+    /** Called with false when the server can't be reached, true on any HTTP response. */
+    private val onReachable: (Boolean) -> Unit = {},
 ) {
     interface TokenStore {
         fun load(): String?
@@ -224,8 +226,10 @@ class LaWalletApi(
         val path = request.url.pathSegments.joinToString("/", "/") { if (it in PATH_WORDS) it else ":id" }
         val call = try { http.newCall(request).execute() } catch (e: IOException) {
             Trail.add("api", "${request.method} $path failed ${e.javaClass.simpleName}", error = true)
+            onReachable(false)
             throw e
         }
+        onReachable(true)
         call.use { res ->
             val text = res.body.string()
             if (!res.isSuccessful) {

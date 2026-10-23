@@ -14,6 +14,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -28,6 +31,10 @@ class Session(
     private val scope: CoroutineScope,
     private val amber: AmberSigner.Factory,
 ) {
+    /** The instance API is unreachable: screens are showing cached data. */
+    private val _offline = MutableStateFlow(false)
+    val offline: StateFlow<Boolean> = _offline
+
     private val _signer = MutableStateFlow<Signer?>(null)
     val signer: StateFlow<Signer?> = _signer
 
@@ -56,11 +63,21 @@ class Session(
 
     init {
         scope.launch { refreshSettings() }
+        // Offline: poll until the server answers, then refetch `me` (which refreshes the wallet).
+        scope.launch {
+            _offline.drop(1).collectLatest { off ->
+                if (off) while (true) { delay(15_000); refreshSettings() }
+                else if (_signer.value != null) runCatching { refreshMe() }
+            }
+        }
         if (prefs.loginMethod != null) scope.launch {
             // Keystore unwrap is IPC — keep it off the main thread during cold start.
-            val signer = withContext(Dispatchers.IO) { loadSigner() }
+            val (signer, cachedMe) = withContext(Dispatchers.IO) {
+                loadSigner() to prefs.secretCached("me")?.let { runCatching { LaWalletApi.json.decodeFromString(CurrentUser.serializer(), it) }.getOrNull() }
+            }
             if (signer == null) { _auth.value = AuthState.LoggedOut; return@launch }
             _signer.value = signer
+            _me.value = cachedMe
             // Optimistic restore: show the wallet now (cached balance/activity), validate in the
             // background. Only an explicit 401/403 ends the session.
             _auth.value = AuthState.LoggedIn
@@ -77,7 +94,7 @@ class Session(
     private fun buildApi(url: String) = LaWalletApi(url, http, { _signer.value }, object : LaWalletApi.TokenStore {
         override fun load() = prefs.jwt
         override fun save(token: String?) { prefs.jwt = token }
-    }, { _settings.value?.endpoint?.takeIf { it.isNotBlank() } })
+    }, { _settings.value?.endpoint?.takeIf { it.isNotBlank() } }, { _offline.value = !it })
 
     suspend fun refreshSettings(): InstanceSettings? = runCatching { _api.value.settings() }.getOrNull()?.also {
         _settings.value = it
@@ -85,7 +102,11 @@ class Session(
     }
 
     /** Re-reads /api/users/me — also creates the account + courtesy wallet on first call. */
-    suspend fun refreshMe(): CurrentUser = _api.value.me().also { _me.value = it }
+    suspend fun refreshMe(): CurrentUser = _api.value.me().also {
+        _me.value = it
+        // Holds the NWC string: Keystore-wrapped.
+        withContext(Dispatchers.IO) { prefs.setSecretCached("me", LaWalletApi.json.encodeToString(CurrentUser.serializer(), it)) }
+    }
 
     /**
      * nsec / passkey login. Mints the JWT and materializes the account before returning — unless

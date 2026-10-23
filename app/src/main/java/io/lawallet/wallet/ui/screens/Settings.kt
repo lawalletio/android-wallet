@@ -67,6 +67,8 @@ import io.lawallet.wallet.core.api.PasskeyCredential
 import io.lawallet.wallet.core.api.WalletCard
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.nostr.Nip19
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import io.lawallet.wallet.service.PaymentSound
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -172,14 +174,15 @@ fun CardsScreen() {
     val c = LocalContainer.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var cards by remember { mutableStateOf<List<WalletCard>?>(null) }
+    val cardsSer = ListSerializer(WalletCard.serializer())
+    var cards by remember { mutableStateOf(c.prefs.cached("cards", cardsSer)) }
     var failed by remember { mutableStateOf(false) }
     val fallback = stringResource(R.string.settings_cardsScreen_fallbackName)
     val updateFailed = stringResource(R.string.settings_cardsScreen_updateFailed)
     val enabledFmt = stringResource(R.string.settings_cardsScreen_enabledToast)
     val disabledFmt = stringResource(R.string.settings_cardsScreen_disabledToast)
     val linkedFmt = stringResource(R.string.settings_cardsScreen_linkedToast)
-    suspend fun load() { runCatching { c.session.api.value.cards() }.onSuccess { cards = it; failed = false }.onFailure { failed = true } }
+    suspend fun load() { runCatching { c.session.api.value.cards() }.onSuccess { cards = it; failed = false; c.prefs.setCached("cards", cardsSer, it) }.onFailure { failed = true } }
     LaunchedEffect(Unit) { load() }
     SettingsPage(stringResource(R.string.settings_myCards)) {
         val list = cards
@@ -241,10 +244,12 @@ fun SecurityScreen() {
     val activity = androidx.activity.compose.LocalActivity.current as FragmentActivity
     val scope = rememberCoroutineScope()
     val signer by c.session.signer.collectAsState()
-    var role by remember { mutableStateOf<String?>(null) }
+    var role by remember { mutableStateOf(c.prefs.cached("role", String.serializer())) }
     var revealed by remember { mutableStateOf<String?>(null) }
-    var passkeys by remember { mutableStateOf<List<PasskeyCredential>?>(null) }
-    var grants by remember { mutableStateOf<List<OAuthGrant>?>(null) }
+    val passkeysSer = ListSerializer(PasskeyCredential.serializer())
+    val grantsSer = ListSerializer(OAuthGrant.serializer())
+    var passkeys by remember { mutableStateOf(c.prefs.cached("passkeys", passkeysSer)) }
+    var grants by remember { mutableStateOf(c.prefs.cached("grants", grantsSer)) }
     var busy by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<PasskeyCredential?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -265,9 +270,10 @@ fun SecurityScreen() {
     val recoveryOff = stringResource(R.string.settings_securityScreen_cardRecovery_disabled)
     val recoveryFailed = stringResource(R.string.settings_securityScreen_cardRecovery_failed)
     LaunchedEffect(Unit) {
-        role = runCatching { c.session.api.value.jwtInfo().role }.getOrNull()
-        passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull()
-        grants = runCatching { c.session.api.value.oauthGrants() }.getOrNull()
+        // Keep the cached values when offline.
+        runCatching { c.session.api.value.jwtInfo().role }.onSuccess { role = it; if (it != null) c.prefs.setCached("role", String.serializer(), it) }
+        runCatching { c.session.api.value.passkeys() }.onSuccess { passkeys = it; c.prefs.setCached("passkeys", passkeysSer, it) }
+        runCatching { c.session.api.value.oauthGrants() }.onSuccess { grants = it; c.prefs.setCached("grants", grantsSer, it) }
     }
     SettingsPage(stringResource(R.string.settings_security)) {
         val npub = signer?.pubkey?.let { Nip19.npub(it) }
