@@ -10,6 +10,9 @@ import io.lawallet.wallet.core.nostr.LocalSigner
 import io.lawallet.wallet.core.nostr.Signer
 import io.lawallet.wallet.core.store.Prefs
 import io.lawallet.wallet.core.store.SecretStore
+import io.lawallet.wallet.core.diag.Trail
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,8 +70,16 @@ class Session(
         // Offline: poll until the server answers, then refetch `me` (which refreshes the wallet).
         scope.launch {
             _offline.drop(1).collectLatest { off ->
-                if (off) while (true) { delay(15_000); refreshSettings() }
-                else if (_signer.value != null) runCatching { refreshMe() }
+                if (off) {
+                    var foregroundPolls = 0
+                    while (true) {
+                        delay(15_000)
+                        refreshSettings()
+                        // A minute offline on screen: report it now, with the trail of failing calls as
+                        // breadcrumbs — an exit event would only bring them once the process dies.
+                        if (inForeground() && ++foregroundPolls == 4) Diagnostics.event("api.offline")
+                    }
+                } else if (_signer.value != null) runCatching { refreshMe() }
             }
         }
         if (prefs.loginMethod != null) scope.launch {
@@ -92,10 +103,26 @@ class Session(
         else -> prefs.signerSecretBlob?.let { runCatching { LocalSigner(Keys.fromHex(SecretStore.decrypt(it))) }.getOrNull() }
     }
 
-    private fun buildApi(url: String) = LaWalletApi(url, http, { _signer.value }, object : LaWalletApi.TokenStore {
+    /** [probe]: a candidate instance being validated, whose reachability says nothing about ours. */
+    private fun buildApi(url: String, probe: Boolean = false) = LaWalletApi(url, http, { _signer.value }, object : LaWalletApi.TokenStore {
         override fun load() = prefs.jwt
         override fun save(token: String?) { prefs.jwt = token }
-    }, { _settings.value?.endpoint?.takeIf { it.isNotBlank() } }, { _offline.value = !it })
+    }, { _settings.value?.endpoint?.takeIf { it.isNotBlank() } }, { reachable ->
+        if (!probe) {
+            if (reachable && _offline.value) Trail.add("api", "reachable again")
+            _offline.value = !reachable
+        }
+    })
+
+    /**
+     * The app came to the foreground. A process started in the background (the update's install
+     * broadcast, boot) has its network blocked, so it starts offline; retry now, not at the next poll.
+     */
+    fun retryIfOffline() {
+        if (_offline.value) scope.launch { refreshSettings() }
+    }
+
+    private fun inForeground() = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
     suspend fun refreshSettings(): InstanceSettings? = runCatching { _api.value.settings() }.getOrNull()?.also {
         _settings.value = it
@@ -158,7 +185,7 @@ class Session(
      */
     suspend fun switchInstance(rawUrl: String): String {
         val candidate = normalizeUrl(rawUrl) ?: throw IllegalArgumentException("Enter a valid URL")
-        val probe = buildApi(candidate)
+        val probe = buildApi(candidate, probe = true)
         val settings = probe.settings()
         probe.version()
         val url = candidate
