@@ -1,0 +1,4 @@
+# Zapstore listing, published with scripts/publish-zapstore.sh. zsp takes the arm64-v8a APK from the
+# latest GitHub release, and the name, descriptions and screenshots from fastlane/metadata.
+repository: https://github.com/lawalletio/android-wallet
+tags: [bitcoin, lightning, wallet, nostr]

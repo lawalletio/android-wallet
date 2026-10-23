@@ -63,3 +63,14 @@ The privacy policy URL is https://github.com/lawalletio/android-wallet/blob/main
   cryptocurrency-wallet declaration for their countries.
 - **Content rating**: no user-generated content and no gambling. Payments go between users.
 - **Ads**: none.
+
+## Zapstore
+Zapstore gets the arm64-v8a APK from each GitHub release, along with the listing from `fastlane/metadata`
+(`zapstore.yaml`). Publishing is signed with your Nostr key through a NIP-07 browser extension, so it runs on your
+machine, not in CI:
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+scripts/publish-zapstore.sh   # waits for the Release workflow, then opens the signing page
+```
+It needs `zsp` (`go install github.com/zapstore/zsp@latest`) and `gh`. The first publish asks you to link the upload
+key to your npub (`zsp identity --link-key`), so Zapstore can show that the APK's signer is the publisher.
