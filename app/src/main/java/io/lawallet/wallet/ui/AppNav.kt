@@ -263,17 +263,17 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     // The last run ended in a crash / ANR / kill and reports are off: ask once.
     val crashed by Diagnostics.prompt.collectAsState()
     if (crashed.isNotEmpty()) CrashReportDialog()
-    // Checked on every app open (LaWalletApp); "Later" keeps it quiet until the next launch.
+    // Checked on every app open (LaWalletApp); "Later" keeps that version quiet, a newer one prompts again.
     val update by container.updater.state.collectAsState()
     val laterTapped by container.updater.dismissed.collectAsState()
-    (update as? Updater.State.Available)?.takeIf { !laterTapped && route != R0.UPDATES }?.let { UpdateDialog(it, container, nav) }
+    (update as? Updater.State.Available)?.takeIf { it.version != laterTapped && route != R0.UPDATES }?.let { UpdateDialog(it, container, nav) }
 }
 
 @Composable
 private fun UpdateDialog(available: Updater.State.Available, container: AppContainer, nav: NavHostController) {
     val activity = androidx.activity.compose.LocalActivity.current
     AlertDialog(
-        onDismissRequest = { container.updater.dismissed.value = true },
+        onDismissRequest = { container.updater.dismissed.value = available.version },
         title = { Txt(stringResource(R.string.update_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Txt(
@@ -284,13 +284,13 @@ private fun UpdateDialog(available: Updater.State.Available, container: AppConta
         },
         confirmButton = {
             TextButton({
-                container.updater.dismissed.value = true
+                container.updater.dismissed.value = available.version
                 // The download shows its progress on the Updates screen.
                 if (available.via == Updater.Via.DOWNLOAD) nav.navigate(R0.UPDATES) { launchSingleTop = true }
                 activity?.let { container.updater.start(it, container.scope) }
             }, Modifier.testTag("update-prompt-update")) { Txt(stringResource(R.string.update_prompt_update)) }
         },
-        dismissButton = { TextButton({ container.updater.dismissed.value = true }) { Txt(stringResource(R.string.update_prompt_later)) } },
+        dismissButton = { TextButton({ container.updater.dismissed.value = available.version }) { Txt(stringResource(R.string.update_prompt_later)) } },
         containerColor = Glass.Dialog,
     )
 }

@@ -31,7 +31,7 @@ object Scrubber {
     fun redact(s: String): String = patterns.fold(s) { acc, r -> r.replace(acc, "[redacted]") }
 
     /** Messages we write ourselves (Diagnostics); anything else is dropped. */
-    private val ownMessages = listOf("exit.", "fgs.")
+    private val ownMessages = listOf("exit.", "fgs.", "api.")
     /** The SDK's own breadcrumbs we keep; everything else from it (navigation, http, console) is dropped. */
     private val sdkCategories = setOf("app.lifecycle", "ui.lifecycle", "device.event", "network.event")
     private val tags = setOf(
