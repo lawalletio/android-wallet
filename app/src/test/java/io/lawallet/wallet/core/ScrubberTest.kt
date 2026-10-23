@@ -7,7 +7,12 @@ import io.sentry.SentryEvent
 import io.sentry.SentryOptions
 import io.sentry.protocol.Message
 import io.sentry.protocol.Request
+import io.sentry.SpanId
 import io.sentry.protocol.SentryException
+import io.sentry.protocol.SentryId
+import io.sentry.protocol.SentrySpan
+import io.sentry.protocol.SentryTransaction
+import io.sentry.protocol.TransactionInfo
 import io.sentry.protocol.SentryThread
 import io.sentry.protocol.User
 import org.junit.Assert.assertEquals
@@ -50,7 +55,7 @@ class ScrubberTest {
             breadcrumbs = listOf(
                 Breadcrumb().apply { category = "navigation"; message = "activity/${secrets[5]}" },
                 Breadcrumb().apply { category = "http"; setData("url", secrets[8]) },
-                Breadcrumb().apply { category = "relay"; message = "dropped $all" },
+                Breadcrumb().apply { category = "relay"; message = "dropped $all"; origin = Scrubber.TRAIL },
             )
         }
 
@@ -75,5 +80,30 @@ class ScrubberTest {
         Scrubber.event(event)
         assertEquals("exit.low_memory", event.message?.formatted)
         assertEquals("212", event.getTag("pss_mb"))
+    }
+
+    @Test
+    fun trailBreadcrumbsKeepTheirCategoryTheSdksDoNot() {
+        val ours = Breadcrumb().apply { category = "navigation"; message = "activity/{hash}"; origin = Scrubber.TRAIL }
+        val sdk = Breadcrumb().apply { category = "navigation"; message = "activity/${secrets[5]}" }
+        assertEquals("activity/{hash}", Scrubber.breadcrumb(ours)?.message)
+        assertNull(Scrubber.breadcrumb(sdk))
+    }
+
+    @Test
+    fun transactionsLoseSpansThatCarryPayloads() {
+        fun span(description: String) = SentrySpan(0.0, 1.0, SentryId(), SpanId(), null, "ui.load", description, null, null, mutableMapOf(), mutableMapOf(), mutableMapOf<String, Any>("thread.name" to "OkHttp ${secrets[8]}"))
+        val t = SentryTransaction("MainActivity", 0.0, 1.0, mutableListOf(span("MainActivity.onCreate"), span("GET ${secrets[8]}")), emptyMap(), TransactionInfo("component")).apply {
+            user = User().apply { id = "installation-id" }
+            contexts.setDevice(io.sentry.protocol.Device().apply { id = "installation-id" })
+        }
+
+        val out = Scrubber.transaction(t)!!
+        val json = StringWriter().also { JsonSerializer(SentryOptions()).serialize(out, it) }.toString()
+
+        assertEquals(listOf("MainActivity.onCreate"), out.spans.map { it.description })
+        secrets.forEach { assertFalse("leaked: $it\n$json", json.contains(it, ignoreCase = true)) }
+        assertFalse(json.contains("installation-id"))
+        assertNull(Scrubber.transaction(SentryTransaction("activity/${secrets[5]}", 0.0, 1.0, mutableListOf(), emptyMap(), TransactionInfo("route"))))
     }
 }

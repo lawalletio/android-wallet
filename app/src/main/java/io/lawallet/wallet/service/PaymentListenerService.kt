@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import io.lawallet.wallet.LaWalletApp
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Diagnostics
+import io.lawallet.wallet.core.diag.Trail
 
 /**
  * Keeps the NWC relay subscription alive while the app is in the background so payments
@@ -36,7 +37,7 @@ class PaymentListenerService : Service() {
 
     override fun onDestroy() {
         running = false
-        Diagnostics.breadcrumb("fgs", "stopped")
+        Trail.add("fgs", "stopped")
         super.onDestroy()
     }
 
@@ -62,7 +63,7 @@ class PaymentListenerService : Service() {
             return
         }
         starting = false
-        if (!running) Diagnostics.breadcrumb("fgs", "started")
+        if (!running) Trail.add("fgs", "started")
         running = true
         if (stopRequested) { stopRequested = false; stopSelf() }
     }

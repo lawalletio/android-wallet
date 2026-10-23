@@ -45,8 +45,15 @@ off at any time in Settings → Diagnostics.
   addresses are not stored with reports.
 - **Retention**: up to 90 days.
 
-Whether or not reports are on, the app keeps a short history of why Android closed it on your device (Settings →
-Diagnostics). It never leaves the device unless you copy it yourself.
+Whether or not reports are on, the app keeps two things on your device for diagnosing problems:
+- **Exit history:** why Android closed the app.
+- **Activity trail:** which screens you opened, whether wallet requests succeeded and how long they took, wallet
+  relay and network connectivity, memory use, and the stack of any crash.
+
+The trail holds no keys, invoices, amounts, addresses, URLs or exception messages. Anything that looks like one is
+removed before a line is written. Settings → Diagnostics shows the exit history, and its "Copy report" button
+includes the trail. Neither leaves the device, unless
+you copy them yourself or have crash reports turned on, in which case the trail is attached to reports.
 
 ## Permissions
 - **Camera**: only to scan QR codes, while the scanner is open. Frames are processed on the device and never stored.
