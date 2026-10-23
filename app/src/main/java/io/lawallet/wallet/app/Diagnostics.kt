@@ -2,15 +2,23 @@ package io.lawallet.wallet.app
 
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.Debug
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.core.diag.Scrubber
+import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.store.Prefs
 import io.lawallet.wallet.service.PaymentListenerService
 import io.sentry.Breadcrumb
@@ -25,10 +33,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
@@ -37,8 +49,10 @@ import java.util.Date
  *
  * Always, on device: each launch records new ApplicationExitInfo entries (API 30+) into a short
  * log the Diagnostics screen shows and copies, and keeps a 128-byte process-state summary current
- * so the next exit record says what the process was doing. With consent and a DSN (CI release
- * builds): the same exits plus crashes/ANRs go to Sentry, through [Scrubber].
+ * so the next exit record says what the process was doing, and a [Trail] of what the app did
+ * (screens, wallet requests, relay, memory, network, crashes) that outlives the process. With
+ * consent and a DSN (CI release builds): the same exits — carrying the dead run's trail — plus
+ * crashes, ANRs and sampled performance traces go to Sentry, through [Scrubber].
  */
 object Diagnostics {
     private const val TAG = "Diagnostics"
@@ -48,6 +62,8 @@ object Diagnostics {
 
     @Volatile private var sentryOn = false
     private lateinit var container: AppContainer
+    /** The newest exit record and the trail of the run it ended, when the two match by pid. */
+    @Volatile private var deadRunTrail: Pair<Long, List<String>>? = null
 
     /** New abnormal exits found at launch while reports are off: the UI offers to send them. */
     private val _prompt = MutableStateFlow<List<ExitRecord>>(emptyList())
@@ -66,9 +82,22 @@ object Diagnostics {
 
     fun start(context: Context, c: AppContainer) {
         container = c
+        Trail.sink = { category, message, error ->
+            Log.println(if (error) Log.WARN else Log.INFO, "Trail", "$category: $message")
+            if (sentryOn) Sentry.addBreadcrumb(Breadcrumb().apply {
+                this.category = category; this.message = message; origin = Scrubber.TRAIL
+                if (error) level = SentryLevel.ERROR
+            })
+        }
+        Trail.open(File(context.filesDir, "diag"), "start pid=${Process.myPid()} v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) api=${Build.VERSION.SDK_INT}")
+        // Ours first in line, so the trail gets the crash even with reports off; Sentry, when it
+        // starts, wraps this handler and still reports first.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e -> runCatching { Trail.crash(t, e) }; previous?.uncaughtException(t, e) }
         if (c.prefs.crashReports.value) initSentry(context)
         c.scope.launch { c.prefs.crashReports.drop(1).collect { on -> if (on) initSentry(context) else closeSentry() } }
         c.scope.launch(Dispatchers.IO) { runCatching { recordExits(context, c.prefs) }.onFailure { Log.w(TAG, "exit history", it) } }
+        watch(context, c)
         trackState(context, c)
     }
 
@@ -87,7 +116,9 @@ object Diagnostics {
         appendLine("LaWallet ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("listener=${prefs.backgroundListener.value} running=${PaymentListenerService.running}")
         exits(prefs).asReversed().forEach { appendLine("${Date(it.at)} ${it.reason} importance=${it.importance} pss=${it.pssKb shr 10}MB rss=${it.rssKb shr 10}MB [${it.state}] ${it.description}") }
-        prefs.lastAnrTrace?.let { appendLine(); appendLine("Last ANR, main thread:"); append(it) }
+        prefs.lastAnrTrace?.let { appendLine(); appendLine("Last ANR, main thread:"); appendLine(it) }
+        Trail.tail(previous = true, 80).takeIf { it.isNotEmpty() }?.let { appendLine(); appendLine("Previous run:"); it.forEach(::appendLine) }
+        appendLine(); appendLine("This run:"); Trail.tail(previous = false, 40).forEach(::appendLine)
     }
 
     /** Prompt answered "Send": turn reports on and send what the prompt was about. */
@@ -105,17 +136,14 @@ object Diagnostics {
 
     fun nonFatal(e: Throwable) {
         Log.e(TAG, "non-fatal", e)
+        Trail.add("error", "${e.javaClass.name} at ${e.stackTrace.firstOrNull()}", error = true)
         if (sentryOn) Sentry.captureException(e)
     }
 
     /** One of our own named events ("fgs.start_denied"); the name is all it carries. */
     fun event(name: String) {
-        Log.w(TAG, name)
+        Trail.add("event", name, error = true)
         if (sentryOn) Sentry.captureMessage(name, SentryLevel.WARNING)
-    }
-
-    fun breadcrumb(category: String, message: String) {
-        if (sentryOn) Sentry.addBreadcrumb(Breadcrumb().apply { this.category = category; this.message = message })
     }
 
     private fun initSentry(context: Context) {
@@ -133,7 +161,9 @@ object Diagnostics {
             // URLs); the ANR event's own threads are scrubbed and are enough.
             o.isAttachAnrThreadDump = false
             o.isTombstoneEnabled = false // secp256k1 JNI handles keys: not until a payload is reviewed
-            o.tracesSampleRate = 0.0
+            // App start, screen loads and slow/frozen frames. No network spans: OkHttp isn't instrumented.
+            o.tracesSampleRate = 0.2
+            o.setBeforeSendTransaction { t, _ -> Scrubber.transaction(t) }
             o.setBeforeBreadcrumb { b, _ -> Scrubber.breadcrumb(b) }
             o.setBeforeSend { e, _ -> Scrubber.event(e).also { if (!describesDeadProcess(it)) liveTags(it) } }
         }
@@ -170,6 +200,10 @@ object Diagnostics {
             setTag("pss_mb", (r.pssKb shr 10).toString())
             setTag("rss_mb", (r.rssKb shr 10).toString())
             setTag("state", r.state)
+            // The run that ended here, as it recorded itself (already redacted on the device).
+            deadRunTrail?.takeIf { it.first == r.at }?.second?.let { lines ->
+                breadcrumbs = lines.map { Breadcrumb().apply { category = "trail"; message = it; origin = Scrubber.TRAIL } }
+            }
         })
     }
 
@@ -188,6 +222,8 @@ object Diagnostics {
                 Scrubber.redact(it.description.orEmpty()).take(160),
             )
         }
+        val prevPid = Trail.previousHeader()?.let { Regex("""pid=(\d+)""").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        if (prevPid == infos.last().pid) deadRunTrail = fresh.last().at to Trail.tail(previous = true, 60)
         prefs.lastExitTs = fresh.last().at
         prefs.exitLog = prefs.exitLog + fresh.map(ExitRecord::line)
         infos.lastOrNull { it.reason == ApplicationExitInfo.REASON_ANR }?.let { anr -> mainThread(anr)?.let { prefs.lastAnrTrace = it } }
@@ -206,23 +242,49 @@ object Diagnostics {
         Scrubber.redact(trace.substring(start + 1, end)).take(4000)
     }.getOrNull()
 
-    /** Relay breadcrumbs, and on API 30+ setProcessStateSummary: ≤128 bytes handed back with the next exit record. */
+    /** Every 15 min and on each relay change: a trail line, and on API 30+ setProcessStateSummary (≤128 bytes, returned with the next exit record). */
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun trackState(context: Context, c: AppContainer) {
         val am = context.getSystemService(ActivityManager::class.java)
         c.scope.launch {
             c.wallet.client.flatMapLatest { it?.relay?.connected ?: flowOf(false) }.collectLatest { connected ->
-                breadcrumb("relay", if (connected) "connected" else "disconnected")
-                if (Build.VERSION.SDK_INT < 30) return@collectLatest
                 while (true) {
-                    val rt = Runtime.getRuntime()
                     val summary = "fgs=${if (PaymentListenerService.running) 1 else 0};relay=${if (connected) 1 else 0}" +
-                        ";up=${(SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000}m" +
-                        ";heap=${(rt.totalMemory() - rt.freeMemory()) shr 20}M;native=${Debug.getNativeHeapAllocatedSize() shr 20}M"
-                    runCatching { am.setProcessStateSummary(summary.toByteArray()) }
+                        ";up=${(SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000}m;${memory()}"
+                    Trail.add("state", summary)
+                    if (Build.VERSION.SDK_INT >= 30) runCatching { am.setProcessStateSummary(summary.toByteArray()) }
                     delay(15 * 60_000L)
                 }
             }
+        }
+    }
+
+    private fun memory(): String {
+        val rt = Runtime.getRuntime()
+        return "heap=${(rt.totalMemory() - rt.freeMemory()) shr 20}M;native=${Debug.getNativeHeapAllocatedSize() shr 20}M"
+    }
+
+    /** The rest of the trail: session, wallet, payments, foreground/background, memory pressure, network. */
+    private fun watch(context: Context, c: AppContainer) {
+        c.scope.launch { c.session.auth.collect { Trail.add("session", "auth=${it.name.lowercase()}" + if (it == AuthState.LoggedIn) " method=${c.session.loginMethod}" else "") } }
+        c.scope.launch { c.wallet.client.map { it != null }.distinctUntilChanged().collect { Trail.add("wallet", if (it) "client ready" else "no client") } }
+        c.scope.launch { c.wallet.relayError.filterNotNull().distinctUntilChanged().collect { Trail.add("wallet", "error: $it", error = true) } }
+        c.scope.launch { c.wallet.notices.collect { Trail.add("payment", it.type) } } // the type only — never the amount
+        c.scope.launch { c.prefs.backgroundListener.collect { Trail.add("app", "listener ${if (it) "on" else "off"}") } }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) Trail.add("app", "foreground")
+            if (event == Lifecycle.Event.ON_STOP) Trail.add("app", "background")
+        })
+        context.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) = Trail.add("memory", "trim level=$level ${memory()}")
+            override fun onConfigurationChanged(newConfig: Configuration) {}
+            @Deprecated("Deprecated in Java") override fun onLowMemory() {}
+        })
+        runCatching {
+            context.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = Trail.add("network", "available")
+                override fun onLost(network: Network) = Trail.add("network", "lost")
+            })
         }
     }
 

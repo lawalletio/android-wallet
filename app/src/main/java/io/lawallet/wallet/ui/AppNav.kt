@@ -7,6 +7,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Diagnostics
+import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.screens.DiagnosticsScreen
 import androidx.compose.animation.AnimatedVisibility
@@ -153,6 +154,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
+    // The route pattern (`activity/{hash}`), never its arguments.
+    LaunchedEffect(route) { route?.let { Trail.add("navigation", it) } }
     var notice by remember { mutableStateOf<PaymentNotice?>(null) }
 
     // Logging in navigates from the auth screens themselves (welcome / pending activation);

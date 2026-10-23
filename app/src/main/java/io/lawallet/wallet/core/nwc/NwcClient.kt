@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.nwc
 
+import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.nostr.Nip04
 import io.lawallet.wallet.core.nostr.Nip44
 import io.lawallet.wallet.core.nostr.NostrEvent
@@ -101,7 +102,23 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
         return json.decodeFromJsonElement(kotlinx.serialization.serializer<T>(), raw)
     }
 
+    /** One NIP-47 round trip, recorded in the [Trail] by method, outcome and duration (balance polls only when slow). */
     suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = 60_000): JsonElement {
+        val started = System.currentTimeMillis()
+        return try {
+            send(method, params, timeoutMs).also {
+                val ms = System.currentTimeMillis() - started
+                if (method != "get_balance" || ms > 5_000) Trail.add("nwc", "$method ok ${ms}ms")
+            }
+        } catch (e: Exception) {
+            // A cancelled caller isn't a wallet failure; a timeout is.
+            if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+            Trail.add("nwc", "$method failed ${(e as? NwcException)?.code ?: e.javaClass.simpleName} ${System.currentTimeMillis() - started}ms", error = true)
+            throw e
+        }
+    }
+
+    private suspend fun send(method: String, params: JsonObject, timeoutMs: Long): JsonElement {
         val enc = encryption()
         val body = buildJsonObject { put("method", method); put("params", params) }.toString()
         val tags = buildList {

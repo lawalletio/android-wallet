@@ -1,5 +1,7 @@
 package io.lawallet.wallet.core.api
 
+import io.lawallet.wallet.core.diag.Trail
+import java.io.IOException
 import io.lawallet.wallet.core.nostr.Signer
 import io.lawallet.wallet.core.nostr.nip98Header
 import kotlinx.coroutines.Dispatchers
@@ -219,7 +221,12 @@ class LaWalletApi(
     }
 
     private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
-        http.newCall(request).execute().use { res ->
+        val path = request.url.pathSegments.joinToString("/", "/") { if (it in PATH_WORDS) it else ":id" }
+        val call = try { http.newCall(request).execute() } catch (e: IOException) {
+            Trail.add("api", "${request.method} $path failed ${e.javaClass.simpleName}", error = true)
+            throw e
+        }
+        call.use { res ->
             val text = res.body.string()
             if (!res.isSuccessful) {
                 val err = runCatching { json.parseToJsonElement(text).jsonObject["error"] }.getOrNull()
@@ -230,6 +237,7 @@ class LaWalletApi(
                 } ?: "Request failed (${res.code})"
                 val code = (err as? JsonObject)?.get("code")?.jsonPrimitive?.contentOrNull
                 android.util.Log.w("LaWalletApi", "${request.method} ${request.url.encodedPath} -> ${res.code} $message")
+                Trail.add("api", "${request.method} $path -> ${res.code}${code?.let { " $it" } ?: ""}", error = true)
                 throw ApiException(res.code, message, code, (err as? JsonObject)?.get("details"))
             }
             text
@@ -239,6 +247,13 @@ class LaWalletApi(
     companion object {
         val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        /** The API's own path words; any other segment (ids, usernames, keys) is logged as `:id`. */
+        private val PATH_WORDS = setOf(
+            "account", "account-transfer", "activation-tokens", "addresses", "api", "auth", "balance", "card-recovery", "cards",
+            "check", "claim", "connection-string", "credentials", "currency-prefs", "dismiss", "grants", "invoices", "jwt",
+            "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "passkey", "primary", "profiles",
+            "receive-action", "recovery-check", "registration", "remote-wallets", "settings", "users", "verify", "version", "wallet",
+        )
 
         /** True when the JWT's `exp` is < 5 min away (jwt-expiry.ts). Unparseable tokens count as expired. */
         fun expiresSoon(token: String, nowMs: Long = System.currentTimeMillis()): Boolean = runCatching {

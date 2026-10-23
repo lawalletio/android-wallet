@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.nwc
 
+import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.nostr.NostrEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +96,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            Trail.add("relay", "open")
             attempt = 0
             _connected.value = true
             _lastError.value = null
@@ -117,12 +119,17 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            Trail.add("relay", "closed code=$code", error = code != 1000)
             webSocket.close(1000, null)
             dropped(webSocket, if (code == 1000) null else "relay closed ($code)")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped(webSocket, null)
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = dropped(webSocket, t.message ?: "connection failed")
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            // Class name only: the message names the relay host.
+            if (socket === webSocket) Trail.add("relay", "failure ${t.javaClass.simpleName}${response?.let { " http=${it.code}" } ?: ""}", error = true)
+            dropped(webSocket, t.message ?: "connection failed")
+        }
     }
 
     private fun dropped(ws: WebSocket, error: String?) {
@@ -133,6 +140,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
         if (closed) return
         val backoff = (1000L shl attempt.coerceAtMost(5)).coerceAtMost(30_000)
         attempt++
+        Trail.add("relay", "reconnect in ${backoff}ms (attempt $attempt)")
         reconnectJob = scope.launch { delay(backoff); connect() }
     }
 }

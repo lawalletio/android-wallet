@@ -1,7 +1,7 @@
 # Crash, process-death and performance monitoring — plan
 
-_Status: Phases 1–2 implemented (see [Implementation notes](#implementation-notes)). Phase 3 (tracing) and Phase 4
-(review) are still to do._
+_Status: Phases 1–3 implemented (see [Implementation notes](#implementation-notes)): Phase 3 is the app-wide trail
+and sampled tracing. Phase 4 (review) is still to do._
 
 **The problem.** After running for hours, the app dies with no visible error, and the payment-listener
 foreground service notification disappears with it. The suspected cause is memory. Today we can't tell a crash, an
@@ -27,6 +27,25 @@ the first gap to close.
 - **Fixes:** `PaymentListenerService`, `LaWalletApp` and `AppContainer`.
 - **Exit recorder, state summary and Sentry setup:** `app/Diagnostics.kt`.
 - **Scrubber:** `core/diag/Scrubber.kt`, tested by `ScrubberTest`.
+- **Trail (flight recorder):** `core/diag/Trail.kt`, tested by `TrailTest`. One redacted line per notable event,
+  written to `filesDir/diag/trail.log`. Each launch moves the last run's log to `trail.prev.log`.
+  - **What it records:** screens (route patterns such as `activity/{hash}`, never their arguments), each NWC request
+    (method, outcome or error code, duration; balance polls only when slower than 5 s), relay open/close/failure/reconnect
+    (close code or exception class, never the URL), LaWallet API errors (path shape such as `/api/wallet/addresses/:id`,
+    status, error code), LNURL/HTTP errors (status or exception class, no host), auth state and login method, wallet
+    client and wallet errors, payment notice type (no amount), foreground/background, listener on/off, memory trim
+    levels, network available/lost, and a state line every 15 min (`fgs`, `relay`, uptime, heap, native).
+  - **Crashes:** a chained uncaught-exception handler writes the exception classes and top frames, never messages,
+    synchronously, so the stack survives with reports off. In release builds the frames are R8-obfuscated; retrace
+    them with that version's `mapping.txt`.
+  - **Where it goes:** with reports on, every line is also a Sentry breadcrumb with `origin = "trail"`. The newest
+    `exit.*` event carries the dead run's last 60 lines when its pid matches the trail header. Copy report appends
+    both trails.
+- **Tracing:** `tracesSampleRate = 0.2` (app start, screen loads, slow/frozen frames). `Scrubber.transaction` drops
+  any span whose description would need redacting, and clears span data.
+- **Alerts:** "lawallet-android: new crash, ANR or kill" emails active members on every new issue at warning level
+  or above. "lawallet-android: issue spiking (>10/h)" covers spikes. Both are `production` only, so debug and
+  emulator events stay quiet. Sentry's default "high priority issues" alert also stays on.
 - **UI:** Settings → Diagnostics, plus the prompt after an unexpected exit.
 
 **Sentry project:** `la-crypta/lawallet-android`. The existing la-crypta org is in the **US** region, not the EU region
@@ -38,15 +57,16 @@ this plan proposed. `PRIVACY.md` says US.
   report keeps a redacted main-thread stack of the newest ANR instead.
 - **Plugin config:** the org and project names are hard-coded in the Gradle `sentry {}` block. CI only needs
   `SENTRY_AUTH_TOKEN` (secret) and `SENTRY_DSN` (variable).
-- **Relay breadcrumbs:** only connected/disconnected, without close codes or reconnect counts. `Relay` stays free of
-  Sentry.
+- **Breadcrumb allowlist:** instead of a list of extra categories, breadcrumbs marked `origin = "trail"` (ours,
+  already redacted) pass in any category. The SDK's own breadcrumbs are still limited to app/ui lifecycle, device
+  and network events, so an SDK `navigation` or `http` breadcrumb with a real route or URL stays out. `Relay` and
+  `NwcClient` stay free of Sentry; they only call `Trail`.
 - **Foreground-service crash found in Phase 0:** the stop-before-`startForeground()` crash is guarded. A `stop()`
   that arrives while a start is pending is deferred until the service has gone foreground.
 
-**Before the first release with reports on:**
-- In Sentry → project settings → Security & Privacy, turn on "Prevent Storing of IP Addresses" and the data
-  scrubbers. The Sentry MCP can't set these.
-- Add the `SENTRY_AUTH_TOKEN` secret and the `SENTRY_DSN` variable to the GitHub repo.
+**Release setup (done Oct 22–23):**
+- Sentry → Security & Privacy: "Prevent Storing of IP Addresses", Data Scrubber and Default Scrubbers are on.
+- GitHub: the `SENTRY_DSN` variable and the `SENTRY_AUTH_TOKEN` secret are set on `lawalletio/android-wallet`.
 
 ## Phase 0 results (Oct 22)
 
