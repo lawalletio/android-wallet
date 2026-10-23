@@ -27,6 +27,7 @@ class Session(
     private val http: OkHttpClient,
     private val scope: CoroutineScope,
     private val amber: AmberSigner.Factory,
+    private val avatars: Avatars,
 ) {
     private val _signer = MutableStateFlow<Signer?>(null)
     val signer: StateFlow<Signer?> = _signer
@@ -123,6 +124,7 @@ class Session(
 
     fun logout() {
         prefs.clearSession()
+        scope.launch(Dispatchers.IO) { avatars.clear() }
         _signer.value = null
         _me.value = null
         _api.value = buildApi(prefs.instanceUrl)

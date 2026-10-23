@@ -9,6 +9,7 @@ import io.lawallet.wallet.core.ln.Lnurl
 import io.lawallet.wallet.core.ln.LnurlException
 import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
+import io.lawallet.wallet.core.ln.splitPaymentDescription
 import io.lawallet.wallet.core.nostr.Bech32
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -55,6 +56,13 @@ class LightningParsingTest {
         assertEquals("empty", assertThrows(DestinationException::class.java) { DestinationParser.parse("  ") }.code)
         assertEquals("unsupported", assertThrows(DestinationException::class.java) { DestinationParser.parse("hello") }.code)
         assertEquals("invalidInvoice", assertThrows(DestinationException::class.java) { DestinationParser.parse("lnbc1garbage") }.code)
+    }
+
+    @Test fun paymentDescriptions() {
+        assertEquals("Payment to @agustin" to "for the pizza", splitPaymentDescription("  Payment to @agustin: for the pizza "))
+        assertEquals("Payment to @agustin" to null, splitPaymentDescription("Payment to @agustin"))
+        assertEquals("Coffee: large" to null, splitPaymentDescription("Coffee: large"))
+        assertEquals("" to null, splitPaymentDescription(null))
     }
 
     @Test fun lnurlForms() {

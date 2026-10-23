@@ -1,5 +1,19 @@
 package io.lawallet.wallet.ui.screens
 
+import com.composables.icons.lucide.R as L
+import kotlinx.coroutines.launch
+import io.lawallet.wallet.ui.components.LwIcon
+import io.lawallet.wallet.core.ln.splitPaymentDescription
+import io.lawallet.wallet.core.ln.DestinationParser
+import coil3.compose.AsyncImage
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -132,6 +146,18 @@ fun ActivityDetailScreen(hash: String) {
     val rates by c.rates.rates.collectAsState()
     var tx by remember { mutableStateOf(c.flow.activityDetail?.takeIf { it.paymentHash == hash } ?: c.wallet.findTx(hash)) }
     var code by remember { mutableStateOf(currencies.selected) }
+    val destinations by c.prefs.paymentDestinations.collectAsState()
+    val scope = rememberCoroutineScope()
+    var opening by remember { mutableStateOf(false) }
+    // Tapping the recipient starts a fresh send to the same address.
+    fun payAgain(address: String) {
+        opening = true
+        scope.launch {
+            val next = runCatching { startSend(c, DestinationParser.parse(address)) }.getOrDefault(R0.SEND)
+            opening = false
+            nav.navigate(next)
+        }
+    }
     LaunchedEffect(hash) {
         runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()?.let { tx = Tx.from(it).let { l -> tx?.let { o -> l.copy(description = l.description ?: o.description) } ?: l } }
     }
@@ -141,14 +167,21 @@ fun ActivityDetailScreen(hash: String) {
         if (t == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
         else {
             val title = stringResource(when { t.state == "pending" -> R.string.activity_detail_pending; t.state == "failed" -> R.string.activity_detail_failed; t.incoming -> R.string.activity_detail_received; else -> R.string.activity_detail_sent })
+            val dest = if (t.incoming) null else destinations[t.paymentHash]
+            val (label, describedComment) = splitPaymentDescription(t.description)
+            // Sends from before destinations were saved only carry the address in the description.
+            val recipient = dest?.address ?: label.takeIf { !t.incoming && DestinationParser.isLightningAddress(it) }
+            val toLabel = stringResource(R.string.activity_detail_to)
             val rows = buildList {
+                if (!t.incoming) (recipient ?: label.ifEmpty { null })?.let { add(toLabel to it) }
                 if (t.feesPaidSats > 0 || !t.incoming) add(stringResource(R.string.activity_detail_networkFee) to stringResource(R.string.common_sats, Currencies.formatSats(t.feesPaidSats)))
-                t.description?.let { add(stringResource(R.string.activity_detail_note) to it) }
+                (if (t.incoming) describedComment ?: label.ifEmpty { null } else dest?.comment ?: describedComment)?.let { add(stringResource(R.string.activity_detail_note) to it) }
                 add(stringResource(R.string.activity_detail_time) to DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(t.settledAt ?: t.createdAt)))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 PaymentReceiptCard(title, t.state, t.amountSats, code, currencies.active, rates, { code = it }, rows,
-                    listOf(stringResource(R.string.shared_receipt_text_paymentHash) to t.paymentHash.ifEmpty { null }, stringResource(R.string.shared_receipt_text_preimage) to t.preimage))
+                    listOf(stringResource(R.string.shared_receipt_text_paymentHash) to t.paymentHash.ifEmpty { null }, stringResource(R.string.shared_receipt_text_preimage) to t.preimage),
+                    if (recipient == null) emptyMap() else mapOf(toLabel to { RecipientChip(recipient, c.avatars.of(recipient), opening) { payAgain(recipient) } }))
             }
             val shareTitle = stringResource(R.string.shared_receipt_text_title)
             ReceiptFooter(
@@ -157,5 +190,20 @@ fun ActivityDetailScreen(hash: String) {
                 onDone = { nav.goHome() },
             )
         }
+    }
+}
+
+@Composable
+private fun RecipientChip(address: String, avatar: String, loading: Boolean, onClick: () -> Unit) {
+    val desc = stringResource(R.string.activity_detail_sendAgain, address)
+    Row(
+        Modifier.clip(CircleShape).border(1.dp, Lw.Border, CircleShape).clickable(enabled = !loading, onClick = onClick)
+            .semantics { contentDescription = desc }.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp).testTag("recipient-chip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AsyncImage(avatar, null, Modifier.size(24.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+        Txt(address, Modifier.weight(1f, fill = false), size = 14.sp, maxLines = 1)
+        if (loading) Spinner(size = 14.dp) else LwIcon(L.drawable.lucide_ic_send, size = 14.dp, tint = Lw.MutedFg)
     }
 }

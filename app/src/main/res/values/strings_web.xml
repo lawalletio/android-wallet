@@ -161,17 +161,12 @@
     <string name="home_noWalletTitle">No wallet connected</string>
     <string name="home_noWalletBody">Connect a Nostr Wallet Connect URI to start sending and receiving.</string>
     <string name="home_connectWallet">Connect a wallet</string>
-    <string name="home_tabActivity">Activity</string>
-    <string name="home_tabTransfers">Transfers</string>
+    <string name="home_activityTitle">Activity</string>
     <string name="home_viewAll">View all</string>
     <string name="home_list_activity_connect">Connect a wallet to see your activity.</string>
     <string name="home_list_activity_loading">Loading activity…</string>
     <string name="home_list_activity_error">Couldn’t load activity.</string>
     <string name="home_list_activity_empty">No activity yet.</string>
-    <string name="home_list_transfers_connect">Connect a wallet to see your transfers.</string>
-    <string name="home_list_transfers_loading">Loading transfers…</string>
-    <string name="home_list_transfers_error">Couldn’t load transfers.</string>
-    <string name="home_list_transfers_empty">No transfers yet.</string>
     <string name="home_install_nativeTitle">Install the wallet</string>
     <string name="home_install_nativeBody">Add it to your home screen for quick access.</string>
     <string name="home_install_iosTitle">Add to your Home Screen</string>
@@ -191,6 +186,7 @@
     <string name="activity_loadMore">Load more</string>
     <string name="activity_today">Today</string>
     <string name="activity_yesterday">Yesterday</string>
+    <string name="activity_detail_sendAgain">Send again to %1$s</string>
     <string name="activity_detail_loading">Loading transaction…</string>
     <string name="activity_detail_notFound">Transaction not found.</string>
     <string name="activity_detail_backToActivity">Back to activity</string>
