@@ -61,6 +61,7 @@ import androidx.fragment.app.FragmentActivity
 import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Diagnostics
+import io.lawallet.wallet.app.Updater
 import io.lawallet.wallet.core.api.OAuthGrant
 import io.lawallet.wallet.core.api.PasskeyCredential
 import io.lawallet.wallet.core.api.WalletCard
@@ -144,6 +145,8 @@ fun SettingsScreen() {
                 SettingsRow(stringResource(R.string.settings_reportBug), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/issues"))) }, icon = L.drawable.lucide_ic_circle_alert, external = true)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.diag_title), { nav.navigate(R0.DIAGNOSTICS) }, Modifier.testTag("settings-diagnostics"), icon = L.drawable.lucide_ic_activity)
+                GroupDivider()
+                SettingsRow(stringResource(R.string.update_title), { nav.navigate(R0.UPDATES) }, Modifier.testTag("settings-updates"), icon = L.drawable.lucide_ic_download, value = "v${BuildConfig.VERSION_NAME}")
             }
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BrandImage(brand.isotype, "isotype.svg", Modifier.size(32.dp))
@@ -597,5 +600,40 @@ fun DiagnosticsScreen() {
             MutedText(stringResource(R.string.diag_exits_hint), Modifier.padding(horizontal = 6.dp), size = 12.sp)
         }
         LwButton(stringResource(R.string.diag_copy), { context.copyToClipboard(Diagnostics.report(c.prefs), copied) }, Modifier.fillMaxWidth().testTag("diag-copy"), BtnVariant.Secondary)
+    }
+}
+
+@Composable
+fun UpdatesScreen() {
+    val c = LocalContainer.current
+    val activity = androidx.activity.compose.LocalActivity.current
+    val scope = rememberCoroutineScope()
+    val state by c.updater.state.collectAsState()
+    LaunchedEffect(Unit) { if (state is Updater.State.Idle || state is Updater.State.Failed) c.updater.checkNow() }
+    SettingsPage(stringResource(R.string.update_title)) {
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp).testTag("update-status"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Txt(stringResource(R.string.update_installed, BuildConfig.VERSION_NAME), size = 13.sp, color = Lw.MutedFg)
+            when (val s = state) {
+                Updater.State.Idle, Updater.State.Checking -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spinner(16.dp); Txt(stringResource(R.string.update_checking))
+                }
+                Updater.State.UpToDate -> Txt(stringResource(R.string.update_latest), weight = FontWeight.Medium)
+                is Updater.State.Available -> {
+                    Txt(if (s.via == Updater.Via.PLAY) stringResource(R.string.update_available_play) else stringResource(R.string.update_available, s.version), weight = FontWeight.Medium)
+                    val label = when (s.via) { Updater.Via.PLAY -> R.string.update_play; Updater.Via.DOWNLOAD -> R.string.update_download; Updater.Via.RELEASE_PAGE -> R.string.update_page }
+                    LwButton(stringResource(label), { activity?.let { c.updater.start(it, c.scope) } }, Modifier.fillMaxWidth().testTag("update-start"), BtnVariant.Theme, icon = L.drawable.lucide_ic_download)
+                }
+                is Updater.State.Downloading -> {
+                    Txt(stringResource(R.string.update_downloading, (s.progress * 100).roundToInt()))
+                    androidx.compose.material3.LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth(), color = LocalBrand.current.t400, trackColor = Color.White.copy(alpha = 0.08f))
+                }
+                Updater.State.Installing -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spinner(16.dp); Txt(stringResource(R.string.update_installing))
+                }
+                is Updater.State.Failed -> ErrorText(stringResource(R.string.update_failed, s.reason))
+            }
+        }
+        val busy = state is Updater.State.Checking || state is Updater.State.Downloading || state is Updater.State.Installing
+        LwButton(stringResource(R.string.update_check), { scope.launch { c.updater.checkNow() } }, Modifier.fillMaxWidth().testTag("update-check"), BtnVariant.Secondary, enabled = !busy)
     }
 }

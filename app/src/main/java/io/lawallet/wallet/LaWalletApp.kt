@@ -60,6 +60,8 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
             override fun onStart(owner: LifecycleOwner) {
                 c.wallet.active.value = true
                 c.rates.active.value = true
+                runCatching { Notifications.clearPayments(this@LaWalletApp) }
+                c.scope.launch { c.updater.checkIfDue() }
                 // The listener may have stopped while the process lived on (task-manager stop, a
                 // denied restart); the combine below only reacts to changes, so re-assert it here.
                 if (shouldListen()) PaymentListenerService.start(this@LaWalletApp)

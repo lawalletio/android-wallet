@@ -31,6 +31,12 @@ object Notifications {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    /** Opening the app means the payments were seen: drop them (and the launcher badge they keep). */
+    fun clearPayments(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.activeNotifications.filter { it.notification.channelId == CHANNEL_PAYMENTS }.forEach { nm.cancel(it.tag, it.id) }
+    }
+
     fun showPayment(context: Context, notice: PaymentNotice) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val received = notice.type == "payment_received"

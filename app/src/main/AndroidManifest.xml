@@ -81,6 +81,9 @@
                 android:value="Holds the user's Nostr Wallet Connect relay subscription so incoming Lightning payments are notified in real time; there is no server push." />
         </service>
 
+        <!-- PackageInstaller's result for self-updates (GitHub APK builds; see app/Updater.kt). -->
+        <receiver android:name=".app.UpdateInstallReceiver" android:exported="false" />
+
         <receiver android:name=".service.BootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

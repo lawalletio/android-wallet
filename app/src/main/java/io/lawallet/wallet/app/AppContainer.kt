@@ -34,4 +34,5 @@ class AppContainer(context: Context) {
     val boltcardPay = BoltcardPay(lnurl)
     val passkeys = Passkeys({ session.api.value }, { session.instanceHost.substringBefore(':') })
     val flow = FlowStore()
+    val updater = Updater(context.applicationContext, http)
 }
