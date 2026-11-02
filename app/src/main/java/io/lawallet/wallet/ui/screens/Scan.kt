@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,20 +96,15 @@ suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: Stri
     }
 }
 
-@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 fun ScanScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var foreign by remember { mutableStateOf<ScanOutcome.Foreign?>(null) }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
-    LaunchedEffect(Unit) { if (!granted) permission.launch(Manifest.permission.CAMERA) }
 
     fun handle(raw: String) {
         if (busy) return
@@ -126,38 +122,7 @@ fun ScanScreen() {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.scan_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
-                if (granted) {
-                    val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
-                    DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown() } }
-                    AndroidView({ ctx ->
-                        PreviewView(ctx).also { view ->
-                            val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                            providerFuture.addListener({
-                                val provider = providerFuture.get()
-                                val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
-                                MlKit.initialize(ctx.applicationContext) // provider removed from startup
-                                val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
-                                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-                                analysis.setAnalyzer(analyzerExecutor) { proxy ->
-                                    val media = proxy.image
-                                    if (media == null || busy) { proxy.close(); return@setAnalyzer }
-                                    scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                                        .addOnSuccessListener { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> ContextCompat.getMainExecutor(ctx).execute { handle(v) } } }
-                                        .addOnCompleteListener { proxy.close() }
-                                }
-                                provider.unbindAll()
-                                runCatching { provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis) }.onFailure { error = it.message }
-                            }, ContextCompat.getMainExecutor(ctx))
-                        }
-                    }, Modifier.fillMaxSize())
-                    Box(Modifier.fillMaxWidth(0.75f).aspectRatio(1f).border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
-                    if (busy) Spinner(32.dp)
-                } else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(24.dp)) {
-                    MutedText(stringResource(R.string.scan_camera_permission), align = TextAlign.Center)
-                    LwButton(stringResource(R.string.scan_grant), { permission.launch(Manifest.permission.CAMERA) }, variant = BtnVariant.Secondary)
-                }
-            }
+            QrCamera(busy, { error = it }, ::handle)
             MutedText(stringResource(if (busy) R.string.scan_readingCode else R.string.scan_hint), align = TextAlign.Center)
             ErrorText(error, Modifier.fillMaxWidth())
         }
@@ -179,3 +144,48 @@ fun ScanScreen() {
     }
 }
 
+/** Square camera preview that reports QR payloads; requests the camera permission itself. */
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+@Composable
+fun QrCamera(busy: Boolean, onError: (String?) -> Unit, onCode: (String) -> Unit) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current
+    var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    LaunchedEffect(Unit) { if (!granted) permission.launch(Manifest.permission.CAMERA) }
+    val paused by rememberUpdatedState(busy)
+    val failed by rememberUpdatedState(onError)
+    val code by rememberUpdatedState(onCode)
+    Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+        if (granted) {
+            val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
+            DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown() } }
+            AndroidView({ ctx ->
+                PreviewView(ctx).also { view ->
+                    val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                    providerFuture.addListener({
+                        val provider = providerFuture.get()
+                        val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
+                        MlKit.initialize(ctx.applicationContext) // provider removed from startup
+                        val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+                        val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                        analysis.setAnalyzer(analyzerExecutor) { proxy ->
+                            val media = proxy.image
+                            if (media == null || paused) { proxy.close(); return@setAnalyzer }
+                            scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
+                                .addOnSuccessListener { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> ContextCompat.getMainExecutor(ctx).execute { code(v) } } }
+                                .addOnCompleteListener { proxy.close() }
+                        }
+                        provider.unbindAll()
+                        runCatching { provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis) }.onFailure { failed(it.message) }
+                    }, ContextCompat.getMainExecutor(ctx))
+                }
+            }, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxWidth(0.75f).aspectRatio(1f).border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
+            if (busy) Spinner(32.dp)
+        } else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(24.dp)) {
+            MutedText(stringResource(R.string.scan_camera_permission), align = TextAlign.Center)
+            LwButton(stringResource(R.string.scan_grant), { permission.launch(Manifest.permission.CAMERA) }, variant = BtnVariant.Secondary)
+        }
+    }
+}
