@@ -152,7 +152,7 @@ class Updater(private val context: Context, private val http: OkHttpClient) {
             withContext(Dispatchers.IO) { install(apk) }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Diagnostics.nonFatal(e)
+            if (e !is java.io.IOException) Diagnostics.nonFatal(e) // offline / dropped connection: not a bug
             _state.value = State.Failed(e.message?.let(Scrubber::redact) ?: "Update failed")
         }
     }

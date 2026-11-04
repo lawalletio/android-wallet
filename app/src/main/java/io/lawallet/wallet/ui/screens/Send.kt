@@ -146,7 +146,7 @@ fun SendRecipientScreen() {
                             val clip = context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
                             if (!clip.isNullOrBlank()) { input = clip; submit(clip) }
                         }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 20.dp, tint = Lw.MutedFg) }
-                        Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                        Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
                     }
                 },
             )
