@@ -240,7 +240,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                     current = if (route == R0.HOME) "home" else "settings",
                     onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
                     onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
-                    onScan = { nav.navigate(R0.SCAN) },
+                    onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
                     haze = haze,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )

@@ -95,6 +95,13 @@ suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: Stri
     }
 }
 
+private var mlKitReady = false
+
+/** ML Kit's startup provider is removed from the manifest; initialize() throws if called twice per process. Main thread only. */
+private fun initMlKit(context: android.content.Context) {
+    if (!mlKitReady) { MlKit.initialize(context.applicationContext); mlKitReady = true }
+}
+
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 fun ScanScreen() {
@@ -114,12 +121,12 @@ fun ScanScreen() {
         if (busy) return
         busy = true; error = null
         scope.launch {
+            // Handled stays busy while navigating away, or the next camera frame routes the same code again.
             when (val o = routeScan(c, nav, raw)) {
                 ScanOutcome.Handled -> {}
-                is ScanOutcome.Foreign -> foreign = o
-                is ScanOutcome.Failed -> error = o.message
+                is ScanOutcome.Foreign -> { foreign = o; busy = false }
+                is ScanOutcome.Failed -> { error = o.message; busy = false }
             }
-            busy = false
         }
     }
 
@@ -129,15 +136,17 @@ fun ScanScreen() {
             Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
                 if (granted) {
                     val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
-                    DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown() } }
+                    val scanner = remember {
+                        initMlKit(context)
+                        BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
+                    }
+                    DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown(); scanner.close() } }
                     AndroidView({ ctx ->
                         PreviewView(ctx).also { view ->
                             val providerFuture = ProcessCameraProvider.getInstance(ctx)
                             providerFuture.addListener({
                                 val provider = providerFuture.get()
                                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
-                                MlKit.initialize(ctx.applicationContext) // provider removed from startup
-                                val scanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
                                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                                 analysis.setAnalyzer(analyzerExecutor) { proxy ->
                                     val media = proxy.image

@@ -139,7 +139,7 @@ fun SendRecipientScreen() {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { if (input.isNotBlank()) submit() }),
                 trailingIcon = {
-                    Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                    Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
