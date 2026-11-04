@@ -162,6 +162,8 @@ private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     var primary by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var scanning by remember { mutableStateOf(false) }
+    val invalid = "Invalid NWC connection string"
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Glass.Dialog,
@@ -169,8 +171,14 @@ private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
+                if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
+                    if (!scanning) return@QrCamera
+                    scanning = false; conn = raw.trim()
+                    error = if (runCatching { NwcUri.parse(conn) }.isFailure) invalid else null
+                }
                 OutlinedTextField(conn, { conn = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("wallet-nwc"), placeholder = { Txt(stringResource(R.string.rw_connection_hint), color = Lw.MutedFg) }, colors = lwFieldColors(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3)
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
+                    trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
                 Txt(stringResource(R.string.rw_mode), size = 12.sp, color = Lw.MutedFg)
                 listOf("SEND_RECEIVE" to R.string.rw_mode_send_receive, "RECEIVE" to R.string.rw_mode_receive).forEach { (k, l) ->
                     Row(Modifier.fillMaxWidth().clickable { mode = k }, verticalAlignment = Alignment.CenterVertically) {
@@ -190,7 +198,7 @@ private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
         },
         confirmButton = {
             TextButton({
-                if (runCatching { NwcUri.parse(conn) }.isFailure) { error = "Invalid NWC connection string"; return@TextButton }
+                if (runCatching { NwcUri.parse(conn) }.isFailure) { error = invalid; return@TextButton }
                 busy = true
                 scope.launch {
                     runCatching { c.session.api.value.createNwcWallet(name.ifBlank { "Wallet" }, conn, mode, primary) }.onSuccess { onCreated() }.onFailure { error = it.message }

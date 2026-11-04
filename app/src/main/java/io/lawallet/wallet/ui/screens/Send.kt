@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -110,6 +111,7 @@ fun SendRecipientScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -139,7 +141,13 @@ fun SendRecipientScreen() {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { if (input.isNotBlank()) submit() }),
                 trailingIcon = {
-                    Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                    Row {
+                        Box(Modifier.size(40.dp).testTag("recipient-paste").clickable {
+                            val clip = context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+                            if (!clip.isNullOrBlank()) { input = clip; submit(clip) }
+                        }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 20.dp, tint = Lw.MutedFg) }
+                        Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                    }
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
