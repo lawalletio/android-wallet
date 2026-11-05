@@ -23,6 +23,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -156,6 +158,12 @@ fun LaWalletRoot(container: AppContainer) {
     }
 }
 
+// Shared-axis fades: the leaving screen is gone before the arriving one shows, so the two never
+// cross-fade over each other (Receive's white QR ghosted over Home's balance card). Time-based, so a
+// slow first frame (Home recomposing on pop) can't stretch the overlap back in.
+private val ScreenOut = fadeOut(tween(90, easing = FastOutLinearInEasing))
+private val ScreenIn = fadeIn(tween(210, delayMillis = 90, easing = LinearOutSlowInEasing))
+
 @Composable
 private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val nav = rememberNavController()
@@ -194,10 +202,10 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
             NavHost(
                 nav, startDestination = start, modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-                enterTransition = { fadeIn(tween(220, delayMillis = 40)) + slideInHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
-                exitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
-                popEnterTransition = { fadeIn(tween(220, delayMillis = 40)) + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
-                popExitTransition = { fadeOut(tween(160)) + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
+                enterTransition = { ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
+                exitTransition = { ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
+                popEnterTransition = { ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
+                popExitTransition = { ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
             ) {
                 composable(R0.LANDING) { LandingScreen() }
                 composable(R0.SIGNUP) { SignupChoiceScreen() }
@@ -235,14 +243,18 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.FEEDBACK) { FeedbackScreen() }
             }
           }
-            if (route == R0.HOME || route == R0.SETTINGS) {
+            // Fades with the screens: `route` flips the moment a pop starts, so a plain `if` snapped the
+            // bar on top of the screen still leaving (e.g. over Receive's QR and button).
+            val tab = when (route) { R0.HOME -> "home"; R0.SETTINGS -> "settings"; else -> null }
+            val lastTab = remember { mutableStateOf("home") }
+            if (tab != null) lastTab.value = tab
+            AnimatedVisibility(tab != null, Modifier.align(Alignment.BottomCenter), enter = ScreenIn, exit = ScreenOut) {
                 NavTabBar(
-                    current = if (route == R0.HOME) "home" else "settings",
+                    current = lastTab.value,
                     onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
                     onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
                     onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
                     haze = haze,
-                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
             // Over the header row (avatar/logo), so the pill never covers the balance it is announcing.
