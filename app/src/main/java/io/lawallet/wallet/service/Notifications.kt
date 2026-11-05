@@ -47,9 +47,10 @@ object Notifications {
             .setContentTitle(title)
             .setContentText(notice.tx.description ?: context.getString(R.string.app_name))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setContentIntent(openAppIntent(context, "activity/${notice.tx.paymentHash}"))
             .setColor(if (received) 0xFF22C55E.toInt() else 0xFFF97316.toInt())
             .build()
-        NotificationManagerCompat.from(context).notify(notice.id.hashCode(), n)
+        NotificationManagerCompat.from(context).notify("payment", notice.id.hashCode(), n)
     }
 }
