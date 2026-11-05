@@ -110,7 +110,9 @@ fun HomeScreen() {
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
-    var avatar by remember { mutableStateOf<String?>(null) }
+    val signer by c.session.signer.collectAsState()
+    val profiles by c.session.profiles.entries.collectAsState()
+    val avatar = signer?.pubkey?.let { profiles[it]?.picture }
     var bonus by remember { mutableStateOf(c.prefs.bonusSats.takeIf { it > 0 }) }
     var refreshing by remember { mutableStateOf(false) }
     val pull = rememberPullToRefreshState()
@@ -118,12 +120,7 @@ fun HomeScreen() {
     LaunchedEffect(Unit) {
         runCatching { c.session.refreshMe() }
         c.wallet.refreshActivity()
-        c.session.signer.value?.pubkey?.let { pk ->
-            avatar = c.prefs.avatarCache[pk]
-            runCatching { c.session.api.value.profiles(listOf(pk)).firstOrNull()?.picture }.getOrNull()?.let {
-                avatar = it; c.prefs.avatarCache = c.prefs.avatarCache + (pk to it)
-            }
-        }
+        c.session.refreshProfile()
     }
 
     // Balance roll (use-animated-number.ts: 600ms ease-out cubic; the first value snaps).
@@ -165,6 +162,7 @@ fun HomeScreen() {
                 launch { c.session.refreshSettings() }
                 launch { c.wallet.refreshBalance() }
                 launch { c.wallet.refreshActivity() }
+                launch { c.session.refreshProfile(force = true) }
             }
             refreshing = false
         }

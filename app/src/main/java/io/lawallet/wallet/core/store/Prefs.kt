@@ -143,9 +143,10 @@ class Prefs(context: Context) {
         get() = sp.getLong("bonus-sats", 0)
         set(v) = sp.edit { putLong("bonus-sats", v) }
 
-    var avatarCache: Map<String, String>
-        get() = sp.getString("profiles", null)?.let { runCatching { json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), it) }.getOrNull() } ?: emptyMap()
-        set(v) = sp.edit { putString("profiles", json.encodeToString(MapSerializer(String.serializer(), String.serializer()), v)) }
+    private val profilesSer = MapSerializer(String.serializer(), ProfileCache.Entry.serializer())
+    var profileCache: Map<String, ProfileCache.Entry>
+        get() = sp.getString("profile-cache", null)?.let { runCatching { json.decodeFromString(profilesSer, it) }.getOrNull() } ?: emptyMap()
+        set(v) = sp.edit { putString("profile-cache", json.encodeToString(profilesSer, v)).remove("profiles") }
 
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {

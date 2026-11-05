@@ -9,6 +9,7 @@ import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.LocalSigner
 import io.lawallet.wallet.core.nostr.Signer
 import io.lawallet.wallet.core.store.Prefs
+import io.lawallet.wallet.core.store.ProfileCache
 import io.lawallet.wallet.core.store.SecretStore
 import io.lawallet.wallet.core.diag.Trail
 import androidx.lifecycle.Lifecycle
@@ -50,6 +51,9 @@ class Session(
 
     private val _me = MutableStateFlow<CurrentUser?>(null)
     val me: StateFlow<CurrentUser?> = _me
+
+    /** Kind-0 pictures, from disk on the first frame; refetched at most once per TTL. */
+    val profiles = ProfileCache({ prefs.profileCache }, { prefs.profileCache = it })
 
     private val _auth = MutableStateFlow(if (prefs.loginMethod == null) AuthState.LoggedOut else AuthState.Loading)
     val auth: StateFlow<AuthState> = _auth
@@ -136,6 +140,12 @@ class Session(
         withContext(Dispatchers.IO) { prefs.setSecretCached("me", LaWalletApi.json.encodeToString(CurrentUser.serializer(), it)) }
     }
 
+    /** Own avatar: background refresh past the TTL, or now when [force]d (pull-to-refresh). */
+    suspend fun refreshProfile(force: Boolean = false) {
+        val pk = _signer.value?.pubkey ?: return
+        runCatching { profiles.refresh(pk, force) { _api.value.profiles(listOf(it)).firstOrNull()?.picture } }
+    }
+
     /**
      * nsec / passkey login. Mints the JWT and materializes the account before returning — unless
      * [loadMe] is false: a card-recovery claim must be the account's first sight of a brand-new key,
@@ -175,6 +185,7 @@ class Session(
         scope.launch(Dispatchers.IO) { avatars.clear() }
         _signer.value = null
         _me.value = null
+        profiles.clear()
         _api.value = buildApi(prefs.instanceUrl)
         _auth.value = AuthState.LoggedOut
     }
@@ -191,6 +202,7 @@ class Session(
         val url = candidate
         prefs.instanceUrl = url
         prefs.clearInstanceCaches()
+        profiles.clear()
         _settings.value = settings
         _api.value = buildApi(url)
         prefs.settingsCache = LaWalletApi.json.encodeToString(InstanceSettings.serializer(), settings)
