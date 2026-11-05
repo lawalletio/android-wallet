@@ -4,6 +4,7 @@ import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * The app's flight recorder: one line per notable event, kept on the device across launches so a
@@ -54,6 +55,9 @@ object Trail {
                 depth++
             }
         }
+        // Lines still queued (the header, the breadcrumbs leading up to this) go first, or the crash lands
+        // above them. Bounded: a dying process must not hang, and on the trail thread itself this just times out.
+        runCatching { writer.submit {}.get(300, TimeUnit.MILLISECONDS) }
         append(f, text)
     }
 
