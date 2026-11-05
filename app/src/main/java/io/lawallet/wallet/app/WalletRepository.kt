@@ -60,6 +60,12 @@ data class Tx(
 data class PaymentNotice(val id: String, val type: String, val tx: Tx)
 
 /**
+ * One key per payment, whichever source reported it (23196, 23197, or a catch-up row): the hash
+ * alone, never the type label. A hashless tx falls back to its own fields, never a constant.
+ */
+fun paymentKey(tx: Tx): String = tx.paymentHash.ifEmpty { "nohash:${tx.invoice ?: "${tx.type}:${tx.createdAt}:${tx.amountSats}"}" }
+
+/**
  * The single NWC connection for the app (nwc-provider.tsx + use-nwc-balance.ts): balance polling,
  * notification subscription with backoff, gap catch-up via list_transactions, activity cache.
  */
@@ -223,9 +229,10 @@ class WalletRepository(
     }
 
     private suspend fun onPayment(key: String, type: String, tx: Tx) {
-        val id = "$type:${tx.paymentHash}"
+        val id = paymentKey(tx)
         val seen = prefs.seen(key)
-        if (id in seen) return
+        // Pre-#19 keys were "$type:$hash": honour them so an upgrade doesn't re-notify the last payment.
+        if (id in seen || "$type:${tx.paymentHash}" in seen) return
         prefs.setSeen(key, seen + id)
         prefs.setLastSeen(key, maxOf(prefs.lastSeen(key), (tx.settledAt ?: tx.createdAt) / 1000))
         merge(listOf(tx))

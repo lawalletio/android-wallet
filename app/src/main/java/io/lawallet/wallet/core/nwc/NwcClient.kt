@@ -78,13 +78,18 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
             if (type != null) put("type", type)
         }).transactions
 
-    /** payment_received / payment_sent notifications (kinds 23196 NIP-04 and 23197 NIP-44). */
+    /**
+     * payment_received / payment_sent notifications, on the one kind matching the negotiated
+     * encryption (23197 NIP-44, else 23196 NIP-04) like @getalby/sdk: a wallet that publishes
+     * every notification on both kinds would otherwise deliver each payment twice.
+     */
     fun notifications(): Flow<NwcNotification> {
         val subId = "ntf-" + randomBytes(6).toHex()
         return relay.messages
             .onStart {
+                val kind = if (encryption() == Enc.NIP44) 23197 else 23196
                 relay.subscribe(subId, buildJsonObject {
-                    putJsonArray("kinds") { add(JsonPrimitive(23196)); add(JsonPrimitive(23197)) }
+                    putJsonArray("kinds") { add(JsonPrimitive(kind)) }
                     putJsonArray("authors") { add(JsonPrimitive(uri.walletPubkey)) }
                     putJsonArray("#p") { add(JsonPrimitive(keys.pubkey)) }
                 })
@@ -97,7 +102,9 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
                     json.decodeFromString(NotificationEnvelope.serializer(), plain)
                         .takeIf { it.type == "payment_received" || it.type == "payment_sent" }
                         ?.let { NwcNotification(it.type, it.notification) }
-                }.getOrNull()
+                }.getOrNull()?.also {
+                    Trail.add("nwc", "notify ${it.type} kind=${msg.event.kind} ev=${msg.event.id.take(8)} hash=${it.tx.paymentHash.take(8)}")
+                }
             }
             .onCompletion { relay.unsubscribe(subId) }
             .flowOn(Dispatchers.Default)
