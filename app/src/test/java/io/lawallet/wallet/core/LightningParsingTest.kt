@@ -103,8 +103,15 @@ class LightningParsingTest {
         assertEquals("https://card.lawallet.io/api/cards/1/scan?p=A&c=B", NdefUrl.recordToUrl(uriRecord))
         val text = NdefRecordData(1, "T".toByteArray(), byteArrayOf(2) + "en".toByteArray() + "lnurlw://card.io/w?p=1".toByteArray())
         val aar = NdefRecordData(4, "android.com:pkg".toByteArray(), "io.lawallet".toByteArray())
-        assertEquals("lnurlw://card.io/w?p=1", NdefUrl.firstBoltcardUrl(listOf(uriRecord, aar, text)))
-        assertNull(NdefUrl.firstBoltcardUrl(listOf(aar)))
+        assertEquals("lnurlw://card.io/w?p=1", NdefUrl.firstPaymentUrl(listOf(uriRecord, aar, text)))
+        assertNull(NdefUrl.firstPaymentUrl(listOf(aar)))
+        // POS / sticker invoices: URI record (prefix 0) with lightning:, bare bolt11 in a Text record.
+        val invUri = NdefRecordData(1, "U".toByteArray(), byteArrayOf(0) + "lightning:$coffee".toByteArray())
+        assertEquals("lightning:$coffee", NdefUrl.firstPaymentUrl(listOf(aar, invUri)))
+        val invText = NdefRecordData(1, "T".toByteArray(), byteArrayOf(2) + "en".toByteArray() + coffee.toByteArray())
+        assertEquals(coffee, NdefUrl.firstPaymentUrl(listOf(uriRecord, invText)))
+        assertTrue(NdefUrl.isInvoice("LIGHTNING:${coffee.uppercase()}"))
+        assertFalse(NdefUrl.isInvoice("lnurlw://card.io/w?p=1"))
     }
 
     private fun json(s: String) = Json.parseToJsonElement(s).jsonObject

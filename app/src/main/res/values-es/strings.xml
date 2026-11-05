@@ -117,4 +117,8 @@
     <string name="feedback_send">Enviar</string>
     <string name="feedback_sent">¡Gracias por tus comentarios!</string>
     <string name="feedback_failed">No se pudieron enviar tus comentarios. Revisá tu conexión e intentá de nuevo.</string>
+    <string name="nfc_tapped">Recibido por NFC</string>
+    <string name="send_preview_description">Descripción</string>
+    <string name="send_preview_expiresIn">Vence en %1$s</string>
+    <string name="send_preview_expired">Esta factura venció. Pedí una nueva.</string>
 </resources>

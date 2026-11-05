@@ -80,6 +80,16 @@ import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import java.text.DateFormat
 import java.util.Date
 import com.composables.icons.lucide.R as L
@@ -87,8 +97,8 @@ import com.composables.icons.lucide.R as L
 private val SUGGESTED_DOMAINS = listOf("lacrypta.ar", "lawallet.io", "walletofsatoshi.com", "blink.sv", "strike.me", "getalby.com", "ln.tips", "stacker.news", "primal.net", "fountain.fm", "coinos.io", "bitrefill.me", "zbd.gg", "npub.cash")
 
 /** Resolves a parsed destination into the send flow; returns the next route. */
-suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination): String {
-    c.flow.send = FlowStore.Send(destination = dest)
+suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination, viaNfc: Boolean = false): String {
+    c.flow.send = FlowStore.Send(destination = dest, viaNfc = viaNfc)
     return when (dest) {
         is Destination.Invoice -> {
             c.flow.send = c.flow.send.copy(bolt11 = dest.bolt11, amountSats = dest.amountSats, recipientLabel = dest.description)
@@ -245,6 +255,13 @@ fun SendPreviewScreen() {
     val failed = stringResource(R.string.send_preview_paymentFailed)
     val amount = s.amountSats
     if (s.destination == null || amount == null) { LaunchedEffect(Unit) { nav.navigate(R0.SEND) { popUpTo(R0.SEND) { inclusive = true } } }; return }
+    val invoice = s.destination as? Destination.Invoice
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(Unit) { if (s.viaNfc) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+    // Ticks once a second so the countdown (and the expired lock) stay live.
+    val now by produceState(System.currentTimeMillis(), invoice?.expiresAtMs) { while (invoice?.expiresAtMs != null) { delay(1000); value = System.currentTimeMillis() } }
+    val leftMs = invoice?.expiresAtMs?.minus(now)
+    val expired = leftMs != null && leftMs <= 0
 
     fun pay() {
         paying = true; error = null
@@ -278,15 +295,24 @@ fun SendPreviewScreen() {
         ScreenHeader(stringResource(R.string.send_previewTitle), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (s.viaNfc) { NfcTappedBadge(); Spacer(Modifier.height(14.dp)) }
                 Txt(stringResource(R.string.send_preview_sending), size = 14.sp, color = Lw.MutedFg)
                 Row(verticalAlignment = Alignment.Bottom) {
                     Txt(Currencies.formatSats(amount), size = 60.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("preview-amount"))
                     Spacer(Modifier.width(8.dp))
                     Txt("sats", Modifier.padding(bottom = 10.dp), size = 18.sp, color = Lw.MutedFg)
                 }
+                currencies.selected.takeIf { it != "SAT" }?.let { Currencies.format(amount, it, rates) }?.takeIf { it != "—" }?.let { MutedText("≈ $it") }
+                // Only worth a line once it's close: POS invoices often live a few minutes.
+                if (leftMs != null && leftMs < 10 * 60_000) {
+                    Spacer(Modifier.height(8.dp))
+                    if (expired) Txt(stringResource(R.string.send_preview_expired), size = 13.sp, color = Lw.Red)
+                    else Txt(stringResource(R.string.send_preview_expiresIn, "%d:%02d".format(leftMs / 60_000, leftMs / 1000 % 60)), size = 13.sp, color = if (leftMs < 60_000) Lw.Orange else Lw.MutedFg, modifier = Modifier.testTag("preview-expiry"))
+                }
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PreviewRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
+                if (invoice?.description.isNullOrBlank()) PreviewRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
+                else PreviewRow(stringResource(R.string.send_preview_description), invoice!!.description!!)
                 PreviewRow(stringResource(R.string.send_preview_type), stringResource(if (s.destination is Destination.Invoice) R.string.send_kind_invoice else R.string.send_kind_address))
                 s.comment?.let { PreviewRow(stringResource(R.string.send_note), it) }
             }
@@ -310,7 +336,22 @@ fun SendPreviewScreen() {
             }
             ErrorText(error, Modifier.fillMaxWidth())
         }
-        SwipeButton(stringResource(R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp))
+        SwipeButton(stringResource(R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired)
+    }
+}
+
+/** "Tapped via NFC" pill with a ring that ripples out from the icon, echoing the tap. */
+@Composable
+private fun NfcTappedBadge() {
+    val pulse = rememberInfiniteTransition(label = "nfc")
+    val t by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "ring")
+    Row(Modifier.clip(CircleShape).background(Lw.Green.copy(alpha = 0.12f)).padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 6.dp).testTag("nfc-tapped"), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(24.dp).graphicsLayer { scaleX = 0.6f + t * 0.6f; scaleY = scaleX; alpha = 1f - t }.border(1.5.dp, Lw.Green, CircleShape))
+            LwIcon(L.drawable.lucide_ic_nfc, size = 14.dp, tint = Lw.Green)
+        }
+        Spacer(Modifier.width(6.dp))
+        Txt(stringResource(R.string.nfc_tapped), size = 12.sp, weight = FontWeight.Medium, color = Lw.Green)
     }
 }
 

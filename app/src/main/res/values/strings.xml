@@ -115,4 +115,8 @@
     <string name="feedback_send">Send</string>
     <string name="feedback_sent">Thanks for your feedback!</string>
     <string name="feedback_failed">Couldn\'t send your feedback. Check your connection and try again.</string>
+    <string name="nfc_tapped">Tapped via NFC</string>
+    <string name="send_preview_description">Description</string>
+    <string name="send_preview_expiresIn">Expires in %1$s</string>
+    <string name="send_preview_expired">This invoice expired. Ask for a new one.</string>
 </resources>

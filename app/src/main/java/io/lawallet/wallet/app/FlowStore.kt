@@ -14,6 +14,8 @@ class FlowStore {
         val comment: String? = null,
         val bolt11: String? = null,
         val result: SendResult? = null,
+        /** Tapped from an NFC tag / POS rather than scanned or typed. */
+        val viaNfc: Boolean = false,
     )
 
     data class SendResult(val amountSats: Long, val feesSats: Long, val preimage: String?, val paymentHash: String?, val to: String, val note: String?, val at: Long)
