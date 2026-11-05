@@ -128,6 +128,8 @@ object Intents {
     // Channels (not SharedFlows) so a link that arrives before the UI subscribes is not lost.
     val routes = Channel<String>(Channel.BUFFERED)
     val payloads = Channel<String>(Channel.BUFFERED)
+    /** Prefix on a payload that came from an NFC tap, so the pay screen can say so. */
+    const val NFC = "nfc:"
 }
 
 fun NavHostController.goHome() = navigate(R0.HOME) { popUpTo(0) { inclusive = true }; launchSingleTop = true }
@@ -177,7 +179,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
         if (!loggedIn && route != null && route !in PUBLIC_ROUTES) nav.navigate(R0.LANDING) { popUpTo(0) { inclusive = true } }
     }
     LaunchedEffect(Unit) { Intents.routes.receiveAsFlow().collect { r -> if (loggedIn || r.startsWith("activate/")) nav.navigate(r) { launchSingleTop = true } } }
-    LaunchedEffect(loggedIn) { Intents.payloads.receiveAsFlow().collect { p -> handleScanPayload(container, nav, p) } }
+    LaunchedEffect(loggedIn) { Intents.payloads.receiveAsFlow().collect { p -> handleScanPayload(container, nav, p.removePrefix(Intents.NFC), viaNfc = p.startsWith(Intents.NFC)) } }
     LaunchedEffect(loggedIn) {
         if (loggedIn) container.wallet.notices.collect { n -> notice = n; delay(3800); if (notice?.id == n.id) notice = null }
     }

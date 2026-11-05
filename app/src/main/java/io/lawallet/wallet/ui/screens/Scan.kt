@@ -79,17 +79,17 @@ sealed interface ScanOutcome {
 }
 
 /** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
-suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String): ScanOutcome =
+suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome =
     when (val r = c.scanRouter.route(raw, c.session.instanceHosts)) {
         is ScanResult.Activate -> if (r.sameInstance) { nav.navigate(R0.activate(r.tokenId)); ScanOutcome.Handled } else ScanOutcome.Foreign(r.url, java.net.URI(r.url).host)
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
-        is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination)); ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
+        is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
         is ScanResult.Error -> ScanOutcome.Failed(r.message)
     }
 
 /** Deep links / NFC taps outside the receive screen. */
-suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: String) {
-    when (val o = routeScan(c, nav, raw)) {
+suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false) {
+    when (val o = routeScan(c, nav, raw, viaNfc)) {
         is ScanOutcome.Foreign -> c.activityBridge.activity?.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(o.url)))
         is ScanOutcome.Failed -> c.activityBridge.activity?.let { android.widget.Toast.makeText(it, o.message, android.widget.Toast.LENGTH_LONG).show() }
         ScanOutcome.Handled -> {}

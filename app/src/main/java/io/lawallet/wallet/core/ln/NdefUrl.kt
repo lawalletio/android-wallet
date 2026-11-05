@@ -3,7 +3,12 @@ package io.lawallet.wallet.core.ln
 /** Raw NDEF record, so parsing is JVM-testable without android.nfc. */
 class NdefRecordData(val tnf: Short, val type: ByteArray, val payload: ByteArray)
 
-/** Port of apps/web/lib/client/ndef-url.ts — extracts a Bolt card / LNURL link from an NDEF message. */
+/**
+ * Port of apps/web/lib/client/ndef-url.ts — extracts a Bolt card / LNURL link or a Lightning invoice
+ * from an NDEF message. Invoices follow the de-facto tap-to-pay convention (WoS, Zeus, Blink, Minibits):
+ * a URI or Text record holding `lightning:<bolt11>` (or the bare bolt11 / LNURL), served by a sticker
+ * tag or by a POS phone emulating an NFC Forum Type 4 tag (HCE).
+ */
 object NdefUrl {
     private const val TNF_WELL_KNOWN: Short = 1
     private const val TNF_ABSOLUTE_URI: Short = 3
@@ -14,7 +19,7 @@ object NdefUrl {
         "rtsp://", "urn:", "pop:", "sip:", "sips:", "tftp:", "btspp://", "btl2cap://", "btgoep://", "tcpobex://",
         "irdaobex://", "file://", "urn:epc:id:", "urn:epc:tag:", "urn:epc:pat:", "urn:epc:raw:", "urn:epc:", "urn:nfc:",
     )
-    private val PAYMENT = Regex("^(https?://|lnurlw://|lnurlp://|lnurl1)", RegexOption.IGNORE_CASE)
+    private val PAYMENT = Regex("^(https?://|lnurlw://|lnurlp://|lnurl1|lightning:|ln(bc|tb|bcrt)[0-9])", RegexOption.IGNORE_CASE)
 
     private fun clean(s: String) = s.replace("\u0000", "").trim()
     private fun isPaymentUrl(s: String) = PAYMENT.containsMatchIn(s)
@@ -52,9 +57,15 @@ object NdefUrl {
         }
     }
 
-    /** LNURL-withdraw links win over a generic https URL (an AAR must not shadow the card link). */
-    fun firstBoltcardUrl(records: List<NdefRecordData>): String? {
+    private val CARD = Regex("^(lnurlw://|lnurl1)", RegexOption.IGNORE_CASE)
+    private val INVOICE = Regex("^(lightning:)?ln(bc|tb|bcrt)[0-9]", RegexOption.IGNORE_CASE)
+
+    /** LNURL-withdraw links, then invoices, win over a generic https URL (an AAR must not shadow the card link). */
+    fun firstPaymentUrl(records: List<NdefRecordData>): String? {
         val urls = records.mapNotNull(::recordToUrl)
-        return urls.firstOrNull { Regex("^(lnurlw://|lnurl1)", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: urls.firstOrNull()
+        return urls.firstOrNull { CARD.containsMatchIn(it) } ?: urls.firstOrNull { INVOICE.containsMatchIn(it) } ?: urls.firstOrNull()
     }
+
+    /** A bolt11 the user pays (vs. a card that pays an invoice on screen). */
+    fun isInvoice(url: String) = INVOICE.containsMatchIn(url)
 }

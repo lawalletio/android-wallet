@@ -76,14 +76,26 @@ class MainActivity : AppCompatActivity() {
         dispatchNdef(msg)
     }
 
+    private var lastTap: Pair<String, Long>? = null
+
     private fun dispatchNdef(msg: NdefMessage) {
-        val url = NdefUrl.firstBoltcardUrl(msg.records.map { NdefRecordData(it.tnf, it.type, it.payload) }) ?: return
-        runOnUiThread { NfcBus.consumer?.invoke(url) ?: Intents.payloads.trySend(url) }
+        val url = NdefUrl.firstPaymentUrl(msg.records.map { NdefRecordData(it.tnf, it.type, it.payload) }) ?: return
+        runOnUiThread {
+            // A POS phone (HCE) stays in the field and re-presents its tag: one tap, one payment screen.
+            val now = System.currentTimeMillis()
+            if (lastTap?.let { it.first == url && now - it.second < 4_000 } == true) return@runOnUiThread
+            lastTap = url to now
+            // Invoices are for us to pay; card links charge the invoice the receive screen shows.
+            if (NdefUrl.isInvoice(url)) Intents.payloads.trySend(Intents.NFC + url)
+            else NfcBus.consumer?.invoke(url) ?: Intents.payloads.trySend(url)
+        }
     }
 
     private fun handle(intent: Intent?) {
         intent ?: return
         intent.getStringExtra("route")?.let { Intents.routes.trySend(it); return }
+        // Emulators have no NFC: `--es devNfc lightning:lnbc…` runs a tap through the same path.
+        if (BuildConfig.DEBUG) intent.getStringExtra("devNfc")?.let { Intents.payloads.trySend(Intents.NFC + it); return }
         if (BuildConfig.DEBUG) intent.getStringExtra("devPayment")?.let { type ->
             container.scope.launch { container.wallet.simulatePayment(type != "outgoing", intent.getLongExtra("devSats", 2_100)) }
             return
