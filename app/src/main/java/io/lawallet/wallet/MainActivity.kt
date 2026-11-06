@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import io.lawallet.wallet.app.NfcBus
+import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
 import io.lawallet.wallet.ui.Intents
@@ -71,20 +72,25 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    // Each silent drop gets a Trail line (never the URL: a card link is a secret).
     private fun onTag(tag: Tag) {
-        val msg = Ndef.get(tag)?.let { ndef -> ndef.cachedNdefMessage ?: runCatching { ndef.connect(); ndef.ndefMessage.also { ndef.close() } }.getOrNull() } ?: return
+        val ndef = Ndef.get(tag) ?: return Trail.add("nfc", "tag without NDEF techs=${tag.techList.joinToString { it.substringAfterLast('.') }}", error = true)
+        val msg = ndef.cachedNdefMessage ?: runCatching { ndef.connect(); ndef.ndefMessage.also { ndef.close() } }
+            .onFailure { Trail.add("nfc", "NDEF read failed ${it.javaClass.simpleName}", error = true) }.getOrNull() ?: return
         dispatchNdef(msg)
     }
 
     private var lastTap: Pair<String, Long>? = null
 
     private fun dispatchNdef(msg: NdefMessage) {
-        val url = NdefUrl.firstPaymentUrl(msg.records.map { NdefRecordData(it.tnf, it.type, it.payload) }) ?: return
+        val url = NdefUrl.firstPaymentUrl(msg.records.map { NdefRecordData(it.tnf, it.type, it.payload) })
+            ?: return Trail.add("nfc", "no payment link in ${msg.records.size} record(s) tnf=${msg.records.joinToString { "${it.tnf}/${String(it.type)}" }}", error = true)
         runOnUiThread {
             // A POS phone (HCE) stays in the field and re-presents its tag: one tap, one payment screen.
             val now = System.currentTimeMillis()
-            if (lastTap?.let { it.first == url && now - it.second < 4_000 } == true) return@runOnUiThread
+            if (lastTap?.let { it.first == url && now - it.second < 4_000 } == true) return@runOnUiThread Trail.add("nfc", "duplicate tap ignored")
             lastTap = url to now
+            Trail.add("nfc", if (NdefUrl.isInvoice(url)) "invoice tapped" else "card link tapped")
             // Invoices are for us to pay; card links charge the invoice the receive screen shows.
             if (NdefUrl.isInvoice(url)) Intents.payloads.trySend(Intents.NFC + url)
             else NfcBus.consumer?.invoke(url) ?: Intents.payloads.trySend(url)
