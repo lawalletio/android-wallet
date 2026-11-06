@@ -87,6 +87,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.produceState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import io.lawallet.wallet.core.api.NostrProfile
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -215,6 +219,10 @@ fun SendAmountScreen() {
     val sats = Currencies.parseToSats(raw, code, rates)
     val meta = s.meta
     val outOfRange = meta != null && sats != null && (sats * 1000 < meta.minSendableMsat || sats * 1000 > meta.maxSendableMsat)
+    // Unknown balance (loading / offline) neither caps nor offers Max.
+    val balance by c.wallet.balance.collectAsState()
+    val overBalance = balance != null && sats != null && sats > balance!!
+    val maxSats = balance?.let { b -> meta?.let { minOf(b, it.maxSendableMsat / 1000) } ?: b }?.takeIf { it > 0 }
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(stringResource(R.string.send_amountTitle), { nav.popBackStack() })
         Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -223,7 +231,17 @@ fun SendAmountScreen() {
                 AmountDisplay(keypadDisplay(raw, code), Currencies.unitLabel(code))
                 if (code != "SAT") MutedText(stringResource(R.string.common_sats, Currencies.formatSats(sats ?: 0)))
                 CurrencyToggle(currencies.active, code, { next -> raw = Currencies.inputFromSats(sats, next, rates); code = next })
-                if (outOfRange) ErrorText("${(meta!!.minSendableMsat + 999) / 1000} – ${meta.maxSendableMsat / 1000} sats")
+                if (balance != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MutedText("${stringResource(R.string.claim_available)}: ${stringResource(R.string.common_sats, Currencies.formatSats(balance!!))}", size = 13.sp)
+                    if (maxSats != null) Txt(
+                        stringResource(R.string.send_amount_max),
+                        Modifier.clip(CircleShape).background(Lw.Green.copy(alpha = 0.15f)).clickable { code = "SAT"; raw = Currencies.inputFromSats(maxSats, "SAT", rates) } // sats: a rounded fiat max could land over the balance
+                            .padding(horizontal = 12.dp, vertical = 4.dp).testTag("amount-max"),
+                        size = 13.sp, weight = FontWeight.SemiBold, color = Lw.Green,
+                    )
+                }
+                if (overBalance) ErrorText(stringResource(R.string.send_preview_notEnoughBalance))
+                else if (outOfRange) ErrorText("${(meta!!.minSendableMsat + 999) / 1000} – ${meta.maxSendableMsat / 1000} sats")
             }
             if ((meta?.commentAllowed ?: 0) > 0) OutlinedTextField(
                 note, { note = it.take(meta!!.commentAllowed) }, Modifier.fillMaxWidth(),
@@ -236,7 +254,7 @@ fun SendAmountScreen() {
         LwButton(stringResource(R.string.common_continue), {
             c.flow.send = s.copy(amountSats = sats, comment = note.ifBlank { null })
             nav.navigate(R0.SEND_PREVIEW)
-        }, Modifier.fillMaxWidth().padding(16.dp).testTag("amount-continue"), BtnVariant.Theme, enabled = sats != null && !outOfRange)
+        }, Modifier.fillMaxWidth().padding(16.dp).testTag("amount-continue"), BtnVariant.Theme, enabled = sats != null && !outOfRange && !overBalance)
     }
 }
 
@@ -264,6 +282,9 @@ fun SendPreviewScreen() {
     val now by produceState(System.currentTimeMillis(), invoice?.expiresAtMs) { while (invoice?.expiresAtMs != null) { delay(1000); value = System.currentTimeMillis() } }
     val leftMs = invoice?.expiresAtMs?.minus(now)
     val expired = leftMs != null && leftMs <= 0
+    // Unknown balance (still loading / offline) doesn't block; fees aren't quoted, so this only catches the obvious case.
+    val balance by c.wallet.balance.collectAsState()
+    val short = balance?.let { amount > it } == true && !paying && !done
 
     fun pay() {
         paying = true; error = null
@@ -298,6 +319,7 @@ fun SendPreviewScreen() {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (s.viaNfc) { NfcTappedBadge(); Spacer(Modifier.height(14.dp)) }
+                (s.destination as? Destination.LnurlPay)?.address?.let { RecipientHeader(it, s.meta?.imageDataUri) }
                 Txt(stringResource(R.string.send_preview_sending), size = 14.sp, color = Lw.MutedFg)
                 // Same toggle as Receive; without a rate the fiat view falls back to sats rather than "—".
                 val shown = code.takeIf { Currencies.format(amount, it, rates) != "—" } ?: "SAT"
@@ -333,10 +355,35 @@ fun SendPreviewScreen() {
             }
             ErrorText(error, Modifier.fillMaxWidth())
         }
-        if (slideToPay) SwipeButton(stringResource(R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired)
+        if (slideToPay) SwipeButton(stringResource(if (short) R.string.send_preview_notEnoughBalance else R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired && !short)
         else Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LwButton(stringResource(R.string.common_cancel), { nav.goHome() }, Modifier.weight(1f).testTag("pay-cancel"), BtnVariant.Secondary, enabled = !paying && !done)
-            LwButton(stringResource(R.string.send_preview_confirm), ::pay, Modifier.weight(1f).testTag("pay-confirm"), BtnVariant.Theme, enabled = !expired && !done, loading = paying)
+            LwButton(stringResource(if (short) R.string.send_preview_notEnoughBalance else R.string.send_preview_confirm), ::pay, Modifier.weight(1f).testTag("pay-confirm"), BtnVariant.Theme, enabled = !expired && !done && !short, loading = paying)
+        }
+    }
+}
+
+/**
+ * Who you're paying: Nostr avatar + display name (via the address's NIP-05), falling back to the
+ * LUD-06 image. Renders nothing until there's a face or a name, then fades in so the amount doesn't jump.
+ */
+@Composable
+private fun RecipientHeader(address: String, lnurlImage: String?) {
+    val c = LocalContainer.current
+    val profile by produceState<NostrProfile?>(null, address) {
+        value = c.lnurl.nip05Pubkey(address)?.let { pk -> runCatching { c.session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
+    }
+    val name = profile?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
+    val picture = profile?.picture?.takeIf(String::isNotBlank) ?: lnurlImage
+    AnimatedVisibility(picture != null || name != null, enter = fadeIn() + expandVertically()) {
+        Column(Modifier.padding(bottom = 20.dp).testTag("preview-recipient"), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(72.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
+                if (picture != null) AsyncImage(picture, null, Modifier.size(72.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                else Txt((name ?: address).take(1).uppercase(), size = 28.sp, weight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(10.dp))
+            if (name != null) Txt(name, size = 18.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            Txt(address, size = 13.sp, color = Lw.MutedFg, maxLines = 1)
         }
     }
 }

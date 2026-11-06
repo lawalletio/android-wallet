@@ -93,6 +93,14 @@ class Lnurl(private val http: OkHttpClient) {
         }
     }
 
+    /** NIP-05: `user@domain` → hex pubkey from the domain's nostr.json, or null when it publishes none. */
+    suspend fun nip05Pubkey(address: String): String? {
+        val (name, domain) = address.trim().lowercase().split('@').takeIf { it.size == 2 } ?: return null
+        val url = "https://$domain/.well-known/nostr.json".toHttpUrlOrNull()?.newBuilder()?.setQueryParameter("name", name)?.build() ?: return null
+        return runCatching { http.getJsonObject(url.toString())["names"]?.jsonObject?.str(name) }.getOrNull()
+            ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+    }
+
     suspend fun payMetadata(lnurlpUrl: String): PayMetadata {
         val meta = fetch(lnurlpUrl) { "Recipient returned $it" }
         if (meta.str("tag") != "payRequest") throw LnurlException("Recipient is not a Lightning address", "notPay")
