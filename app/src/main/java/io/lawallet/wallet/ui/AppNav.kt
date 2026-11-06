@@ -15,7 +15,14 @@ import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.GlassLevel
 import androidx.compose.foundation.shape.CircleShape
 import io.lawallet.wallet.ui.screens.DiagnosticsScreen
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -78,6 +85,7 @@ import io.lawallet.wallet.ui.theme.brandOf
 import io.lawallet.wallet.ui.theme.LocalHaze
 import io.lawallet.wallet.ui.theme.PrismBackground
 import io.lawallet.wallet.ui.theme.glass
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
@@ -165,6 +173,40 @@ fun LaWalletRoot(container: AppContainer) {
 // slow first frame (Home recomposing on pop) can't stretch the overlap back in.
 private val ScreenOut = fadeOut(tween(90, easing = FastOutLinearInEasing))
 private val ScreenIn = fadeIn(tween(210, delayMillis = 90, easing = LinearOutSlowInEasing))
+private val PopIn = ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 }
+private val PopOut = ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 }
+
+/** Publishes this tab screen's enter/exit progress (ScreenIn/ScreenOut timing) for the tab bar's alpha. */
+@Composable
+private fun AnimatedContentScope.TrackTab(route: String, into: MutableMap<String, State<Float>>) {
+    val shown = transition.animateFloat(
+        { if (targetState == EnterExitState.Visible) tween(210, delayMillis = 90, easing = LinearOutSlowInEasing) else tween(90, easing = FastOutLinearInEasing) },
+        label = "tab",
+    ) { if (it == EnterExitState.Visible) 1f else 0f }
+    DisposableEffect(shown) { into[route] = shown; onDispose { into.remove(route) } }
+}
+
+/**
+ * The bar's alpha is the tab screens' own enter/exit progress, so it moves with them, back swipe
+ * included (`route` only flips once the swipe is released, so a route-driven bar lagged behind).
+ * Its own composable: [shown] changes mid-swipe, and recomposing AppNavHost then breaks NavHost's
+ * gesture seek (Receive went back to sitting opaque over Home).
+ */
+@Composable
+private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHostController, haze: HazeState, modifier: Modifier) {
+    val lastTab = remember { mutableStateOf("home") }
+    when (route) { R0.HOME -> lastTab.value = "home"; R0.SETTINGS -> lastTab.value = "settings" }
+    if (shown.isEmpty()) return
+    NavTabBar(
+        current = lastTab.value,
+        onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
+        onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+        onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
+        haze = haze,
+        // Both tabs composed = switching tabs: the bar stays put.
+        modifier = modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f },
+    )
+}
 
 @Composable
 private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
@@ -193,6 +235,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     }
 
     val haze = rememberHazeState()
+    val tabShown = remember { mutableStateMapOf<String, State<Float>>() }
     val brand = LocalBrand.current
     CompositionLocalProvider(LocalNav provides nav, LocalHaze provides haze) {
         Box(Modifier.fillMaxSize()) {
@@ -206,8 +249,12 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 nav, startDestination = start, modifier = Modifier.fillMaxSize().safeDrawingPadding(),
                 enterTransition = { ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
                 exitTransition = { ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
-                popEnterTransition = { ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 } },
-                popExitTransition = { ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
+                popEnterTransition = { PopIn },
+                popExitTransition = { PopOut },
+                // The back *gesture* (gesture nav + predictive back) has its own transitions, which
+                // default to something else: Receive stayed opaque over Home for the whole swipe.
+                predictivePopEnterTransition = { PopIn },
+                predictivePopExitTransition = { PopOut },
             ) {
                 composable(R0.LANDING) { LandingScreen() }
                 composable(R0.SIGNUP) { SignupChoiceScreen() }
@@ -216,7 +263,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.LOGIN) { LoginScreen() }
                 composable(R0.LOGIN_NOSTR) { NostrLoginScreen() }
                 composable(R0.WELCOME) { WelcomeScreen() }
-                composable(R0.HOME) { HomeScreen() }
+                composable(R0.HOME) { TrackTab(R0.HOME, tabShown); HomeScreen() }
                 composable(R0.ACTIVITY) { ActivityScreen() }
                 composable("activity/{hash}") { ActivityDetailScreen(it.arguments?.getString("hash").orEmpty()) }
                 composable(R0.SEND) { SendRecipientScreen() }
@@ -231,7 +278,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.WITHDRAW) { WithdrawScreen() }
                 composable("${R0.CLAIM}?from={from}&bonus={bonus}") { ClaimUsernameScreen(it.arguments?.getString("from"), it.arguments?.getString("bonus") == "1") }
                 composable("activate/{id}") { ActivateScreen(it.arguments?.getString("id").orEmpty()) }
-                composable(R0.SETTINGS) { SettingsScreen() }
+                composable(R0.SETTINGS) { TrackTab(R0.SETTINGS, tabShown); SettingsScreen() }
                 composable(R0.CARDS) { CardsScreen() }
                 composable(R0.SECURITY) { SecurityScreen() }
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
@@ -245,20 +292,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.FEEDBACK) { FeedbackScreen() }
             }
           }
-            // Fades with the screens: `route` flips the moment a pop starts, so a plain `if` snapped the
-            // bar on top of the screen still leaving (e.g. over Receive's QR and button).
-            val tab = when (route) { R0.HOME -> "home"; R0.SETTINGS -> "settings"; else -> null }
-            val lastTab = remember { mutableStateOf("home") }
-            if (tab != null) lastTab.value = tab
-            AnimatedVisibility(tab != null, Modifier.align(Alignment.BottomCenter), enter = ScreenIn, exit = ScreenOut) {
-                NavTabBar(
-                    current = lastTab.value,
-                    onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
-                    onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
-                    onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
-                    haze = haze,
-                )
-            }
+            TabBar(route, tabShown, nav, haze, Modifier.align(Alignment.BottomCenter))
             // Over the header row (avatar/logo), so the pill never covers the balance it is announcing.
             val offline by container.session.offline.collectAsState()
             AnimatedVisibility(offline && loggedIn, Modifier.align(Alignment.TopCenter).statusBarsPadding(), enter = fadeIn(), exit = fadeOut()) {
