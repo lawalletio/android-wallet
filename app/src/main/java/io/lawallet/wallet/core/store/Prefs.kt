@@ -74,6 +74,11 @@ class Prefs(context: Context) {
     val backgroundListener: StateFlow<Boolean> = _bgListener
     fun setBackgroundListener(v: Boolean) { _bgListener.value = v; sp.edit { putBoolean("bg-listener", v) } }
 
+    /** Send preview: swipe to pay (default) or Confirm / Cancel buttons. */
+    private val _slideToPay = MutableStateFlow(sp.getBoolean("slide-to-pay", true))
+    val slideToPay: StateFlow<Boolean> = _slideToPay
+    fun setSlideToPay(v: Boolean) { _slideToPay.value = v; sp.edit { putBoolean("slide-to-pay", v) } }
+
     /** Opt-in crash reporting (docs/monitoring-plan.md). Device-level: survives logout. Forced on in beta builds;
      *  the stored choice is untouched, so it applies again once BETA is off. */
     private val _crashReports = MutableStateFlow(BuildConfig.BETA || sp.getBoolean("crash-reports", false))
@@ -150,14 +155,14 @@ class Prefs(context: Context) {
 
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }
