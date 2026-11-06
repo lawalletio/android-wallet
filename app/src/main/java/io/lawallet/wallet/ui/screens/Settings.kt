@@ -142,6 +142,8 @@ fun SettingsScreen() {
                 GroupDivider()
                 SettingsRow(stringResource(R.string.settings_currencies), { nav.navigate(R0.CURRENCIES) }, Modifier.testTag("settings-currencies"), icon = L.drawable.lucide_ic_globe)
                 GroupDivider()
+                SettingsRow(stringResource(R.string.payments_title), { nav.navigate(R0.PAYMENTS) }, Modifier.testTag("settings-payments"), icon = L.drawable.lucide_ic_zap)
+                GroupDivider()
                 SettingsRow(stringResource(R.string.settings_paymentSound), { nav.navigate(R0.SOUND) }, icon = L.drawable.lucide_ic_volume_2)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.bg_listener_title), { c.prefs.setBackgroundListener(!bg) }, icon = L.drawable.lucide_ic_bell) {
@@ -633,6 +635,22 @@ fun FeedbackScreen() {
                 loading = false
             }
         }, Modifier.fillMaxWidth().padding(16.dp).testTag("feedback-send"), BtnVariant.Theme, enabled = text.isNotBlank(), loading = loading)
+    }
+}
+
+@Composable
+fun PaymentsScreen() {
+    val c = LocalContainer.current
+    val slide by c.prefs.slideToPay.collectAsState()
+    SettingsPage(stringResource(R.string.payments_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsGroup {
+                SettingsRow(stringResource(R.string.slide_to_pay_title), { c.prefs.setSlideToPay(!slide) }, Modifier.testTag("slide-to-pay"), icon = L.drawable.lucide_ic_chevrons_right) {
+                    Switch(slide, { c.prefs.setSlideToPay(it) }, colors = lwSwitchColors())
+                }
+            }
+            MutedText(stringResource(R.string.slide_to_pay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+        }
     }
 }
 

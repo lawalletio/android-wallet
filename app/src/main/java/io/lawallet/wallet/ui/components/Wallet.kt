@@ -6,6 +6,15 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -270,44 +279,60 @@ fun QrDisplay(data: String, caption: String?, copyValue: String = data, modifier
     }
 }
 
-/** swipe-button.tsx — 52dp pill, 48dp thumb, confirms at 70%. */
+/** iOS slide-to-unlock: white knob in a dark capsule, shimmering label that fades as you drag, springs back unless taken to the end. */
 @Composable
 fun SwipeButton(label: String, onConfirm: () -> Unit, loading: Boolean, done: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val offset = remember { Animatable(0f) }
     var trackPx by remember { mutableStateOf(1f) }
-    val thumbPx = with(LocalDensity.current) { 48.dp.toPx() }
-    val shimmer = rememberInfiniteTransition(label = "shimmer").animateFloat(-1f, 2f, infiniteRepeatable(tween(2500, easing = LinearEasing), RepeatMode.Restart), label = "x")
-    val max = (trackPx - thumbPx - 8f).coerceAtLeast(1f)
+    val density = LocalDensity.current
+    val inset = with(density) { 4.dp.toPx() }
+    val thumbPx = with(density) { 64.dp.toPx() }
+    val shine = rememberInfiniteTransition(label = "shine").animateFloat(-0.5f, 1.5f, infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart), label = "x")
+    val max = (trackPx - thumbPx - inset * 2).coerceAtLeast(1f)
+    val progress = offset.value / max
     BoxWithConstraints(
-        modifier.fillMaxWidth().height(56.dp).glass(CircleShape, GlassLevel.Regular, tint = if (done) Lw.Green.copy(alpha = 0.25f) else null).testTag("swipe"),
+        modifier.fillMaxWidth().height(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))
+            .glass(CircleShape, GlassLevel.Thin, tint = if (done) Lw.Green.copy(alpha = 0.25f) else null).testTag("swipe"),
     ) {
         trackPx = constraints.maxWidth.toFloat()
-        Box(Modifier.fillMaxSize().drawBehind {
-            if (!loading && !done) drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.06f), Color.Transparent), Offset(size.width * shimmer.value, 0f), Offset(size.width * (shimmer.value + 0.4f), 0f)))
-        }, contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(start = 68.dp, end = 4.dp), contentAlignment = Alignment.Center) {
             when {
                 loading -> Spinner()
                 done -> LwIcon(L.drawable.lucide_ic_check, tint = Lw.Green)
-                else -> Txt(label, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                // Label is drawn white, then masked by a grey gradient with a bright band sweeping through the glyphs.
+                else -> Txt(
+                    label,
+                    Modifier.graphicsLayer { alpha = (1f - progress * 1.8f).coerceIn(0f, 1f); compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val x = size.width * shine.value
+                            val dim = Color.White.copy(alpha = if (enabled) 0.45f else 0.2f)
+                            drawRect(Brush.horizontalGradient(listOf(dim, if (enabled) Color.White else dim, dim), x - size.width * 0.25f, x + size.width * 0.25f), blendMode = BlendMode.SrcIn)
+                        },
+                    size = 20.sp, weight = FontWeight.Normal, color = Color.White,
+                )
             }
         }
         if (!loading && !done) Box(
-            Modifier.offset { IntOffset(offset.value.roundToInt() + 4, with(this) { 4.dp.roundToPx() }) }.size(48.dp).clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(Lw.Neutral100, Lw.Neutral400)))
+            Modifier.offset { IntOffset((offset.value + inset).roundToInt(), inset.roundToInt()) }.size(64.dp)
+                .shadow(6.dp, CircleShape).clip(CircleShape).background(Brush.verticalGradient(listOf(Color.White, Lw.Neutral100)))
                 .pointerInput(enabled, max) {
                     if (!enabled) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {
-                                if (offset.value >= max * 0.7f) { offset.animateTo(max); onConfirm(); offset.snapTo(0f) } else offset.animateTo(0f)
+                                if (offset.value >= max * 0.9f) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    offset.animateTo(max); onConfirm(); offset.snapTo(0f)
+                                } else offset.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow))
                             }
                         },
                     ) { _, d -> scope.launch { offset.snapTo((offset.value + d).coerceIn(0f, max)) } }
-                }
-                .clickable(enabled = false) {},
+                },
             contentAlignment = Alignment.Center,
-        ) { LwIcon(L.drawable.lucide_ic_chevrons_right, tint = Lw.Background) }
+        ) { LwIcon(L.drawable.lucide_ic_chevron_right, size = 28.dp, tint = if (enabled) Lw.Neutral700 else Lw.Neutral400) }
     }
 }
 
