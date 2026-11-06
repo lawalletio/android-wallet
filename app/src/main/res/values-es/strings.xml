@@ -121,4 +121,8 @@
     <string name="send_preview_description">Descripción</string>
     <string name="send_preview_expiresIn">Vence en %1$s</string>
     <string name="send_preview_expired">Esta factura venció. Pedí una nueva.</string>
+    <string name="payments_title">Pagos</string>
+    <string name="slide_to_pay_title">Deslizar para pagar</string>
+    <string name="slide_to_pay_body">Deslizá para confirmar un pago. Desactivalo para usar los botones Confirmar y Cancelar.</string>
+    <string name="send_preview_confirm">Confirmar pago</string>
 </resources>

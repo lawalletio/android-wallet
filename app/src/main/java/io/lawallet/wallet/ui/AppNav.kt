@@ -124,6 +124,7 @@ object R0 {
     const val CURRENCIES = "settings/currencies"
     const val LANGUAGE = "settings/language"
     const val SOUND = "settings/payment-sound"
+    const val PAYMENTS = "settings/payments"
     const val INSTANCE = "settings/instance"
     const val DIAGNOSTICS = "settings/diagnostics"
     const val UPDATES = "settings/updates"
@@ -286,6 +287,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
                 composable(R0.LANGUAGE) { LanguageScreen() }
                 composable(R0.SOUND) { PaymentSoundScreen() }
+                composable(R0.PAYMENTS) { PaymentsScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
                 composable(R0.UPDATES) { UpdatesScreen() }

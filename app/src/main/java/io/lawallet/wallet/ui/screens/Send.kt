@@ -248,6 +248,8 @@ fun SendPreviewScreen() {
     val s = c.flow.send
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
+    var code by rememberSaveable { mutableStateOf(currencies.selected.takeIf { it in currencies.active } ?: "SAT") }
+    val slideToPay by c.prefs.slideToPay.collectAsState()
     var paying by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -297,12 +299,19 @@ fun SendPreviewScreen() {
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (s.viaNfc) { NfcTappedBadge(); Spacer(Modifier.height(14.dp)) }
                 Txt(stringResource(R.string.send_preview_sending), size = 14.sp, color = Lw.MutedFg)
+                // Same toggle as Receive; without a rate the fiat view falls back to sats rather than "—".
+                val shown = code.takeIf { Currencies.format(amount, it, rates) != "—" } ?: "SAT"
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Txt(Currencies.formatSats(amount), size = 60.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("preview-amount"))
+                    val text = Currencies.format(amount, shown, rates)
+                    Txt(text, size = if (text.length > 8) 44.sp else 60.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("preview-amount"))
                     Spacer(Modifier.width(8.dp))
-                    Txt("sats", Modifier.padding(bottom = 10.dp), size = 18.sp, color = Lw.MutedFg)
+                    Txt(Currencies.unitLabel(shown), Modifier.padding(bottom = 10.dp), size = 18.sp, color = Lw.MutedFg)
                 }
-                currencies.selected.takeIf { it != "SAT" }?.let { Currencies.format(amount, it, rates) }?.takeIf { it != "—" }?.let { MutedText("≈ $it") }
+                if (shown != "SAT") MutedText(stringResource(R.string.common_sats, Currencies.formatSats(amount)))
+                if (currencies.active.size > 1) {
+                    Spacer(Modifier.height(12.dp))
+                    CurrencyToggle(currencies.active, code, { code = it })
+                }
                 // Only worth a line once it's close: POS invoices often live a few minutes.
                 if (leftMs != null && leftMs < 10 * 60_000) {
                     Spacer(Modifier.height(8.dp))
@@ -321,22 +330,14 @@ fun SendPreviewScreen() {
                 PreviewRow(stringResource(R.string.send_preview_amount), stringResource(R.string.common_sats, Currencies.formatSats(amount)))
                 PreviewRow(stringResource(R.string.send_networkFee), stringResource(R.string.send_preview_feeNotQuoted))
                 PreviewRow(stringResource(R.string.send_preview_total), stringResource(R.string.send_preview_plusFee, Currencies.formatSats(amount)))
-                val fiat = currencies.active.filter { it != "SAT" }
-                if (fiat.isNotEmpty()) {
-                    Txt(stringResource(R.string.send_preview_equivalents), size = 12.sp, color = Lw.MutedFg)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        fiat.take(3).forEach { cc ->
-                            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Lw.Background).padding(10.dp)) {
-                                Txt(cc, size = 11.sp, color = Lw.MutedFg)
-                                Txt(Currencies.format(amount, cc, rates), size = 13.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                            }
-                        }
-                    }
-                }
             }
             ErrorText(error, Modifier.fillMaxWidth())
         }
-        SwipeButton(stringResource(R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired)
+        if (slideToPay) SwipeButton(stringResource(R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired)
+        else Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            LwButton(stringResource(R.string.common_cancel), { nav.goHome() }, Modifier.weight(1f).testTag("pay-cancel"), BtnVariant.Secondary, enabled = !paying && !done)
+            LwButton(stringResource(R.string.send_preview_confirm), ::pay, Modifier.weight(1f).testTag("pay-confirm"), BtnVariant.Theme, enabled = !expired && !done, loading = paying)
+        }
     }
 }
 
