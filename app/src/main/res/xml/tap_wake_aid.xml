@@ -5,5 +5,7 @@
     <!-- NFC Forum Type 4 Tag NDEF application: what a POS sends when it reads us as a tag. -->
     <aid-group android:category="other" android:description="@string/nfc_tap_wake_service">
         <aid-filter android:name="D2760000850101" />
+        <!-- v1 NDEF AID: Android's reader retries with it after we refuse the v2 SELECT above. -->
+        <aid-filter android:name="D2760000850100" />
     </aid-group>
 </host-apdu-service>
