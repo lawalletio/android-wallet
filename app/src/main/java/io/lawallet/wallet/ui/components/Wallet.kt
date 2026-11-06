@@ -6,6 +6,10 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
+import androidx.compose.animation.Crossfade
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.draw.drawWithContent
@@ -292,15 +296,29 @@ fun SwipeButton(label: String, onConfirm: () -> Unit, loading: Boolean, done: Bo
     val shine = rememberInfiniteTransition(label = "shine").animateFloat(-0.5f, 1.5f, infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Restart), label = "x")
     val max = (trackPx - thumbPx - inset * 2).coerceAtLeast(1f)
     val progress = offset.value / max
+    // Knob stays at the end through the hand-off to "Paying…" (so "Swipe to pay" never flashes back); it returns only if the payment fails.
+    LaunchedEffect(loading, done) { if (!loading && !done && offset.value > 0f) offset.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow)) }
     BoxWithConstraints(
         modifier.fillMaxWidth().height(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))
             .glass(CircleShape, GlassLevel.Thin, tint = if (done) Lw.Green.copy(alpha = 0.25f) else null).testTag("swipe"),
     ) {
         trackPx = constraints.maxWidth.toFloat()
-        Box(Modifier.fillMaxSize().padding(start = 68.dp, end = 4.dp), contentAlignment = Alignment.Center) {
-            when {
-                loading -> Spinner()
-                done -> LwIcon(L.drawable.lucide_ic_check, tint = Lw.Green)
+        // Green trail behind the knob: fades in with progress, darker at the bottom with a lit top edge so it reads as recessed.
+        if (!done) Box(Modifier.matchParentSize().drawBehind {
+            val fill = (if (loading) 1f else progress).coerceIn(0f, 1f)
+            if (fill <= 0f) return@drawBehind
+            val w = (if (loading) max else offset.value) + thumbPx + inset * 2
+            val r = CornerRadius(size.height / 2)
+            drawRoundRect(Brush.verticalGradient(listOf(Lw.Green.copy(alpha = 0.35f), Lw.Green.copy(alpha = 0.75f))), size = Size(w, size.height), cornerRadius = r, alpha = fill)
+            drawRoundRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent), endY = size.height * 0.4f), size = Size(w, size.height), cornerRadius = r, alpha = fill)
+            drawRoundRect(Brush.horizontalGradient(listOf(Color.Transparent, Lw.Green.copy(alpha = 0.6f)), startX = w - thumbPx * 2, endX = w), size = Size(w, size.height), cornerRadius = r, alpha = fill)
+        })
+        // Symmetric padding keeps the label centred on the full track while clearing the knob.
+        Crossfade(if (done) 2 else if (loading) 1 else 0, Modifier.fillMaxSize().padding(horizontal = 68.dp), label = "swipe-label") { state ->
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            when (state) {
+                1 -> Txt(stringResource(R.string.send_preview_paying), size = 20.sp, weight = FontWeight.Normal, color = Color.White.copy(alpha = 0.7f))
+                2 -> LwIcon(L.drawable.lucide_ic_check, tint = Lw.Green)
                 // Label is drawn white, then masked by a grey gradient with a bright band sweeping through the glyphs.
                 else -> Txt(
                     label,
@@ -314,25 +332,30 @@ fun SwipeButton(label: String, onConfirm: () -> Unit, loading: Boolean, done: Bo
                     size = 20.sp, weight = FontWeight.Normal, color = Color.White,
                 )
             }
+          }
         }
-        if (!loading && !done) Box(
-            Modifier.offset { IntOffset((offset.value + inset).roundToInt(), inset.roundToInt()) }.size(64.dp)
+        // While paying, the knob stays parked at the end and spins there.
+        if (!done) Box(
+            Modifier.offset { IntOffset(((if (loading) max else offset.value) + inset).roundToInt(), inset.roundToInt()) }.size(64.dp)
                 .shadow(6.dp, CircleShape).clip(CircleShape).background(Brush.verticalGradient(listOf(Color.White, Lw.Neutral100)))
-                .pointerInput(enabled, max) {
-                    if (!enabled) return@pointerInput
+                .pointerInput(enabled, max, loading) {
+                    if (!enabled || loading) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {
                                 if (offset.value >= max * 0.9f) {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    offset.animateTo(max); onConfirm(); offset.snapTo(0f)
+                                    offset.animateTo(max); onConfirm()
                                 } else offset.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow))
                             }
                         },
                     ) { _, d -> scope.launch { offset.snapTo((offset.value + d).coerceIn(0f, max)) } }
                 },
             contentAlignment = Alignment.Center,
-        ) { LwIcon(L.drawable.lucide_ic_chevron_right, size = 28.dp, tint = if (enabled) Lw.Neutral700 else Lw.Neutral400) }
+        ) {
+            if (loading) Spinner(24.dp, Lw.Neutral700)
+            else LwIcon(L.drawable.lucide_ic_chevron_right, size = 28.dp, tint = if (enabled) Lw.Neutral700 else Lw.Neutral400)
+        }
     }
 }
 
