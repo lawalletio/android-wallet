@@ -119,4 +119,5 @@
     <string name="send_preview_description">Description</string>
     <string name="send_preview_expiresIn">Expires in %1$s</string>
     <string name="send_preview_expired">This invoice expired. Ask for a new one.</string>
+    <string name="nfc_tap_wake_service">Open LaWallet to pay tapped invoices</string>
 </resources>

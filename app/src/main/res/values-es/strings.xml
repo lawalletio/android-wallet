@@ -121,4 +121,5 @@
     <string name="send_preview_description">Descripción</string>
     <string name="send_preview_expiresIn">Vence en %1$s</string>
     <string name="send_preview_expired">Esta factura venció. Pedí una nueva.</string>
+    <string name="nfc_tap_wake_service">Abrir LaWallet para pagar facturas por NFC</string>
 </resources>
