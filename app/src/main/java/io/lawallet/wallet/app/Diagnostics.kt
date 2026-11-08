@@ -21,13 +21,19 @@ import io.lawallet.wallet.core.diag.Scrubber
 import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.store.Prefs
 import io.lawallet.wallet.service.PaymentListenerService
+import io.sentry.Attachment
 import io.sentry.Breadcrumb
+import io.sentry.Hint
 import io.sentry.ITransaction
 import io.sentry.TransactionOptions
 import io.sentry.Sentry
 import io.sentry.SentryEvent
+import io.sentry.SentryAttribute
+import io.sentry.SentryAttributes
 import io.sentry.SentryLevel
+import io.sentry.SentryLogLevel
 import io.sentry.android.core.SentryAndroid
+import io.sentry.logger.SentryLogParameters
 import io.sentry.protocol.Message
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -127,7 +133,7 @@ object Diagnostics {
     fun accept(context: Context) {
         container.prefs.setCrashReports(true)
         initSentry(context)
-        _prompt.value.forEach(::send)
+        _prompt.value.forEach { send(it, sdkWasOn = false) }
         _prompt.value = emptyList()
     }
 
@@ -152,7 +158,12 @@ object Diagnostics {
     fun screen(route: String): ITransaction? {
         navigations++
         if (!sentryOn) return null
-        return Sentry.startTransaction(route, "ui.load", TransactionOptions().apply { isBindToScope = true }).apply {
+        return Sentry.startTransaction(route, "ui.load", TransactionOptions().apply {
+            isBindToScope = true
+            // finish() waits for nwc.request children (60s timeout); the deadline cuts off any left over.
+            isWaitForChildren = true
+            deadlineTimeout = 65_000
+        }).apply {
             setMeasurement("nav_count", navigations)
             setMeasurement("uptime_min", (SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000)
             setMeasurement("heap_mb", (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) shr 20)
@@ -176,17 +187,26 @@ object Diagnostics {
             o.isAttachScreenshot = false // would show the balance
             o.isAttachViewHierarchy = false
             o.isEnableUserInteractionBreadcrumbs = false
-            o.isEnableAutoSessionTracking = false // sessions carry an installation id; Play vitals has crash-free rates
+            o.isEnableAutoSessionTracking = true // crash-free rate per release
             o.isAnrEnabled = true
             // The raw thread dump is an attachment beforeSend can't scrub (OkHttp thread names are
             // URLs); the ANR event's own threads are scrubbed and are enough.
             o.isAttachAnrThreadDump = false
-            o.isTombstoneEnabled = false // secp256k1 JNI handles keys: not until a payload is reviewed
+            // Native crashes (secp256k1 JNI): frames and registers only, through the same Scrubber.event.
+            o.isTombstoneEnabled = true
+            o.logs.isEnabled = true
+            o.logs.setBeforeSend { l -> Scrubber.log(l) }
             // App start, screen loads and slow/frozen frames. No network spans: OkHttp isn't instrumented.
             o.tracesSampleRate = 0.2
             o.setBeforeSendTransaction { t, _ -> Scrubber.transaction(t) }
             o.setBeforeBreadcrumb { b, _ -> Scrubber.breadcrumb(b) }
-            o.setBeforeSend { e, _ -> Scrubber.event(e).also { if (!describesDeadProcess(it)) liveTags(it) } }
+            o.setBeforeSend { e, _ ->
+                Scrubber.event(e).also {
+                    // Ours are built off the main thread long after the exit: the SDK's current-thread stack is noise.
+                    if (it.message?.formatted?.startsWith("exit.") == true) it.threads = null
+                    if (!describesDeadProcess(it)) liveTags(it)
+                }
+            }
         }
         sentryOn = true
     }
@@ -199,7 +219,7 @@ object Diagnostics {
 
     /** Our exit records and the SDK's ANR/tombstone reports (read from exit history on the next launch). */
     private fun describesDeadProcess(e: SentryEvent) =
-        e.message?.formatted?.startsWith("exit.") == true || e.exceptions?.any { it.mechanism?.type == "AppExitInfo" } == true
+        e.message?.formatted?.startsWith("exit.") == true || e.exceptions?.any { it.mechanism?.type.let { t -> t == "AppExitInfo" || t.equals("tombstone", ignoreCase = true) } } == true
 
     /** What the process looks like right now — not added to events about a dead one. */
     private fun liveTags(e: SentryEvent) {
@@ -210,8 +230,27 @@ object Diagnostics {
         e.setTag("native_mb", (Debug.getNativeHeapAllocatedSize() shr 20).toString())
     }
 
-    private fun send(r: ExitRecord) {
+    /**
+     * Abnormal exits become events; normal ones (user_requested, package_updated…) a log line.
+     * The SDK already reports ANRs and native crashes from exit history with real stacks, and JVM
+     * crashes when it was running at the time ([sdkWasOn]): those are skipped. Exits older than
+     * [MAX_AGE_MS] are dropped (Sentry rejects old timestamps).
+     */
+    private fun send(r: ExitRecord, sdkWasOn: Boolean = true) {
         if (!sentryOn) return
+        if (!r.abnormal) {
+            Sentry.logger().log(SentryLogLevel.INFO, SentryLogParameters.create(SentryAttributes.of(
+                SentryAttribute.stringAttribute("reason", r.reason),
+                SentryAttribute.integerAttribute("importance", r.importance),
+                SentryAttribute.stringAttribute("state", r.state),
+            )), "exit.%s", r.reason)
+            return
+        }
+        if (r.reason == "anr" || r.reason == "crash_native" || (sdkWasOn && r.reason == "crash")) return
+        if (System.currentTimeMillis() - r.at > MAX_AGE_MS) return
+        // Freezer / resource kills often follow a stuck main thread: the last ANR's stack (already redacted) helps.
+        val hint = container.prefs.lastAnrTrace?.takeIf { r.reason == "freezer" || r.reason == "excessive_resource_usage" }
+            ?.let { Hint.withAttachment(Attachment(it.toByteArray(), "last-anr-main-thread.txt", "text/plain")) }
         Sentry.captureEvent(SentryEvent(Date(r.at)).apply {
             message = Message().apply { formatted = "exit.${r.reason}" }
             level = if (r.abnormal) SentryLevel.WARNING else SentryLevel.INFO
@@ -225,7 +264,7 @@ object Diagnostics {
             deadRunTrail?.takeIf { it.first == r.at }?.second?.let { lines ->
                 breadcrumbs = lines.map { Breadcrumb().apply { category = "trail"; message = it; origin = Scrubber.TRAIL } }
             }
-        })
+        }, hint)
     }
 
     private fun recordExits(context: Context, prefs: Prefs) {
@@ -316,6 +355,8 @@ object Diagnostics {
         11 -> "user_stopped"; 12 -> "dependency_died"; 13 -> "other"; 14 -> "freezer"; 15 -> "package_state_change"
         16 -> "package_updated"; else -> "unknown_$r"
     }
+
+    private const val MAX_AGE_MS = 25 * 24 * 3600_000L
 
     private val ABNORMAL = setOf("signaled", "low_memory", "crash", "crash_native", "anr", "initialization_failure", "excessive_resource_usage", "freezer", "other")
 }

@@ -214,8 +214,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    // The route pattern (`activity/{hash}`), never its arguments. Traced for its first second:
-    // the transition and the screen's first load.
+    // The route pattern (`activity/{hash}`), never its arguments. Traced over the transition and
+    // the screen's first load; the transaction waits for its `nwc.request` children (deadline in Diagnostics.screen).
     LaunchedEffect(route) {
         route ?: return@LaunchedEffect
         Trail.add("navigation", route)
