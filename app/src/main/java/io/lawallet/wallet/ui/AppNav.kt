@@ -121,6 +121,7 @@ object R0 {
     const val CARDS = "settings/cards"
     const val SECURITY = "settings/security"
     const val REMOTE_WALLETS = "settings/remote-wallets"
+    const val REMOTE_WALLET_ADD = "settings/remote-wallets-add"
     const val CURRENCIES = "settings/currencies"
     const val LANGUAGE = "settings/language"
     const val SOUND = "settings/payment-sound"
@@ -283,6 +284,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.CARDS) { CardsScreen() }
                 composable(R0.SECURITY) { SecurityScreen() }
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
+                composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
                 composable(R0.LANGUAGE) { LanguageScreen() }

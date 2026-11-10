@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,6 +77,7 @@ import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
@@ -82,132 +85,168 @@ import com.composables.icons.lucide.R as L
 fun RemoteWalletsScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val walletsSer = ListSerializer(RemoteWallet.serializer())
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", walletsSer)) }
+    val balances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
     var failed by remember { mutableStateOf(false) }
-    var adding by remember { mutableStateOf(false) }
-    val nowPrimary = stringResource(R.string.remoteWallets_list_nowPrimary)
-    val enabledFmt = stringResource(R.string.remoteWallets_list_enabledToast)
-    val disabledFmt = stringResource(R.string.remoteWallets_list_disabledToast)
-    val updateFailed = stringResource(R.string.remoteWallets_list_updateFailed)
-    suspend fun load() { runCatching { c.session.api.value.remoteWallets() }.onSuccess { wallets = it; failed = false; c.prefs.setCached("remote-wallets", walletsSer, it) }.onFailure { failed = true } }
-    suspend fun changed() { load(); runCatching { c.session.refreshMe() } }
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) {
+        runCatching { c.session.api.value.remoteWallets() }.onSuccess { wallets = it; failed = false; c.prefs.setCached("remote-wallets", walletsSer, it) }.onFailure { failed = true }
+        coroutineScope {
+            wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+                launch { balances[w.id] = runCatching { c.session.api.value.remoteWalletBalance(w.id) }.getOrNull() }
+            }
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         SettingsHeader(stringResource(R.string.settings_remoteWallets), { nav.popBackStack() }, stringResource(R.string.common_back))
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val list = wallets
             when {
                 list == null && failed -> Column { Txt(stringResource(R.string.remoteWallets_list_errorTitle), weight = FontWeight.SemiBold); MutedText(stringResource(R.string.remoteWallets_list_tryAgain)) }
                 list == null -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
-                list.isEmpty() -> Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    LwIcon(L.drawable.lucide_ic_wallet, size = 40.dp, tint = Lw.MutedFg)
-                    Spacer(Modifier.height(12.dp))
-                    Txt(stringResource(R.string.remoteWallets_list_emptyTitle), weight = FontWeight.SemiBold)
+                list.isEmpty() -> Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(72.dp).glass(CircleShape), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_wallet, size = 32.dp, tint = Lw.MutedFg) }
+                    Spacer(Modifier.height(16.dp))
+                    Txt(stringResource(R.string.remoteWallets_list_emptyTitle), size = 18.sp, weight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
                     MutedText(stringResource(R.string.remoteWallets_list_emptyBody))
                 }
-                else -> SettingsGroup {
-                    list.forEachIndexed { i, w ->
-                        if (i > 0) GroupDivider()
-                        Row(Modifier.fillMaxWidth().clickable { nav.navigate(R0.remoteWallet(w.id)) }.padding(16.dp).testTag("wallet-${w.name}"), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Txt(w.name, size = 16.sp, weight = FontWeight.Medium, maxLines = 1)
-                                    if (w.isDefault) { Spacer(Modifier.width(8.dp)); Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400) }
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    when (w.status) {
-                                        "DEAD" -> Pill(stringResource(R.string.rw_dead), Lw.Red)
-                                        "DISABLED" -> Pill(stringResource(R.string.remoteWallets_paused), Lw.MutedFg)
-                                        else -> Pill(stringResource(R.string.remoteWallets_live), Lw.Green)
-                                    }
-                                    Pill(if (w.provider == "lncurl") "LNCurl" else w.type, Lw.NwcPurple)
-                                }
-                            }
-                            if (!w.isDefault && w.status == "ACTIVE") TextButton({
-                                scope.launch { runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }.onSuccess { context.toast(nowPrimary.format(w.name)); changed() }.onFailure { context.toast(it.message ?: updateFailed) } }
-                            }) { Txt(stringResource(R.string.remoteWallets_list_setPrimary), size = 13.sp) }
-                            if (w.status == "ACTIVE" || w.status == "DISABLED") Switch(w.status == "ACTIVE", { on ->
-                                scope.launch {
-                                    runCatching { c.session.api.value.updateRemoteWallet(w.id, status = if (on) "ACTIVE" else "DISABLED") }
-                                        .onSuccess { context.toast((if (on) enabledFmt else disabledFmt).format(w.name)); changed() }
-                                        .onFailure { context.toast(it.message ?: updateFailed) }
-                                }
-                            }, colors = lwSwitchColors())
+                else -> {
+                    val active = list.filter { it.status == "ACTIVE" }
+                    val total = active.mapNotNull { balances[it.id] }.sum()
+                    val totalReady = active.all { balances.containsKey(it.id) }
+                    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp, horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Txt(stringResource(R.string.rw_total_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Txt(if (totalReady) Currencies.formatSats(total) else "—", size = 40.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallets-total"))
+                            Spacer(Modifier.width(6.dp))
+                            Txt("sats", Modifier.padding(bottom = 7.dp), size = 16.sp, color = Lw.MutedFg)
                         }
+                        Spacer(Modifier.height(4.dp))
+                        MutedText(pluralStringResource(R.plurals.rw_wallet_count, list.size, list.size), size = 13.sp)
+                    }
+                    list.sortedWith(compareByDescending<RemoteWallet> { it.isDefault }.thenBy { it.status != "ACTIVE" }).forEach { w ->
+                        WalletCard(w, if (w.status == "ACTIVE") balances[w.id] else null, loading = w.status == "ACTIVE" && !balances.containsKey(w.id)) { nav.navigate(R0.remoteWallet(w.id)) }
                     }
                 }
             }
         }
-        LwButton(stringResource(R.string.rw_add), { adding = true }, Modifier.fillMaxWidth().padding(16.dp).testTag("add-wallet"), BtnVariant.Theme, icon = L.drawable.lucide_ic_plus)
+        LwButton(stringResource(R.string.rw_add), { nav.navigate(R0.REMOTE_WALLET_ADD) }, Modifier.fillMaxWidth().padding(16.dp).testTag("add-wallet"), BtnVariant.Theme, icon = L.drawable.lucide_ic_plus)
     }
-    if (adding) AddWalletDialog(onDismiss = { adding = false }, onCreated = { adding = false; scope.launch { changed() } })
+}
+
+@Composable
+private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClick: () -> Unit) {
+    val brand = LocalBrand.current
+    val lncurl = w.provider == "lncurl"
+    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
+    val dim = w.status != "ACTIVE"
+    Row(
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = if (w.isDefault) brand.t400.copy(alpha = 0.08f) else null)
+            .clickable(onClick = onClick).padding(16.dp).testTag("wallet-${w.name}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+            LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 20.dp, tint = if (dim) Lw.MutedFg else accent)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(w.name, size = 16.sp, weight = FontWeight.Medium, maxLines = 1, color = if (dim) Lw.MutedFg else Lw.Foreground)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (w.isDefault) Pill(stringResource(R.string.remoteWallets_list_primary), brand.t400)
+                when (w.status) {
+                    "DEAD" -> Pill(stringResource(R.string.rw_dead), Lw.Red)
+                    "DISABLED" -> Pill(stringResource(R.string.remoteWallets_paused), Lw.MutedFg)
+                    else -> Pill(if (lncurl) "LNCurl" else "NWC", accent)
+                }
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            when {
+                loading -> Spinner()
+                balance != null -> {
+                    Txt(Currencies.formatSats(balance), size = 18.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallet-balance-${w.name}"))
+                    Txt("sats", size = 12.sp, color = Lw.MutedFg)
+                }
+                else -> Txt("—", size = 18.sp, color = Lw.MutedFg)
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+    }
 }
 
 @Composable
 private fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
     Txt(text, Modifier.glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
 
+/** Add a remote wallet: pick a source first (import NWC / disposable LNCurl), then fill its form. */
 @Composable
-private fun AddWalletDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
+fun AddRemoteWalletScreen() {
     val c = LocalContainer.current
+    val nav = LocalNav.current
     val scope = rememberCoroutineScope()
     val settings by c.session.settings.collectAsState()
+    var step by remember { mutableStateOf<String?>(null) } // null = choose, "nwc", "lncurl"
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
-    var mode by remember { mutableStateOf("SEND_RECEIVE") }
     var primary by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
     val invalid = "Invalid NWC connection string"
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Glass.Dialog,
-        title = { Txt(stringResource(R.string.rw_add_title), size = 16.sp, weight = FontWeight.SemiBold) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
-                if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
-                    if (!scanning) return@QrCamera
-                    scanning = false; conn = raw.trim()
-                    error = if (runCatching { NwcUri.parse(conn) }.isFailure) invalid else null
+    // Name is optional: default to the URI's lud16, else its first relay host.
+    val derivedName = remember(conn) { runCatching { NwcUri.parse(conn) }.getOrNull()?.let { it.lud16 ?: it.relays.firstOrNull()?.substringAfter("://")?.substringBefore('/') } ?: "Wallet" }
+    val back = { if (step != null) { step = null; error = null; scanning = false } else nav.popBackStack() }
+    androidx.activity.compose.BackHandler(step != null) { back() }
+    fun submit(create: suspend () -> Unit) {
+        busy = true; error = null
+        scope.launch {
+            runCatching { create() }.onSuccess { runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { error = it.message }
+            busy = false
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        SettingsHeader(stringResource(when (step) { "nwc" -> R.string.rw_import_nwc; "lncurl" -> R.string.rw_create_disposable; else -> R.string.rw_add_title }), { back() }, stringResource(R.string.common_back))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            when (step) {
+                null -> {
+                    MutedText(stringResource(R.string.rw_add_subtitle))
+                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, icon = L.drawable.lucide_ic_link)
+                    if (settings?.lncurlEnabled == true) LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.fillMaxWidth().testTag("add-lncurl"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_zap)
                 }
-                OutlinedTextField(conn, { conn = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("wallet-nwc"), placeholder = { Txt(stringResource(R.string.rw_connection_hint), color = Lw.MutedFg) }, colors = lwFieldColors(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
-                    trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
-                Txt(stringResource(R.string.rw_mode), size = 12.sp, color = Lw.MutedFg)
-                listOf("SEND_RECEIVE" to R.string.rw_mode_send_receive, "RECEIVE" to R.string.rw_mode_receive).forEach { (k, l) ->
-                    Row(Modifier.fillMaxWidth().clickable { mode = k }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(mode == k, { mode = k }, colors = RadioButtonDefaults.colors(selectedColor = LocalBrand.current.t400)); Txt(stringResource(l))
+                "nwc" -> {
+                    if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
+                        if (!scanning) return@QrCamera
+                        scanning = false; conn = raw.trim()
+                        error = if (runCatching { NwcUri.parse(conn) }.isFailure) invalid else null
                     }
+                    OutlinedTextField(conn, { conn = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("wallet-nwc"), label = { Txt(stringResource(R.string.rw_connection)) }, placeholder = { Txt(stringResource(R.string.rw_connection_hint), color = Lw.MutedFg) }, colors = lwFieldColors(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
+                        trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
+                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name_optional)) }, placeholder = { Txt(derivedName, color = Lw.MutedFg) }, singleLine = true, colors = lwFieldColors())
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) { Txt(stringResource(R.string.rw_make_primary), Modifier.weight(1f)); Switch(primary, { primary = it }, colors = lwSwitchColors()) }
-                ErrorText(error)
-                if (settings?.lncurlEnabled == true) LwButton(stringResource(R.string.rw_create_lncurl), {
-                    busy = true
-                    scope.launch {
-                        runCatching { c.session.api.value.createLncurlWallet(name.ifBlank { null }, primary) }.onSuccess { onCreated() }.onFailure { error = it.message }
-                        busy = false
-                    }
-                }, Modifier.fillMaxWidth().testTag("create-lncurl"), BtnVariant.Secondary, enabled = !busy, icon = L.drawable.lucide_ic_zap)
+                "lncurl" -> {
+                    MutedText(stringResource(R.string.rw_lncurl_body))
+                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
+                }
             }
-        },
-        confirmButton = {
-            TextButton({
-                if (runCatching { NwcUri.parse(conn) }.isFailure) { error = invalid; return@TextButton }
-                busy = true
-                scope.launch {
-                    runCatching { c.session.api.value.createNwcWallet(name.ifBlank { "Wallet" }, conn, mode, primary) }.onSuccess { onCreated() }.onFailure { error = it.message }
-                    busy = false
-                }
-            }, enabled = !busy && conn.isNotBlank(), modifier = Modifier.testTag("wallet-connect")) { Txt(stringResource(R.string.rw_connect)) }
-        },
-        dismissButton = { TextButton(onDismiss) { Txt(stringResource(R.string.common_cancel)) } },
-    )
+            ErrorText(error)
+        }
+        when (step) {
+            "nwc" -> LwButton(stringResource(R.string.rw_connect), {
+                if (runCatching { NwcUri.parse(conn) }.isFailure) error = invalid
+                else submit { c.session.api.value.createNwcWallet(name.ifBlank { derivedName }, conn, "SEND_RECEIVE", primary) }
+            }, Modifier.fillMaxWidth().padding(16.dp).testTag("wallet-connect"), BtnVariant.Theme, enabled = !busy && conn.isNotBlank(), loading = busy)
+            "lncurl" -> LwButton(stringResource(R.string.rw_create), { submit { c.session.api.value.createLncurlWallet(name.ifBlank { null }, primary) } },
+                Modifier.fillMaxWidth().padding(16.dp).testTag("create-lncurl"), BtnVariant.Theme, enabled = !busy, loading = busy, icon = L.drawable.lucide_ic_zap)
+        }
+    }
 }
 
 @Composable
