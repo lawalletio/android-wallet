@@ -3,6 +3,8 @@ package io.lawallet.wallet.core.diag
 import io.sentry.Breadcrumb
 import io.sentry.SentryBaseEvent
 import io.sentry.SentryEvent
+import io.sentry.SentryLogEvent
+import io.sentry.SentryLogEventAttributeValue
 import io.sentry.protocol.SentryTransaction
 
 /**
@@ -63,6 +65,16 @@ object Scrubber {
         t.spans.removeAll { s -> s.description?.let { redact(it) != it } == true }
         t.spans.forEach { it.data = mutableMapOf() } // thread names (OkHttp: URLs) and the like
         return t
+    }
+
+    /** Sentry logs: our own `exit.` lines only; attributes limited to the SDK's `sentry.*`/os/device and our [tags]. */
+    fun log(l: SentryLogEvent): SentryLogEvent? {
+        if (ownMessages.none { l.body.startsWith(it) }) return null
+        l.body = redact(l.body)
+        l.attributes = l.attributes?.filterKeys { k -> k in tags || k.startsWith("sentry.") || k.startsWith("os.") || k.startsWith("device.") }
+            ?.mapValues { (_, v) -> (v.value as? String)?.let { SentryLogEventAttributeValue(v.type, redact(it)) } ?: v }
+            ?.toMutableMap()
+        return l
     }
 
     fun breadcrumb(b: Breadcrumb): Breadcrumb? {

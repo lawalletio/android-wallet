@@ -4,6 +4,9 @@ import io.lawallet.wallet.core.diag.Scrubber
 import io.sentry.Breadcrumb
 import io.sentry.JsonSerializer
 import io.sentry.SentryEvent
+import io.sentry.SentryLogEvent
+import io.sentry.SentryLogEventAttributeValue
+import io.sentry.SentryLogLevel
 import io.sentry.SentryOptions
 import io.sentry.protocol.Message
 import io.sentry.protocol.Request
@@ -105,5 +108,19 @@ class ScrubberTest {
         secrets.forEach { assertFalse("leaked: $it\n$json", json.contains(it, ignoreCase = true)) }
         assertFalse(json.contains("installation-id"))
         assertNull(Scrubber.transaction(SentryTransaction("activity/${secrets[5]}", 0.0, 1.0, mutableListOf(), emptyMap(), TransactionInfo("route"))))
+    }
+
+    @Test
+    fun `logs keep only our exit lines and allowlisted attributes`() {
+        val other = SentryLogEvent(SentryId(), 0.0, "pay $all", SentryLogLevel.INFO)
+        assertNull(Scrubber.log(other))
+        val l = SentryLogEvent(SentryId(), 0.0, "exit.user_requested $all", SentryLogLevel.INFO).apply {
+            setAttribute("state", SentryLogEventAttributeValue("string", all))
+            setAttribute("user.id", SentryLogEventAttributeValue("string", "install-id"))
+            setAttribute("sentry.release", SentryLogEventAttributeValue("string", "1.0"))
+        }
+        val out = Scrubber.log(l)!!
+        secrets.forEach { assertFalse(it, out.body.contains(it) || out.attributes!!["state"]!!.value.toString().contains(it)) }
+        assertEquals(setOf("state", "sentry.release"), out.attributes!!.keys)
     }
 }

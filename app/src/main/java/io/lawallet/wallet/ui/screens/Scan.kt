@@ -96,7 +96,7 @@ suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: Stri
     }
 }
 
-private var mlKitReady = false
+@Volatile private var mlKitReady = false
 
 /** ML Kit's startup provider is removed from the manifest; initialize() throws if called twice per process. Main thread only. */
 private fun initMlKit(context: android.content.Context) {
