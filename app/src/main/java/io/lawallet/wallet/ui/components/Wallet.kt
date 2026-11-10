@@ -67,6 +67,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
@@ -490,7 +492,27 @@ fun ScreenColumn(modifier: Modifier = Modifier, padding: PaddingValues = Padding
 
 @Composable
 fun AspectCard(url: String?, modifier: Modifier = Modifier) {
-    Box(modifier.aspectRatio(1.586f).shadow(24.dp, RoundedCornerShape(16.dp)).glass(RoundedCornerShape(16.dp))) {
+    // Drawn drop shadow: an elevation shadow() under translucent glass rendered as dark
+    // square blocks on some GPUs (same issue as the landing isotype tile).
+    Box(modifier.aspectRatio(1.586f).drawBehind(CardShadow).glass(RoundedCornerShape(16.dp))) {
         if (url != null) coil3.compose.AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
     }
+}
+
+private val CardShadow: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+    val r = 16.dp.toPx()
+    val blur = 18.dp.toPx()
+    // Clip the card itself out so the shadow doesn't darken through the translucent glass.
+    val card = androidx.compose.ui.graphics.Path().apply {
+        addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, r, r))
+    }
+    clipPath(card, androidx.compose.ui.graphics.ClipOp.Difference) { drawIntoCanvas { canvas ->
+        val paint = androidx.compose.ui.graphics.Paint()
+        paint.asFrameworkPaint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.argb(110, 0, 0, 0)
+            maskFilter = android.graphics.BlurMaskFilter(blur, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        }
+        canvas.drawRoundRect(0f, 6.dp.toPx(), size.width, size.height + 6.dp.toPx(), r, r, paint)
+    } }
 }
