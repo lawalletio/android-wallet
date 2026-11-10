@@ -140,4 +140,7 @@
     <string name="slide_to_pay_title">Deslizar para pagar</string>
     <string name="slide_to_pay_body">Deslizá para confirmar un pago. Desactivalo para usar los botones Confirmar y Cancelar.</string>
     <string name="send_preview_confirm">Confirmar pago</string>
+    <string name="welcome_headline">Bienvenido a</string>
+    <string name="welcome_tagline">Tus claves. Tus sats.</string>
+    <string name="welcome_chip_custody">autocustodia</string>
 </resources>

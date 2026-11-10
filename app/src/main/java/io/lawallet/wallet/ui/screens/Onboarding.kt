@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,7 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -69,6 +71,13 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.theme.LocalBrand
+import androidx.compose.runtime.LaunchedEffect
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieClipSpec
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.rememberLottieAnimatable
+import com.airbnb.lottie.compose.rememberLottieComposition
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Glass
@@ -87,8 +96,16 @@ fun LandingScreen() {
     val brand = LocalBrand.current
     AuthColumn {
         Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Box(Modifier.size(168.dp).shadow(40.dp, RoundedCornerShape(40.dp), ambientColor = LocalBrand.current.t400, spotColor = LocalBrand.current.t400).glass(RoundedCornerShape(40.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) {
-                BrandImage(brand.isotype, "isotype.svg", Modifier.size(88.dp))
+            Box(Modifier.size(168.dp), contentAlignment = Alignment.Center) {
+                // Brand glow as a plain radial gradient. An elevation shadow() under translucent
+                // glass rendered as dark square blocks around the logo on some GPUs.
+                val glow = brand.t400
+                Box(Modifier.matchParentSize().drawBehind {
+                    drawCircle(Brush.radialGradient(0f to glow.copy(alpha = 0.35f), 0.55f to glow.copy(alpha = 0.12f), 1f to Color.Transparent, center = center, radius = size.minDimension * 0.85f), size.minDimension * 0.85f, center)
+                })
+                Box(Modifier.matchParentSize().glass(RoundedCornerShape(40.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) {
+                    BrandImage(brand.isotype, "isotype.svg", Modifier.size(88.dp))
+                }
             }
             Spacer(Modifier.height(32.dp))
             Txt(brand.name ?: "LaWallet", size = 24.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
@@ -361,25 +378,33 @@ fun NostrLoginScreen() {
 @Composable
 fun WelcomeScreen() {
     val nav = LocalNav.current
+    val brand = LocalBrand.current
+    // Isotype assembles once (frames 0-45), then the rings pulse on a seamless loop (45-135).
+    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.welcome_isotype))
+    val anim = rememberLottieAnimatable()
+    LaunchedEffect(composition) {
+        val comp = composition ?: return@LaunchedEffect
+        anim.animate(comp, clipSpec = LottieClipSpec.Frame(0, 45))
+        anim.animate(comp, clipSpec = LottieClipSpec.Frame(45, 135), iterations = LottieConstants.IterateForever)
+    }
     AuthColumn {
-        Column(Modifier.weight(1f).padding(top = 40.dp), verticalArrangement = Arrangement.spacedBy(32.dp)) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)).background(Lw.NwcPurple.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
-                    LwIcon(L.drawable.lucide_ic_sparkles, size = 40.dp, tint = Lw.NwcPurple)
-                }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Txt(stringResource(R.string.onboarding_welcome_title), size = 24.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
-                MutedText(stringResource(R.string.onboarding_welcome_body), align = TextAlign.Center)
-            }
-            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), GlassLevel.Thin).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Txt(stringResource(R.string.onboarding_welcome_thingsToKnow), size = 14.sp, weight = FontWeight.Medium)
-                listOf(R.string.onboarding_welcome_tipKey, R.string.onboarding_welcome_tipAddress, R.string.onboarding_welcome_tipSats).forEach {
-                    Txt("•  " + stringResource(it), size = 12.sp, color = Lw.MutedFg)
+        Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            LottieAnimation(composition, { anim.progress }, Modifier.size(260.dp).testTag("welcome-lottie"))
+            Spacer(Modifier.height(8.dp))
+            // lawallet.io hero: a plain lead-in over the full logotype (the community's, when set).
+            Txt(stringResource(R.string.welcome_headline), size = 30.sp, weight = FontWeight.Bold, align = TextAlign.Center)
+            Spacer(Modifier.height(16.dp))
+            BrandImage(brand.logotype, "logotype.svg", Modifier.width(240.dp).aspectRatio(1044.89f / 187.5f).testTag("welcome-logotype"), contentDescription = brand.name ?: "lawallet")
+            Spacer(Modifier.height(20.dp))
+            MutedText(stringResource(R.string.welcome_tagline), align = TextAlign.Center, size = 16.sp)
+            Spacer(Modifier.height(28.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(R.string.welcome_chip_custody, R.string.welcome_chip_lightning, R.string.welcome_chip_nostr).forEach {
+                    Txt("⚡ " + stringResource(it), Modifier.glass(RoundedCornerShape(50), GlassLevel.Thin).padding(horizontal = 12.dp, vertical = 6.dp), size = 12.sp, color = Lw.MutedFg, mono = true)
                 }
             }
         }
-        LwButton(stringResource(R.string.onboarding_welcome_enter), { nav.navigate(R0.HOME) { popUpTo(0) { inclusive = true } } }, Modifier.fillMaxWidth().padding(bottom = 24.dp).testTag("welcome-enter"))
+        LwButton(stringResource(R.string.onboarding_welcome_enter), { nav.navigate(R0.HOME) { popUpTo(0) { inclusive = true } } }, Modifier.fillMaxWidth().padding(bottom = 24.dp).testTag("welcome-enter"), BtnVariant.Theme)
     }
 }
 

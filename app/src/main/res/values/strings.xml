@@ -138,4 +138,9 @@
     <string name="slide_to_pay_title">Slide to pay</string>
     <string name="slide_to_pay_body">Swipe to confirm a payment. Turn it off to use Confirm and Cancel buttons instead.</string>
     <string name="send_preview_confirm">Confirm payment</string>
+    <string name="welcome_headline">Welcome to</string>
+    <string name="welcome_tagline">Your keys. Your sats.</string>
+    <string name="welcome_chip_custody">self-custody</string>
+    <string name="welcome_chip_lightning" translatable="false">lightning</string>
+    <string name="welcome_chip_nostr" translatable="false">nostr</string>
 </resources>
