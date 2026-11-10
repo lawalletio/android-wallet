@@ -88,6 +88,18 @@
     <string name="rw_forward_split">Reparto %</string>
     <string name="rw_recent_tx">Transacciones recientes</string>
     <string name="rw_scan_connection">Escanear QR de conexión</string>
+    <string name="rw_add_subtitle">Elegí cómo agregar una billetera. Podés importar cualquier conexión NWC o crear una billetera LNCurl descartable en un toque.</string>
+    <string name="rw_import_nwc">Importar NWC</string>
+    <string name="rw_create_disposable">Crear LNCurl descartable</string>
+    <string name="rw_lncurl_body">Se crea para vos una billetera LNCurl gratuita y custodial. Tratala como descartable: guardá solo montos chicos.</string>
+    <string name="rw_connection">URI de conexión</string>
+    <string name="rw_name_optional">Nombre (opcional)</string>
+    <string name="rw_total_balance">Saldo total</string>
+    <plurals name="rw_wallet_count">
+        <item quantity="one">%d billetera</item>
+        <item quantity="other">%d billeteras</item>
+    </plurals>
+    <string name="rw_create">Crear billetera</string>
     <string name="security_delete_account">Eliminar cuenta</string>
     <string name="security_delete_confirm">¿Eliminar tu cuenta de esta instancia para siempre? Tus direcciones Lightning se liberan y tus tarjetas se desvinculan. No se puede deshacer. Los fondos de una billetera conectada quedan con su proveedor: retíralos antes.</string>
     <string name="security_delete_done">Cuenta eliminada</string>
