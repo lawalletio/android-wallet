@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,7 +36,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -174,7 +171,7 @@ internal fun ActivitySheetLayout(sheet: ActivitySheet, top: @Composable ColumnSc
 }
 
 @Composable
-internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit, onAll: () -> Unit) {
+internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit) {
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
@@ -182,13 +179,11 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         // Grabber: says "this moves", firmer as the sheet takes over.
         Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 6.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
             Txt(
                 stringResource(R.string.home_activityTitle), size = 15.sp, weight = FontWeight.SemiBold,
                 modifier = Modifier.graphicsLayer { val s = 1f + 0.45f * sheet.progress; scaleX = s; scaleY = s; transformOrigin = TransformOrigin(0f, 0.5f) },
             )
-            Spacer(Modifier.weight(1f))
-            Txt(stringResource(R.string.home_viewAll), Modifier.clip(CircleShape).clickable(onClick = onAll).padding(horizontal = 10.dp, vertical = 8.dp).testTag("view-all"), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         }
         val empty = when {
             !hasNwc -> stringResource(R.string.home_list_activity_connect)

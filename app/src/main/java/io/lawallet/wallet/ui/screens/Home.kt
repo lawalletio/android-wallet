@@ -279,7 +279,7 @@ fun HomeScreen() {
 
         },
         sheetContent = {
-            ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
+            ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
         },
       )
     }
