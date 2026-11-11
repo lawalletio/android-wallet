@@ -230,7 +230,7 @@ fun HomeScreen() {
                         Modifier.fillMaxWidth()
                             // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
                             .clickable(null, null, onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)) { c.prefs.setHideBalance(!hidden) }
-                            .padding(vertical = 16.dp).heightIn(min = 76.dp).testTag("balance-toggle"),
+                            .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle"),
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
