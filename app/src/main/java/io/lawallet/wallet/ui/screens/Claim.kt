@@ -309,7 +309,7 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
                                 drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.12f), Color.Transparent), Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.1f, size.height)))
                             }
                         }
-                        .padding(top = 48.dp, bottom = 28.dp, start = 20.dp, end = 20.dp)
+                        .padding(top = 34.dp, bottom = 26.dp, start = 20.dp, end = 20.dp)
                         .testTag("claimed-address").semantics(mergeDescendants = true) {},
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
