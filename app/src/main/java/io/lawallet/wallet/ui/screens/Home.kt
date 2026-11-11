@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -186,10 +187,15 @@ fun HomeScreen() {
                 }
                 // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
                 val address = me?.lightningAddress
-                if (address != null) Box(
-                    Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Txt(address, Modifier.testTag("home-address"), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+                if (address != null) Row(
+                    Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp)
+                        .testTag("home-address").semantics(mergeDescendants = true) {},
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                ) {
+                    // Username leads; the domain sits a step dimmer and never truncates.
+                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                }
                 else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                     BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
