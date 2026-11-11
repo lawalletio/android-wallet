@@ -153,7 +153,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     val celebrate = rememberCelebration(step == "success")
     androidx.activity.compose.BackHandler(step == "payment") { step = "username"; invoice = null }
     Column(Modifier.fillMaxSize().imePadding()) {
-        ScreenHeader(stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if (fromActivate && step == "username") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
+        ScreenHeader(stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if ((fromActivate && step == "username") || step == "success") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             when (step) {
                 "username" -> {
