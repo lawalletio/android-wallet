@@ -7,7 +7,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
-fun domainAvatar(domain: String) = "https://raw.githubusercontent.com/lawalletio/static/main/public/img/domains/${if (domain == "lawallet.io") "lawallet.ar" else domain}.png"
+/** Domains whose favicon ships in assets/domains/ (not in lawalletio/static). */
+private val BUNDLED_DOMAINS = setOf("wapupay.com", "obelisk.ar")
+
+fun domainAvatar(domain: String) =
+    if (domain.lowercase() in BUNDLED_DOMAINS) "file:///android_asset/domains/${domain.lowercase()}.png"
+    else "https://raw.githubusercontent.com/lawalletio/static/main/public/img/domains/${if (domain == "lawallet.io") "lawallet.ar" else domain}.png"
 
 /**
  * Recipient avatars by Lightning Address (payment-destinations.ts `useAddressAvatar`).

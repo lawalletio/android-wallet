@@ -98,7 +98,7 @@ import java.text.DateFormat
 import java.util.Date
 import com.composables.icons.lucide.R as L
 
-private val SUGGESTED_DOMAINS = listOf("lacrypta.ar", "lawallet.io", "walletofsatoshi.com", "blink.sv", "strike.me", "getalby.com", "ln.tips", "stacker.news", "primal.net", "fountain.fm", "coinos.io", "bitrefill.me", "zbd.gg", "npub.cash")
+private val SUGGESTED_DOMAINS = listOf("lacrypta.ar", "lawallet.io", "wapupay.com", "obelisk.ar", "walletofsatoshi.com", "blink.sv", "strike.me", "getalby.com", "ln.tips", "stacker.news", "primal.net", "fountain.fm", "coinos.io", "bitrefill.me", "zbd.gg", "npub.cash")
 
 /** Resolves a parsed destination into the send flow; returns the next route. */
 suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination, viaNfc: Boolean = false): String {
