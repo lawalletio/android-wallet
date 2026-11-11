@@ -184,7 +184,13 @@ fun HomeScreen() {
                         )
                     }
                 }
-                Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
+                // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
+                val address = me?.lightningAddress
+                if (address != null) Box(
+                    Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Txt(address, Modifier.testTag("home-address"), size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+                else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                     BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
                 GlassIconButton(
@@ -237,21 +243,7 @@ fun HomeScreen() {
                 }
             }
 
-            val address = me?.lightningAddress
-            when {
-                me == null -> {}
-                address != null -> Row(
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp))
-                        .clickable { nav.navigate(R0.RECEIVE) }.padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Txt(stringResource(R.string.home_address), size = 12.sp, color = Lw.MutedFg)
-                        Txt(address, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("home-address"))
-                    }
-                    Box(Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_qr_code, size = 20.dp) }
-                }
-                else -> Row(
+            if (me != null && me?.lightningAddress == null) Row(
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
                         .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -263,7 +255,6 @@ fun HomeScreen() {
                     Txt(stringResource(R.string.home_claimAddress), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
                     LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
                 }
-            }
             if (me != null && !hasNwc) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
                     Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)
