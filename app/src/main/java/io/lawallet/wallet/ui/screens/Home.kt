@@ -226,7 +226,13 @@ fun HomeScreen() {
                         }
                     }
                     // Fixed-height slot: cue effects never resize it.
-                    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).heightIn(min = 76.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
+                            .clickable(null, null, onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)) { c.prefs.setHideBalance(!hidden) }
+                            .padding(vertical = 16.dp).heightIn(min = 76.dp).testTag("balance-toggle"),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         when {
                             balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
                             balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
