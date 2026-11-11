@@ -1,5 +1,7 @@
 package io.lawallet.wallet.core.ln
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 /**
  * What a scanned/pasted/tapped payload means. Mirrors scan-screen.tsx's order:
  * activation URL → LNURL (network) → parseDestination.
@@ -14,7 +16,7 @@ sealed interface ScanResult {
 class ScanRouter(private val lnurl: Lnurl) {
     /** [instanceHosts]: hosts that count as "this community" (transport URL + advertised endpoint). */
     suspend fun route(raw: String, instanceHosts: Set<String>): ScanResult {
-        val text = raw.trim()
+        val text = unwrapLightningParam(raw.trim())
         ActivationUrl.parse(text)?.let { a ->
             return ScanResult.Activate(a.tokenId, instanceHosts.any { it.equals(a.host, ignoreCase = true) }, text)
         }
@@ -33,6 +35,15 @@ class ScanRouter(private val lnurl: Lnurl) {
             ScanResult.Pay(DestinationParser.parse(text))
         } catch (e: DestinationException) {
             ScanResult.Error(e.code, e.message ?: "Unsupported code")
+        }
+    }
+
+    companion object {
+        /** Merchant terminals (e.g. Blink) encode `https://…?lightning=LNURL1…`; treat it as the bare LNURL. */
+        fun unwrapLightningParam(text: String): String {
+            val url = text.toHttpUrlOrNull() ?: return text
+            val name = url.queryParameterNames.firstOrNull { it.equals("lightning", ignoreCase = true) } ?: return text
+            return url.queryParameter(name)?.trim()?.takeIf { it.lowercase().startsWith("lnurl1") } ?: text
         }
     }
 }

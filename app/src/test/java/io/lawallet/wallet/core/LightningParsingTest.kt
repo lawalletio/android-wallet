@@ -9,6 +9,7 @@ import io.lawallet.wallet.core.ln.Lnurl
 import io.lawallet.wallet.core.ln.LnurlException
 import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
+import io.lawallet.wallet.core.ln.ScanRouter
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import io.lawallet.wallet.core.nostr.Bech32
 import kotlinx.serialization.json.Json
@@ -115,4 +116,12 @@ class LightningParsingTest {
     }
 
     private fun json(s: String) = Json.parseToJsonElement(s).jsonObject
+
+    @Test fun lightningQueryParamUnwrap() {
+        val lnurl = "LNURL1DP68GURN8GHJ7CNVD9HXKTNNWCHJUAM9D3KZ66MWDAMKUTMVDE6HYMRS9AKKZUMF0FJSZUVQG3"
+        assertEquals(lnurl, ScanRouter.unwrapLightningParam("https://terminal.blinkbtc.com/MASIZE?LIGHTNING=$lnurl"))
+        assertEquals(lnurl.lowercase(), ScanRouter.unwrapLightningParam("https://pos.example.com/x?lightning=${lnurl.lowercase()}"))
+        val plain = "https://terminal.blinkbtc.com/MASIZE?foo=bar"
+        assertEquals(plain, ScanRouter.unwrapLightningParam(plain))
+    }
 }
