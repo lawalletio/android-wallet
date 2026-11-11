@@ -189,7 +189,7 @@ fun HomeScreen() {
                 if (address != null) Box(
                     Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center,
-                ) { Txt(address, Modifier.testTag("home-address"), size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+                ) { Txt(address, Modifier.testTag("home-address"), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1) }
                 else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                     BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
