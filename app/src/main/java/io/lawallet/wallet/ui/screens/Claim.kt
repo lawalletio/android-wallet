@@ -34,6 +34,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.semantics
 import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.Inter
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.graphics.drawscope.rotate
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.flow.first
 import kotlin.math.sin
@@ -280,6 +288,10 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
     val name = address.substringBefore('@')
     val host = address.substringAfter('@', "")
     val cardShape = RoundedCornerShape(24.dp)
+    // Oversized "@" watermark behind the address, brand-tinted and fading out toward the bottom-left.
+    val measurer = rememberTextMeasurer()
+    val at = remember(measurer) { measurer.measure("@", TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 210.sp)) }
+    val atBrush = Brush.linearGradient(listOf(brand.t400.copy(alpha = 0.55f), brand.t400.copy(alpha = 0.12f), Color.Transparent))
     Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Txt(
             stringResource(R.string.claim_claimedTitle), size = 26.sp, weight = FontWeight.SemiBold, align = TextAlign.Center,
@@ -300,6 +312,12 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
                         }
                         .glass(cardShape, GlassLevel.Strong, tint = brand.t400.copy(alpha = 0.10f))
                         .drawWithContent {
+                            // Watermark drifts in and settles with the address reveal.
+                            val w = clock.phase(STRIKE, 0.9f)
+                            if (w > 0f) {
+                                val tl = Offset(size.width - at.size.width * 0.82f + (1f - w) * 48.dp.toPx(), (size.height - at.size.height) / 2f + 6.dp.toPx())
+                                rotate(-14f + 6f * w, tl + Offset(at.size.width / 2f, at.size.height / 2f)) { drawText(at, atBrush, tl, alpha = w) }
+                            }
                             drawContent()
                             val flash = impact(clock)
                             if (flash > 0f) drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.35f * flash), brand.t400.copy(alpha = 0.25f * flash), Color.Transparent), Offset(size.width / 2, 0f), size.width * 0.8f))
@@ -327,10 +345,10 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
                 Modifier.align(Alignment.TopCenter).padding(top = BOLT_DROP - 30.dp).size(60.dp)
                     .graphicsLayer { val p = clock.phase(STRIKE - 0.02f, 0.64f, Overshoot); scaleX = p; scaleY = p; alpha = (p * 3f).coerceAtMost(1f) }
                     .shadow(16.dp, CircleShape, ambientColor = brand.t400, spotColor = brand.t400)
-                    .background(Brush.verticalGradient(listOf(brand.t400, brand.t300, brand.t200)), CircleShape)
-                    .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.4f), brand.t300.copy(alpha = 0.6f))), CircleShape),
+                    .background(Glass.Dialog, CircleShape)
+                    .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), brand.t400.copy(alpha = 0.8f))), CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { LwIcon(L.drawable.lucide_ic_at_sign, size = 28.dp, tint = Color.White) }
+            ) { Image(painterResource(R.drawable.ic_isotype), stringResource(R.string.app_name), Modifier.height(32.dp)) }
         }
         MutedText(
             stringResource(R.string.claim_claimedBody), align = TextAlign.Center,
