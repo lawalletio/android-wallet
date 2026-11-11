@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Stable
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -76,23 +79,10 @@ fun ActivityScreen() {
     val nav = LocalNav.current
     val recent by c.wallet.recent.collectAsState()
     var tab by remember { mutableStateOf("all") }
-    var loading by remember { mutableStateOf(false) }
-    var hasMore by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
-    LaunchedEffect(Unit) { loading = true; runCatching { c.wallet.page(null) }.onSuccess { hasMore = it.size >= 25 }.onFailure { error = true }; loading = false }
     LaunchedEffect(Unit) { c.wallet.notices.collect { c.wallet.refreshActivity() } }
-    val atEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: false } }
-    LaunchedEffect(atEnd) {
-        if (atEnd && hasMore && !loading && recent.isNotEmpty()) {
-            loading = true
-            runCatching { c.wallet.page(recent.minOf { it.createdAt } / 1000 - 1) }.onSuccess { hasMore = it.size >= 25 }
-            loading = false
-        }
-    }
+    val paging = rememberActivityPaging(list, firstPage = true)
     val items = if (tab == "transfers") recent.filter { !it.incoming } else recent
-    val groups = items.groupBy { dayLabel(it.createdAt) }
-    val labels = DayLabels(stringResource(R.string.activity_today), stringResource(R.string.activity_yesterday))
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.activity_title), { nav.popBackStack() })
         Row(Modifier.padding(horizontal = 16.dp).glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
@@ -102,26 +92,56 @@ fun ActivityScreen() {
                 }
             }
         }
+        val labels = rememberDayLabels()
         LazyColumn(Modifier.weight(1f), state = list) {
-            groups.forEach { (day, txs) ->
-                item(day.first) { Txt(labels.of(day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
-                items(txs, key = { it.paymentHash + it.createdAt }) { tx -> TransactionRow(tx) { c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) } }
-            }
-            item {
-                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                    when {
-                        loading -> Spinner()
-                        items.isEmpty() && error -> MutedText(stringResource(R.string.activity_loadFailed), align = TextAlign.Center)
-                        items.isEmpty() -> MutedText(stringResource(R.string.activity_empty), align = TextAlign.Center)
-                        !hasMore -> MutedText(stringResource(R.string.activity_end), align = TextAlign.Center, size = 12.sp)
-                    }
-                }
+            activityList(items, labels, paging) { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }
+        }
+    }
+}
+
+/** Older pages load as the list nears its end (25 per page); [enabled] gates it (e.g. Home's docked sheet). */
+@Stable
+internal class ActivityPaging { var loading by mutableStateOf(false); var hasMore by mutableStateOf(true); var error by mutableStateOf(false) }
+
+@Composable
+internal fun rememberActivityPaging(list: LazyListState, firstPage: Boolean, enabled: () -> Boolean = { true }): ActivityPaging {
+    val c = LocalContainer.current
+    val recent by c.wallet.recent.collectAsState()
+    val p = remember { ActivityPaging() }
+    if (firstPage) LaunchedEffect(Unit) { p.loading = true; runCatching { c.wallet.page(null) }.onSuccess { p.hasMore = it.size >= 25 }.onFailure { p.error = true }; p.loading = false }
+    val atEnd by remember { derivedStateOf { enabled() && (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: false) } }
+    LaunchedEffect(atEnd) {
+        if (atEnd && p.hasMore && !p.loading && recent.isNotEmpty()) {
+            p.loading = true
+            runCatching { c.wallet.page(recent.minOf { it.createdAt } / 1000 - 1) }.onSuccess { p.hasMore = it.size >= 25 }
+            p.loading = false
+        }
+    }
+    return p
+}
+
+@Composable
+internal fun rememberDayLabels() = DayLabels(stringResource(R.string.activity_today), stringResource(R.string.activity_yesterday))
+
+/** Day-grouped transaction rows plus the paging footer; shared by the Activity screen and Home's sheet. */
+internal fun LazyListScope.activityList(items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
+    items.groupBy { dayLabel(it.createdAt) }.forEach { (day, txs) ->
+        item(day.first) { Txt(labels.of(day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
+        items(txs, key = { it.paymentHash + it.createdAt }) { tx -> TransactionRow(tx) { onOpen(tx) } }
+    }
+    item("footer") {
+        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            when {
+                paging.loading -> Spinner()
+                items.isEmpty() && paging.error -> MutedText(stringResource(R.string.activity_loadFailed), align = TextAlign.Center)
+                items.isEmpty() -> MutedText(stringResource(R.string.activity_empty), align = TextAlign.Center)
+                !paging.hasMore -> MutedText(stringResource(R.string.activity_end), align = TextAlign.Center, size = 12.sp)
             }
         }
     }
 }
 
-private data class DayLabels(val today: String, val yesterday: String) {
+internal data class DayLabels(val today: String, val yesterday: String) {
     fun of(day: Pair<Long, Int>): String = when (day.second) {
         0 -> today
         1 -> yesterday

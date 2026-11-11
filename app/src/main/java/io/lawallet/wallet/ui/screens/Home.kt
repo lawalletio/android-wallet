@@ -26,10 +26,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,9 +71,7 @@ import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Spinner
-import io.lawallet.wallet.ui.components.TransactionRow
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Glass
@@ -169,8 +164,11 @@ fun HomeScreen() {
         }
     }
 
+    val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
     PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize().testTag("home-refresh"), state = pull, indicator = { RefreshOrb(pull, refreshing) }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 140.dp)) {
+      ActivitySheetLayout(
+        sheet,
+        top = {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box {
                     Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
@@ -279,8 +277,11 @@ fun HomeScreen() {
                 }
             }
 
-            ActivityPreview(recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
-        }
+        },
+        sheetContent = {
+            ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
+        },
+      )
     }
 
     if (confirmLogout) AlertDialog(
@@ -360,31 +361,4 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
         confirmButton = { TextButton({ open = false; onRetry() }) { Txt(stringResource(R.string.common_retry)) } },
         containerColor = Glass.Dialog,
     )
-}
-
-@Composable
-fun ActivityPreview(recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit, onAll: () -> Unit) {
-    val items = recent.take(5)
-    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(stringResource(R.string.home_activityTitle), size = 14.sp, weight = FontWeight.Medium)
-            Spacer(Modifier.weight(1f))
-            Txt(stringResource(R.string.home_viewAll), Modifier.clip(CircleShape).clickable(onClick = onAll).padding(horizontal = 10.dp, vertical = 8.dp).testTag("view-all"), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-        }
-        Spacer(Modifier.height(12.dp))
-        val empty = when {
-            !hasNwc -> stringResource(R.string.home_list_activity_connect)
-            items.isEmpty() -> stringResource(R.string.home_list_activity_empty)
-            else -> null
-        }
-        if (empty != null) Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            MutedText(empty, align = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-        else Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp))) {
-            items.forEachIndexed { i, tx ->
-                if (i > 0) HorizontalDivider(Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.06f))
-                TransactionRow(tx) { onOpen(tx) }
-            }
-        }
-    }
 }
