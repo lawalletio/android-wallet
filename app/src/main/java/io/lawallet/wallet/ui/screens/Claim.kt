@@ -317,8 +317,8 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
                         Modifier.graphicsLayer { val p = clock.phase(STRIKE, 0.72f); alpha = p; scaleX = 0.86f + 0.14f * p; scaleY = scaleX },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Txt(name, size = 32.sp, weight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.5).sp)
-                        if (host.isNotEmpty()) Txt("@$host", size = 18.sp, weight = FontWeight.Medium, color = lerp(brand.t400, Color.White, 0.35f), maxLines = 1)
+                        Txt(name, size = if (name.length <= 10) 42.sp else 34.sp, weight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.5).sp) // 16-char max still fits on one line
+                        if (host.isNotEmpty()) Txt("@$host", size = 22.sp, weight = FontWeight.Medium, color = lerp(brand.t400, Color.White, 0.35f), maxLines = 1)
                     }
                 }
             }
