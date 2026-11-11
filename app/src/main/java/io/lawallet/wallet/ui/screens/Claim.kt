@@ -153,7 +153,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     val celebrate = rememberCelebration(step == "success")
     androidx.activity.compose.BackHandler(step == "payment") { step = "username"; invoice = null }
     Column(Modifier.fillMaxSize().imePadding()) {
-        ScreenHeader(stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if ((fromActivate && step == "username") || step == "success") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
+        ScreenHeader(if (step == "success") null else stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if ((fromActivate && step == "username") || step == "success") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             when (step) {
                 "username" -> {
@@ -330,7 +330,7 @@ private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVecto
                     .background(Brush.verticalGradient(listOf(brand.t400, brand.t300, brand.t200)), CircleShape)
                     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.4f), brand.t300.copy(alpha = 0.6f))), CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { LwIcon(L.drawable.lucide_ic_zap, size = 28.dp, tint = Color.White) }
+            ) { LwIcon(L.drawable.lucide_ic_at_sign, size = 28.dp, tint = Color.White) }
         }
         MutedText(
             stringResource(R.string.claim_claimedBody), align = TextAlign.Center,
