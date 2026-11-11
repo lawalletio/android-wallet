@@ -205,7 +205,7 @@ fun HomeScreen() {
                 )
             }
 
-            // The balance slab: glass over the prism light, which blooms green/coral on a payment.
+            // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
             Box(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
                     if (glowAlpha > 0f) {
@@ -215,7 +215,7 @@ fun HomeScreen() {
                 },
             ) {
                 Column(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(32.dp)).padding(start = 18.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                    Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
