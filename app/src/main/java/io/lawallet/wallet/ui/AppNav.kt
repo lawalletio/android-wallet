@@ -64,6 +64,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -234,16 +235,34 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val c = LocalContainer.current
     val client by c.wallet.client.collectAsState()
     val settings by c.session.settings.collectAsState()
-    NavTabBar(
-        onReceive = { nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
-        onSend = { nav.navigate(R0.SEND) { launchSingleTop = true } },
-        onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
-        haze = haze,
-        canReceive = client != null || settings?.lncurlAutoCreate == true,
-        canSend = client != null,
-        // Both tabs composed = switching tabs: the bar stays put.
-        modifier = modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f },
-    )
+    // Home's activity sheet rising swaps the tabs for search + filters, 1:1 with the finger.
+    val tabs by remember { derivedStateOf { ActivitySearch.sheet < 1f } }
+    val search by remember { derivedStateOf { ActivitySearch.sheet > 0f } }
+    // Both tabs composed = switching tabs: the bar stays put.
+    Box(modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f }, contentAlignment = Alignment.BottomCenter) {
+        if (tabs) NavTabBar(
+            onReceive = { nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
+            onSend = { nav.navigate(R0.SEND) { launchSingleTop = true } },
+            onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
+            haze = haze,
+            canReceive = client != null || settings?.lncurlAutoCreate == true,
+            canSend = client != null,
+            modifier = Modifier.graphicsLayer {
+                val p = ActivitySearch.sheet
+                alpha = (1f - p * 2f).coerceIn(0f, 1f)
+                translationY = p * 56.dp.toPx()
+                scaleX = 1f - 0.1f * p; scaleY = scaleX
+            },
+        )
+        if (search) ActivitySearchBar(
+            haze,
+            Modifier.graphicsLayer {
+                val p = ActivitySearch.sheet
+                alpha = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                translationY = (1f - p) * 56.dp.toPx()
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)

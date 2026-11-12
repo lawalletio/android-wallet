@@ -220,4 +220,14 @@
     <string name="sweep_stopped">Sweep stopped</string>
     <string name="sweep_failed">Sweep failed</string>
     <string name="sweep_nothing">Nothing to sweep</string>
+    <string name="activity_search_hint">Search activity</string>
+    <string name="activity_search_clear">Clear search</string>
+    <string name="activity_search_noMatch">No matching activity.</string>
+    <string name="activity_filters">Filters</string>
+    <string name="activity_filter_clear">Clear</string>
+    <string name="activity_filter_sent">Sent</string>
+    <string name="activity_filter_received">Received</string>
+    <string name="activity_filter_amount">Amount</string>
+    <string name="activity_filter_anyAmount">Any amount</string>
+    <string name="activity_filter_range">%1$s – %2$s sats</string>
 </resources>
