@@ -89,36 +89,6 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-@Composable
-fun ActivityScreen() {
-    val c = LocalContainer.current
-    val nav = LocalNav.current
-    val recent by c.wallet.recent.collectAsState()
-    var tab by remember { mutableStateOf("all") }
-    val list = rememberLazyListState()
-    LaunchedEffect(Unit) { c.wallet.notices.collect { c.wallet.refreshActivity() } }
-    val paging = rememberActivityPaging(list, firstPage = true)
-    val items = if (tab == "transfers") recent.filter { !it.incoming } else recent
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader(stringResource(R.string.activity_title), { nav.popBackStack() })
-        Row(Modifier.padding(horizontal = 16.dp).glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
-            listOf("all" to R.string.activity_all, "transfers" to R.string.activity_transfers).forEach { (k, l) ->
-                Box(Modifier.clip(CircleShape).then(if (tab == k) Modifier.background(Lw.Background) else Modifier).clickable { tab = k }.padding(horizontal = 14.dp, vertical = 6.dp)) {
-                    Txt(stringResource(l), size = 12.sp, weight = FontWeight.SemiBold, color = if (tab == k) Lw.Foreground else Lw.MutedFg)
-                }
-            }
-        }
-        val labels = rememberDayLabels()
-        val rows = remember(items) { activityRows(items, months = true) }
-        Box(Modifier.weight(1f)) {
-            LazyColumn(Modifier.fillMaxSize().testTag("activity-list"), state = list) {
-                activityList(rows, items, labels, paging) { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }
-            }
-            TimelineScrubber(list, rows, Modifier.align(Alignment.CenterEnd))
-        }
-    }
-}
-
 /** Older pages load as the list nears its end (25 per page); [enabled] gates it (e.g. Home's docked sheet). */
 @Stable
 internal class ActivityPaging { var loading by mutableStateOf(false); var hasMore by mutableStateOf(true); var error by mutableStateOf(false) }
@@ -161,7 +131,7 @@ internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> =
     }
 }
 
-/** Day-grouped transaction rows plus the paging footer; shared by the Activity screen and Home's sheet. */
+/** Day-grouped transaction rows plus the paging footer; used by Home's activity sheet. */
 internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
     rows.forEach { row ->
         when (row) {
@@ -353,7 +323,6 @@ fun ActivityDetailScreen(hash: String) {
             val shareTitle = stringResource(R.string.shared_receipt_text_title)
             ReceiptFooter(
                 onShare = { context.shareText("$shareTitle\n$title: ${Currencies.formatSats(t.amountSats)} sats\n${rows.joinToString("\n") { "${it.first}: ${it.second}" }}\nHash: ${t.paymentHash}") },
-                onActivity = { nav.navigate(R0.ACTIVITY) { popUpTo(R0.HOME) } },
                 onDone = { nav.goHome() },
             )
         }

@@ -173,9 +173,6 @@
     <string name="home_install_iosBody">Toca Compartir y luego Agregar a inicio. Puedes seguir usando la billetera de todos modos.</string>
     <string name="home_install_install">Instalar</string>
     <string name="home_install_dismiss">Cerrar aviso de instalación</string>
-    <string name="activity_title">Actividad</string>
-    <string name="activity_all">Todo</string>
-    <string name="activity_transfers">Transferencias</string>
     <string name="activity_connectWallet">Conecta una billetera para ver tu historial de transacciones.</string>
     <string name="activity_loading">Cargando actividad…</string>
     <string name="activity_loadFailed">No se pudo cargar la actividad</string>
@@ -233,11 +230,10 @@
     <string name="shared_receipt_settled">Completado</string>
     <string name="shared_receipt_unavailable">No disponible</string>
     <string name="shared_receipt_proofTitle">Prueba de pago</string>
-    <string name="shared_receipt_proofHint">Muéstralos o cópialos solo cuando necesites un comprobante.</string>
+    <string name="shared_receipt_proofHint">Cópialos solo cuando necesites un comprobante.</string>
+    <string name="shared_receipt_displayProof">Mostrar prueba</string>
+    <string name="shared_receipt_hideProof">Ocultar prueba</string>
     <string name="shared_receipt_notProvided">No proporcionado por la billetera</string>
-    <string name="shared_receipt_show">Mostrar %1$s</string>
-    <string name="shared_receipt_hide">Ocultar %1$s</string>
-    <string name="shared_receipt_viewActivity">Ver actividad</string>
     <string name="shared_receipt_text_title">Comprobante de pago de LaWallet</string>
     <string name="shared_receipt_text_status">Estado</string>
     <string name="shared_receipt_text_amount">Monto</string>

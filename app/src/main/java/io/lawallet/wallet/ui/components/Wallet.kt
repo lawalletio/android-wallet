@@ -7,6 +7,7 @@ import coil3.compose.AsyncImage
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
 import androidx.compose.animation.Crossfade
+import androidx.compose.ui.unit.Dp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
@@ -475,17 +476,15 @@ fun PaymentReceiptCard(
             Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))
                 .drawBehind { drawRect(Brush.horizontalGradient(listOf(Color.Transparent, brand.t400, Color.Transparent)), size = size.copy(height = 1.5.dp.toPx())) },
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatusMark(status)
-                    Txt(title, size = 20.sp, weight = FontWeight.SemiBold)
-                }
+            Column(Modifier.fillMaxWidth().heightIn(min = 300.dp).padding(start = 20.dp, end = 20.dp, top = 36.dp, bottom = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
+                StatusMark(status, 64.dp)
+                Txt(title, size = 22.sp, weight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Txt(Currencies.format(amountSats, currency, rates), size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("receipt-amount"))
+                    Txt(Currencies.format(amountSats, currency, rates), size = 52.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("receipt-amount"))
                     Spacer(Modifier.width(8.dp))
-                    Txt(Currencies.unitLabel(currency), Modifier.padding(bottom = 4.dp), size = 16.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg)
+                    Txt(Currencies.unitLabel(currency), Modifier.padding(bottom = 8.dp), size = 18.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg)
                 }
-                if (currency != "SAT") Txt(stringResource(R.string.common_sats, Currencies.formatSats(amountSats)), size = 14.sp, color = Lw.MutedFg)
+                if (currency != "SAT") Txt(stringResource(R.string.common_sats, Currencies.formatSats(amountSats)), size = 15.sp, color = Lw.MutedFg)
                 CurrencyToggle(currencies, currency, onCurrency)
             }
             if (rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
@@ -502,29 +501,27 @@ fun PaymentReceiptCard(
             }
         }
         if (proofs.isNotEmpty()) {
-            Spacer(Modifier.height(20.dp))
-            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
-                Txt(stringResource(R.string.shared_receipt_proofTitle), size = 15.sp, weight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
-                MutedText(stringResource(R.string.shared_receipt_proofHint))
-                proofs.forEach { (label, value) ->
-                    var shown by remember { mutableStateOf(false) }
-                    Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                        if (value != null) {
-                            Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable(onClickLabel = label) { shown = !shown }.testTag("proof-toggle-$label"), contentAlignment = Alignment.Center) {
-                                LwIcon(if (shown) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(if (shown) R.string.shared_receipt_hide else R.string.shared_receipt_show, label))
-                            }
-                            Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
+            var open by rememberSaveable { mutableStateOf(false) }
+            Spacer(Modifier.height(16.dp))
+            LwButton(
+                stringResource(if (open) R.string.shared_receipt_hideProof else R.string.shared_receipt_displayProof), { open = !open },
+                Modifier.fillMaxWidth().testTag("proof-toggle"), BtnVariant.Ghost, icon = if (open) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye,
+            )
+            AnimatedVisibility(open, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()) {
+                Column(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
+                    Txt(stringResource(R.string.shared_receipt_proofTitle), size = 15.sp, weight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    MutedText(stringResource(R.string.shared_receipt_proofHint))
+                    proofs.forEach { (label, value) ->
+                        Spacer(Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                            if (value != null) Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
                                 LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
                             }
                         }
+                        Txt(value ?: stringResource(R.string.shared_receipt_notProvided), Modifier.testTag("proof-$label"), size = 11.sp, mono = true, color = if (value == null) Lw.MutedFg else Lw.Foreground)
                     }
-                    Txt(
-                        when { value == null -> stringResource(R.string.shared_receipt_notProvided); shown -> value; else -> "•".repeat(24) },
-                        Modifier.testTag("proof-$label"), size = 11.sp, mono = true, color = if (value == null) Lw.MutedFg else Lw.Foreground,
-                    )
                 }
             }
         }
@@ -532,24 +529,21 @@ fun PaymentReceiptCard(
 }
 
 @Composable
-private fun StatusMark(status: String) {
+private fun StatusMark(status: String, size: Dp = 40.dp) {
     val brand = LocalBrand.current
     val (bg, icon, tint) = when (status) {
         "pending" -> Triple(Lw.Secondary, L.drawable.lucide_ic_clock, Lw.MutedFg)
         "failed" -> Triple(Lw.Destructive.copy(alpha = 0.15f), L.drawable.lucide_ic_x, Lw.Red)
         else -> Triple(brand.t400.copy(alpha = 0.15f), L.drawable.lucide_ic_check, brand.t400)
     }
-    Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = 20.dp, tint = tint) }
+    Box(Modifier.size(size).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = size / 2, tint = tint) }
 }
 
-/** Receipt footer: Share | View activity, then Done. */
+/** Receipt footer: Share, then Done. */
 @Composable
-fun ReceiptFooter(onShare: () -> Unit, onActivity: (() -> Unit)?, onDone: () -> Unit) {
+fun ReceiptFooter(onShare: () -> Unit, onDone: () -> Unit) {
     Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Lw.Background.copy(alpha = 0.85f)))).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LwButton(stringResource(R.string.common_share), onShare, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
-            if (onActivity != null) LwButton(stringResource(R.string.shared_receipt_viewActivity), onActivity, Modifier.weight(1f), BtnVariant.Secondary)
-        }
+        LwButton(stringResource(R.string.common_share), onShare, Modifier.fillMaxWidth(), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
         LwButton(stringResource(R.string.common_done), onDone, Modifier.fillMaxWidth().testTag("done"))
     }
 }

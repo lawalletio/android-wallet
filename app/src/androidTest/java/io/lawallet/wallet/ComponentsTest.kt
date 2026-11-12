@@ -120,10 +120,10 @@ class WalletComponentsTest {
             }
         }
         rule.onNodeWithTag("receipt-amount").assertTextEquals("2,100")
-        rule.onNodeWithTag("proof-Preimage").assertTextEquals("•".repeat(24))
-        rule.onNodeWithTag("proof-toggle-Preimage").performClick()
+        rule.onNodeWithTag("proof-Preimage").assertDoesNotExist()
+        rule.onNodeWithTag("proof-toggle").performClick()
         rule.onNodeWithTag("proof-Preimage").assertTextEquals("ab".repeat(32))
-        rule.onNodeWithText("Not provided by wallet").assertExists() // a missing proof has no reveal control
+        rule.onNodeWithText("Not provided by wallet").assertExists()
     }
 
     @Test fun tabBarRoutesEachTarget() {
