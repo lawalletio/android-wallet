@@ -26,10 +26,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +55,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,9 +71,7 @@ import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Spinner
-import io.lawallet.wallet.ui.components.TransactionRow
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Glass
@@ -168,8 +164,11 @@ fun HomeScreen() {
         }
     }
 
+    val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
     PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize().testTag("home-refresh"), state = pull, indicator = { RefreshOrb(pull, refreshing) }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 140.dp)) {
+      ActivitySheetLayout(
+        sheet,
+        top = {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box {
                     Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
@@ -184,7 +183,18 @@ fun HomeScreen() {
                         )
                     }
                 }
-                Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
+                // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
+                val address = me?.lightningAddress
+                if (address != null) Row(
+                    Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp)
+                        .testTag("home-address").semantics(mergeDescendants = true) {},
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                ) {
+                    // Username leads; the domain sits a step dimmer and never truncates.
+                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                }
+                else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                     BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
                 GlassIconButton(
@@ -193,7 +203,7 @@ fun HomeScreen() {
                 )
             }
 
-            // The balance slab: glass over the prism light, which blooms green/coral on a payment.
+            // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
             Box(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
                     if (glowAlpha > 0f) {
@@ -203,7 +213,7 @@ fun HomeScreen() {
                 },
             ) {
                 Column(
-                    Modifier.fillMaxWidth().glass(RoundedCornerShape(32.dp)).padding(start = 18.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                    Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -214,7 +224,13 @@ fun HomeScreen() {
                         }
                     }
                     // Fixed-height slot: cue effects never resize it.
-                    Box(Modifier.fillMaxWidth().heightIn(min = 76.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
+                            .clickable(null, null, onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)) { c.prefs.setHideBalance(!hidden) }
+                            .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle"),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         when {
                             balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
                             balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
@@ -237,21 +253,7 @@ fun HomeScreen() {
                 }
             }
 
-            val address = me?.lightningAddress
-            when {
-                me == null -> {}
-                address != null -> Row(
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp))
-                        .clickable { nav.navigate(R0.RECEIVE) }.padding(start = 18.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Txt(stringResource(R.string.home_address), size = 12.sp, color = Lw.MutedFg)
-                        Txt(address, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("home-address"))
-                    }
-                    Box(Modifier.size(44.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_qr_code, size = 20.dp) }
-                }
-                else -> Row(
+            if (me != null && me?.lightningAddress == null) Row(
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
                         .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -263,7 +265,6 @@ fun HomeScreen() {
                     Txt(stringResource(R.string.home_claimAddress), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
                     LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
                 }
-            }
             if (me != null && !hasNwc) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
                     Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)
@@ -276,8 +277,11 @@ fun HomeScreen() {
                 }
             }
 
-            ActivityPreview(recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }, onAll = { nav.navigate(R0.ACTIVITY) })
-        }
+        },
+        sheetContent = {
+            ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
+        },
+      )
     }
 
     if (confirmLogout) AlertDialog(
@@ -357,31 +361,4 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
         confirmButton = { TextButton({ open = false; onRetry() }) { Txt(stringResource(R.string.common_retry)) } },
         containerColor = Glass.Dialog,
     )
-}
-
-@Composable
-fun ActivityPreview(recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit, onAll: () -> Unit) {
-    val items = recent.take(5)
-    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 28.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(stringResource(R.string.home_activityTitle), size = 14.sp, weight = FontWeight.Medium)
-            Spacer(Modifier.weight(1f))
-            Txt(stringResource(R.string.home_viewAll), Modifier.clip(CircleShape).clickable(onClick = onAll).padding(horizontal = 10.dp, vertical = 8.dp).testTag("view-all"), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-        }
-        Spacer(Modifier.height(12.dp))
-        val empty = when {
-            !hasNwc -> stringResource(R.string.home_list_activity_connect)
-            items.isEmpty() -> stringResource(R.string.home_list_activity_empty)
-            else -> null
-        }
-        if (empty != null) Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            MutedText(empty, align = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-        else Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp))) {
-            items.forEachIndexed { i, tx ->
-                if (i > 0) HorizontalDivider(Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.06f))
-                TransactionRow(tx) { onOpen(tx) }
-            }
-        }
-    }
 }
