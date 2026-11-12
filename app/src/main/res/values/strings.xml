@@ -195,4 +195,26 @@
     <string name="profile_loadFailed">Couldn\'t load your profile from Nostr relays.</string>
     <string name="profile_saveFailed">Couldn\'t publish your profile. Try again.</string>
     <string name="profile_unnamed">Anonymous</string>
+    <string name="sweep_menu_details">See details</string>
+    <string name="sweep_menu">Sweep funds</string>
+    <string name="sweep_pick">Select the wallet to send all funds to</string>
+    <string name="sweep_from">From</string>
+    <string name="sweep_title">Sweep funds</string>
+    <string name="sweep_start">Sweep all funds</string>
+    <string name="sweep_available">Available to sweep</string>
+    <string name="sweep_transferred">Transferred</string>
+    <string name="sweep_left">Left in %1$s</string>
+    <string name="sweep_reserve_note">Some wallets keep up to 1% of their balance as a fee reserve, so a few sats may stay behind. It can take several payments.</string>
+    <string name="sweep_stop">Stop</string>
+    <string name="sweep_stopping">Stopping after this payment…</string>
+    <string name="sweep_step_connect">Connecting to both wallets</string>
+    <string name="sweep_step_balance">Reading the balance of %1$s</string>
+    <string name="sweep_step_invoice">%1$s issues invoice #%2$d · %3$s sats</string>
+    <string name="sweep_step_pay">Paying invoice #%1$d</string>
+    <string name="sweep_step_retry">Fee reserve hit, retrying with less</string>
+    <string name="sweep_done">All funds moved</string>
+    <string name="sweep_done_left">%1$s sats stayed behind as a fee reserve</string>
+    <string name="sweep_stopped">Sweep stopped</string>
+    <string name="sweep_failed">Sweep failed</string>
+    <string name="sweep_nothing">Nothing to sweep</string>
 </resources>

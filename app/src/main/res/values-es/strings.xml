@@ -195,4 +195,26 @@
     <string name="profile_loadFailed">No se pudo cargar tu perfil desde los relays de Nostr.</string>
     <string name="profile_saveFailed">No se pudo publicar tu perfil. Probá de nuevo.</string>
     <string name="profile_unnamed">Anónimo</string>
+    <string name="sweep_menu_details">Ver detalles</string>
+    <string name="sweep_menu">Barrer fondos</string>
+    <string name="sweep_pick">Elegí la billetera que recibe todos los fondos</string>
+    <string name="sweep_from">Desde</string>
+    <string name="sweep_title">Barrer fondos</string>
+    <string name="sweep_start">Barrer todos los fondos</string>
+    <string name="sweep_available">Disponible para barrer</string>
+    <string name="sweep_transferred">Transferido</string>
+    <string name="sweep_left">Quedan en %1$s</string>
+    <string name="sweep_reserve_note">Algunas billeteras retienen hasta el 1% del saldo como reserva para comisiones, así que pueden quedar algunos sats. Puede requerir varios pagos.</string>
+    <string name="sweep_stop">Detener</string>
+    <string name="sweep_stopping">Deteniendo después de este pago…</string>
+    <string name="sweep_step_connect">Conectando ambas billeteras</string>
+    <string name="sweep_step_balance">Leyendo el saldo de %1$s</string>
+    <string name="sweep_step_invoice">%1$s emite la factura #%2$d · %3$s sats</string>
+    <string name="sweep_step_pay">Pagando la factura #%1$d</string>
+    <string name="sweep_step_retry">Se alcanzó la reserva, reintentando con menos</string>
+    <string name="sweep_done">Fondos movidos</string>
+    <string name="sweep_done_left">%1$s sats quedaron como reserva para comisiones</string>
+    <string name="sweep_stopped">Barrido detenido</string>
+    <string name="sweep_failed">El barrido falló</string>
+    <string name="sweep_nothing">No hay nada para barrer</string>
 </resources>

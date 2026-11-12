@@ -1,6 +1,22 @@
 package io.lawallet.wallet.ui.screens
 
 import android.os.Build
+import io.lawallet.wallet.ui.theme.Glass
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.runtime.remember
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -185,6 +201,11 @@ internal fun WalletsReveal(
     onSetPrimary: (RemoteWallet) -> Unit,
     onAdd: () -> Unit,
     onManage: () -> Unit,
+    /** Set while picking where to sweep this wallet's funds: the list turns into a destination picker. */
+    sweepFrom: String? = null,
+    onSweep: (RemoteWallet) -> Unit = {},
+    onSweepTo: (RemoteWallet) -> Unit = {},
+    onSweepCancel: () -> Unit = {},
 ) {
     val top = reveal.headerBottom - reveal.rootTop
     val bottom = reveal.maxLanding - reveal.rootTop
@@ -200,23 +221,35 @@ internal fun WalletsReveal(
             .graphicsLayer { alpha = smooth(0.05f, 0.35f, reveal.progress) }
             .testTag("home-wallets"),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 4.dp).graphicsLayer {
-                translationY = (1f - smooth(0f, 0.6f, reveal.progress)) * -16.dp.toPx()
+        AnimatedContent(
+            sweepFrom != null,
+            transitionSpec = {
+                (fadeIn(tween(220, 60)) + slideInVertically(spring(0.85f, Spring.StiffnessMediumLow)) { -it / 2 })
+                    .togetherWith(fadeOut(tween(120)) + slideOutVertically(tween(180)) { it / 3 })
             },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(Modifier.weight(1f).clip(CircleShape).clickable(onClick = onManage).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Txt(stringResource(R.string.settings_remoteWallets), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                LwIcon(L.drawable.lucide_ic_chevron_right, size = 16.dp, tint = Lw.MutedFg)
-            }
+            label = "sweepBanner",
+        ) { picking ->
+            if (picking) SweepPickBanner(onSweepCancel)
+            else {
             Row(
-                Modifier.height(40.dp).glass(CircleShape, GlassLevel.Regular).clickable(onClick = onAdd).padding(horizontal = 16.dp).testTag("home-wallets-add"),
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 4.dp).graphicsLayer {
+                    translationY = (1f - smooth(0f, 0.6f, reveal.progress)) * -16.dp.toPx()
+                },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LwIcon(L.drawable.lucide_ic_plus, size = 18.dp)
-                Spacer(Modifier.width(8.dp))
-                Txt(stringResource(R.string.rw_add), size = 15.sp, weight = FontWeight.SemiBold)
+                Row(Modifier.weight(1f).clip(CircleShape).clickable(onClick = onManage).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Txt(stringResource(R.string.settings_remoteWallets), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                    LwIcon(L.drawable.lucide_ic_chevron_right, size = 16.dp, tint = Lw.MutedFg)
+                }
+                Row(
+                    Modifier.height(40.dp).glass(CircleShape, GlassLevel.Regular).clickable(onClick = onAdd).padding(horizontal = 16.dp).testTag("home-wallets-add"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LwIcon(L.drawable.lucide_ic_plus, size = 18.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Txt(stringResource(R.string.rw_add), size = 15.sp, weight = FontWeight.SemiBold)
+                }
+            }
             }
         }
         when {
@@ -248,6 +281,7 @@ internal fun WalletsReveal(
                             WalletRevealCard(
                                 w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
                                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
+                                sweepFrom, { onSweep(w) }, { onSweepTo(w) },
                             )
                         }
                     }
@@ -266,22 +300,38 @@ internal fun WalletsReveal(
 private fun WalletRevealCard(
     w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
     reveal: HomeReveal, onOpen: () -> Unit, onSetPrimary: () -> Unit,
+    sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit,
 ) {
+    var menu by remember { mutableStateOf(false) }
+    val picking = sweepFrom != null
+    val isSource = w.id == sweepFrom
     val brand = LocalBrand.current
     val haptics = LocalHapticFeedback.current
     val lncurl = w.provider == "lncurl"
     val active = w.status == "ACTIVE"
-    val sel by animateFloatAsState(if (w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
+    // While picking a sweep destination, every eligible target lights up and the source steps back.
+    val target = picking && !isSource && w.status == "ACTIVE"
+    val sel by animateFloatAsState(if (if (picking) target else w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
+    val pulse = if (target) rememberInfiniteTransition(label = "pick").animateFloat(0.35f, 0.85f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "ring").value else 0.6f
     val accent = lerp(Lw.MutedFg, if (lncurl) Lw.Gold else Lw.NwcPurple, sel)
     val shape = RoundedCornerShape(24.dp)
+    val rest = if (isSource) 0.35f else if (active) 0.55f else 0.35f
+    Box {
     Row(
         Modifier.fillMaxWidth()
-            .graphicsLayer { alpha = (if (active) 0.55f else 0.35f) + (1f - if (active) 0.55f else 0.35f) * sel }
-            .glass(shape, if (w.isDefault) GlassLevel.Regular else GlassLevel.Thin, tint = brand.t400.copy(alpha = 0.10f * sel))
-            .border(1.dp, lerp(Color.White.copy(alpha = 0.05f), brand.t400.copy(alpha = 0.6f), sel), shape)
+            .graphicsLayer { alpha = rest + (1f - rest) * sel }
+            .glass(shape, if (sel > 0.5f) GlassLevel.Regular else GlassLevel.Thin, tint = brand.t400.copy(alpha = 0.10f * sel))
+            .border(1.dp, lerp(Color.White.copy(alpha = 0.05f), brand.t400.copy(alpha = if (target) pulse else 0.6f), sel), shape)
             .combinedClickable(
-                onClick = { if (w.isDefault || !active) onOpen() else { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSetPrimary() } },
-                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onOpen() },
+                onClick = {
+                    when {
+                        picking -> if (target) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onSweepTo() }
+                        w.isDefault || !active -> onOpen()
+                        else -> { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSetPrimary() }
+                    }
+                },
+                // Hold for the wallet's menu.
+                onLongClick = if (picking) null else ({ haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true }),
             )
             .padding(horizontal = 16.dp, vertical = 14.dp)
             .semantics { selected = w.isDefault }
@@ -300,7 +350,12 @@ private fun WalletRevealCard(
             Txt(w.name, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel))
             Spacer(Modifier.height(4.dp))
             Txt(
-                when (w.status) { "DEAD" -> stringResource(R.string.rw_dead); "DISABLED" -> stringResource(R.string.remoteWallets_paused); else -> if (lncurl) "LNCurl" else "NWC" },
+                when {
+                    isSource -> stringResource(R.string.sweep_from)
+                    w.status == "DEAD" -> stringResource(R.string.rw_dead)
+                    w.status == "DISABLED" -> stringResource(R.string.remoteWallets_paused)
+                    else -> if (lncurl) "LNCurl" else "NWC"
+                },
                 size = 12.sp, weight = FontWeight.Medium, color = if (w.status == "DEAD") Lw.Red.copy(alpha = 0.8f) else accent,
             )
         }
@@ -322,6 +377,25 @@ private fun WalletRevealCard(
                 else -> Txt("—", size = CARD_FIGURE, color = Lw.MutedFg)
             }
         }
+    }
+    DropdownMenu(
+        menu, { menu = false },
+        offset = DpOffset(16.dp, 0.dp),
+        shape = RoundedCornerShape(18.dp),
+        containerColor = Glass.Dialog,
+        modifier = Modifier.testTag("home-wallet-menu"),
+    ) {
+        DropdownMenuItem(
+            { Txt(stringResource(R.string.sweep_menu_details), size = 15.sp) }, { menu = false; onOpen() },
+            leadingIcon = { LwIcon(L.drawable.lucide_ic_info, size = 18.dp, tint = Lw.MutedFg) },
+            modifier = Modifier.testTag("home-wallet-menu-details"),
+        )
+        if (active && (balance ?: 0L) > 0L) DropdownMenuItem(
+            { Txt(stringResource(R.string.sweep_menu), size = 15.sp) }, { menu = false; onSweep() },
+            leadingIcon = { LwIcon(L.drawable.lucide_ic_arrow_right_left, size = 18.dp, tint = brand.t400) },
+            modifier = Modifier.testTag("home-wallet-menu-sweep"),
+        )
+    }
     }
 }
 
@@ -403,5 +477,28 @@ internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: Text
             }
         }
         if (suf.isNotEmpty()) Txt(suf, size = size, weight = weight, color = color, maxLines = 1)
+    }
+}
+
+/** Replaces the list title while picking a sweep destination: what to do, and a way out. */
+@Composable
+private fun SweepPickBanner(onCancel: () -> Unit) {
+    val brand = LocalBrand.current
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+            .glass(RoundedCornerShape(20.dp), GlassLevel.Thin, tint = brand.t400.copy(alpha = 0.10f))
+            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag("sweep-pick"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LwIcon(L.drawable.lucide_ic_arrow_right_left, size = 18.dp, tint = brand.t400)
+        Spacer(Modifier.width(10.dp))
+        Txt(stringResource(R.string.sweep_pick), Modifier.weight(1f), size = 14.sp, weight = FontWeight.Medium, lineHeight = 18.sp)
+        Spacer(Modifier.width(8.dp))
+        Txt(
+            stringResource(R.string.common_cancel),
+            Modifier.height(36.dp).clip(CircleShape).border(1.dp, Lw.Foreground.copy(alpha = 0.18f), CircleShape).clickable(onClick = onCancel)
+                .padding(horizontal = 14.dp).wrapContentHeight().testTag("sweep-cancel"),
+            size = 14.sp, weight = FontWeight.SemiBold,
+        )
     }
 }

@@ -161,7 +161,10 @@ fun HomeScreen() {
         val primary = wallets?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
         if (open && walletBalances.containsKey(primary.id)) runCatching { c.session.api.value.remoteWalletBalance(primary.id) }.onSuccess { walletBalances[primary.id] = it }
     }
-    BackHandler(open) { scope.launch { reveal.settleTo(0f) } }
+    // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
+    var sweepFrom by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(open) { if (!open) sweepFrom = null }
+    BackHandler(open) { if (sweepFrom != null) sweepFrom = null else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
     val setPrimary: (RemoteWallet) -> Unit = { w ->
         if (promoting == null) scope.launch {
@@ -364,6 +367,10 @@ fun HomeScreen() {
           onSetPrimary = setPrimary,
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
+          sweepFrom = sweepFrom,
+          onSweep = { sweepFrom = it.id },
+          onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
+          onSweepCancel = { sweepFrom = null },
       )
       if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)

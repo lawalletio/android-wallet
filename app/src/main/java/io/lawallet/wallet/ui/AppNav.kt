@@ -164,6 +164,7 @@ object R0 {
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
+    fun sweep(from: String, to: String) = "sweep/$from/$to"
 }
 
 /** Deep links / notifications / NFC push routes or raw payloads here; the UI consumes them. */
@@ -333,6 +334,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.SECURITY) { SecurityScreen() }
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
                 composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
+                composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
                 composable(R0.LANGUAGE) { LanguageScreen() }
