@@ -7,6 +7,19 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetPublicKeyCredentialOption
 import androidx.credentials.PublicKeyCredential
+import androidx.credentials.exceptions.CreateCredentialCancellationException
+import androidx.credentials.exceptions.CreateCredentialNoCreateOptionException
+import androidx.credentials.exceptions.CreateCredentialProviderConfigurationException
+import androidx.credentials.exceptions.CreateCredentialUnsupportedException
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
+import androidx.credentials.exceptions.GetCredentialUnsupportedException
+import androidx.credentials.exceptions.NoCredentialException
+import androidx.credentials.exceptions.domerrors.InvalidStateError
+import androidx.credentials.exceptions.domerrors.NotAllowedError
+import androidx.credentials.exceptions.domerrors.SecurityError
+import androidx.credentials.exceptions.publickeycredential.CreatePublicKeyCredentialDomException
+import androidx.credentials.exceptions.publickeycredential.GetPublicKeyCredentialDomException
 import io.lawallet.wallet.core.api.LaWalletApi
 import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.NostrEvent
@@ -115,18 +128,27 @@ class Passkeys(private val api: () -> LaWalletApi, private val rpId: () -> Strin
         (resp["clientExtensionResults"] as? JsonObject)?.get("prf")?.let { it as? JsonObject }
             ?.get("results")?.let { it as? JsonObject }?.get("first")?.jsonPrimitive?.contentOrNull
 
-    private fun translate(e: Exception): PasskeyException {
-        val name = e.javaClass.simpleName
-        return when {
-            name.contains("Cancellation") -> PasskeyException("cancelled", "Passkey request was cancelled")
-            name.contains("NoCredential") -> PasskeyException("no-credential", "No passkey found for this wallet on this device")
-            name.contains("Dom") || name.contains("Interrupted") -> PasskeyException("failed", e.message ?: "Passkey request failed")
-            else -> PasskeyException("failed", e.message ?: "Passkey request failed")
-        }
-    }
-
-
     companion object {
         const val PRF_UNSUPPORTED = "This passkey provider can't derive keys (PRF). Use Google Password Manager or another provider with PRF support."
+
+        /**
+         * Type checks, not class names: R8 renames androidx.credentials' exceptions in release
+         * builds, so name matching sent every cancel/no-passkey to the raw framework message.
+         */
+        internal fun translate(e: Exception): PasskeyException {
+            val dom = (e as? CreatePublicKeyCredentialDomException)?.domError ?: (e as? GetPublicKeyCredentialDomException)?.domError
+            return when {
+                // NotAllowedError = closed or timed out (WebAuthn folds both into it; the web treats it as cancel too).
+                e is GetCredentialCancellationException || e is CreateCredentialCancellationException || dom is NotAllowedError ->
+                    PasskeyException("cancelled", "Passkey request was cancelled")
+                e is NoCredentialException -> PasskeyException("no-credential", "No passkey found for this wallet on this device")
+                dom is InvalidStateError -> PasskeyException("duplicate", "This device already has a passkey for this account")
+                dom is SecurityError -> PasskeyException("rp", "This app isn't authorized for passkeys on this server (assetlinks.json)")
+                e is CreateCredentialNoCreateOptionException || e is CreateCredentialProviderConfigurationException ||
+                    e is GetCredentialProviderConfigurationException || e is CreateCredentialUnsupportedException || e is GetCredentialUnsupportedException ->
+                    PasskeyException("unsupported", "No passkey provider is set up on this device — add a Google account and a screen lock")
+                else -> PasskeyException("failed", e.message ?: "Passkey request failed")
+            }
+        }
     }
 }
