@@ -136,7 +136,7 @@ fun HomeScreen() {
 
     // Swipe down: the balance settles at the bottom and the remote wallets show above it.
     val reveal = remember { HomeReveal() }
-    reveal.bottomReserve = with(density) { 96.dp.toPx() } // floating tab bar (64dp + its 12/16dp margins)
+    reveal.bottomReserve = with(density) { 140.dp.toPx() } // floating tab bar (~92dp) plus breathing room
     val open by remember { derivedStateOf { reveal.open } }
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
     val walletBalances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
