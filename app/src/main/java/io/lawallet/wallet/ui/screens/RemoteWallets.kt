@@ -416,7 +416,7 @@ fun RemoteWalletDetailScreen(id: String) {
 }
 
 @Composable
-private fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var v by remember { mutableStateOf(initial) }
     AlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog, title = { Txt(title, size = 16.sp, weight = FontWeight.SemiBold) },
         text = { OutlinedTextField(v, { v = it.take(64) }, singleLine = true, colors = lwFieldColors()) },

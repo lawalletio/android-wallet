@@ -237,6 +237,7 @@ internal fun WalletsReveal(
     onSweep: (RemoteWallet) -> Unit = {},
     onSweepTo: (RemoteWallet) -> Unit = {},
     onSweepCancel: () -> Unit = {},
+    onRename: (RemoteWallet, String) -> Unit = { _, _ -> },
 ) {
     val top = reveal.headerBottom - reveal.rootTop
     val bottom = reveal.maxLanding - reveal.rootTop
@@ -312,7 +313,7 @@ internal fun WalletsReveal(
                             WalletRevealCard(
                                 w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
                                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
-                                sweepFrom, { onSweep(w) }, { onSweepTo(w) },
+                                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) },
                             )
                         }
                     }
@@ -331,9 +332,10 @@ internal fun WalletsReveal(
 private fun WalletRevealCard(
     w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
     reveal: HomeReveal, onOpen: () -> Unit, onSetPrimary: () -> Unit,
-    sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit,
+    sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit, onRename: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     val picking = sweepFrom != null
     val isSource = w.id == sweepFrom
     val brand = LocalBrand.current
@@ -413,7 +415,13 @@ private fun WalletRevealCard(
         w, if (hidden || balance == null) null else Currencies.formatBalance(balance, code, rates),
         canSweep = active && (balance ?: 0L) > 0L,
         onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep,
+        onSetPrimary = if (active && !w.isDefault) onSetPrimary else null,
+        onRename = { renaming = true },
     )
+    if (renaming) TextPrompt(stringResource(R.string.rw_rename), w.name, onDismiss = { renaming = false }) { v ->
+        renaming = false
+        v.trim().takeIf { it.isNotEmpty() && it != w.name }?.let(onRename)
+    }
     }
 }
 
@@ -527,7 +535,7 @@ private fun SweepPickBanner(onCancel: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit) {
+private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onSetPrimary: (() -> Unit)?, onRename: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
@@ -552,6 +560,9 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
             }
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        // Only for active wallets that aren't the primary already.
+        if (onSetPrimary != null) SheetAction(L.drawable.lucide_ic_circle_check, stringResource(R.string.remoteWallets_list_setPrimary), brand.t400, "home-wallet-menu-primary") { then(onSetPrimary) }
+        SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "home-wallet-menu-rename") { then(onRename) }
         SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "home-wallet-menu-details") { then(onDetails) }
         if (canSweep) SheetAction(L.drawable.lucide_ic_arrow_right_left, stringResource(R.string.sweep_menu), brand.t400, "home-wallet-menu-sweep") { then(onSweep) }
         Spacer(Modifier.height(16.dp).navigationBarsPadding())

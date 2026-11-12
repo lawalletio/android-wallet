@@ -379,6 +379,16 @@ fun HomeScreen() {
           onSweep = { sweepFrom = it.id },
           onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
           onSweepCancel = { sweepFrom = null },
+          // Optimistic: the card shows the new name at once; a failed save puts the old one back.
+          onRename = { w, name ->
+              val before = wallets
+              wallets = wallets?.map { if (it.id == w.id) it.copy(name = name) else it }
+              scope.launch {
+                  runCatching { c.session.api.value.updateRemoteWallet(w.id, name = name) }
+                      .onSuccess { wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) } }
+                      .onFailure { wallets = before; context.toast(it.message ?: "") }
+              }
+          },
       )
       if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
