@@ -161,4 +161,8 @@
     <string name="bunker_connected">Firmante conectado</string>
     <string name="bunker_signing_in">Ingresando… aprobá el pedido de login si tu firmante lo solicita.</string>
     <string name="bunker_method">Firmante remoto (NIP-46)</string>
+    <string name="bunker_relays">Relays</string>
+    <string name="bunker_relay_add">Agregar un relay (wss://…)</string>
+    <string name="bunker_relay_remove">Quitar relay</string>
+    <string name="bunker_relays_hint">Tu firmante tiene que responder en alguno de estos. Amber responde en los relays de su propia configuración: si no pasa nada después de aprobar, agregá uno de esos.</string>
 </resources>

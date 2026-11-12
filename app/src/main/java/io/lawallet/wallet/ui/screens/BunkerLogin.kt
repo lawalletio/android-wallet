@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -51,6 +53,7 @@ import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.QrDisplay
+import io.lawallet.wallet.ui.components.SettingsGroup
 import io.lawallet.wallet.ui.components.SettingsHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
@@ -84,6 +87,10 @@ fun BunkerLoginScreen() {
     var job by remember { mutableStateOf<Job?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
     var connectUri by remember { mutableStateOf<String?>(null) }
+    // Some signers (Amber) answer only on their own configured relays, so the QR's list is editable and remembered.
+    var relays by remember { mutableStateOf(c.prefs.bunkerRelays ?: Nip46Client.DEFAULT_RELAYS) }
+    var newRelay by rememberSaveable { mutableStateOf("") }
+    fun setRelays(list: List<String>) { relays = list; c.prefs.bunkerRelays = list; attempt++ }
     val failed = stringResource(R.string.auth_loginFailed)
     val invalid = stringResource(R.string.bunker_invalid)
 
@@ -126,8 +133,8 @@ fun BunkerLoginScreen() {
         if (tab != 1) return@LaunchedEffect
         val keys = Keys.generate()
         val secret = Nip46Client.newSecret()
-        connectUri = NostrConnectUri(keys.pubkey, Nip46Client.DEFAULT_RELAYS, secret, Nip46Client.PERMS, "LaWallet").toString()
-        val client = c.session.newBunkerClient(Nip46Client.DEFAULT_RELAYS, keys)
+        connectUri = NostrConnectUri(keys.pubkey, relays, secret, Nip46Client.PERMS, "LaWallet").toString()
+        val client = c.session.newBunkerClient(relays, keys)
         start(client) { client.awaitConnect(secret) }
     }
 
@@ -163,6 +170,30 @@ fun BunkerLoginScreen() {
                     stringResource(R.string.bunker_open_signer), { runCatching { context.startActivity(intent) } },
                     Modifier.fillMaxWidth(), BtnVariant.Secondary, icon = L.drawable.lucide_ic_smartphone,
                 )
+                SettingsGroup(stringResource(R.string.bunker_relays)) {
+                    relays.forEachIndexed { i, r ->
+                        if (i > 0) HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
+                        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Txt(r.removePrefix("wss://"), Modifier.weight(1f).padding(vertical = 14.dp), size = 14.sp, maxLines = 1)
+                            if (relays.size > 1) Box(Modifier.size(44.dp).clickable { setRelays(relays - r) }.testTag("bunker-relay-remove"), contentAlignment = Alignment.Center) {
+                                LwIcon(L.drawable.lucide_ic_x, size = 18.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.bunker_relay_remove))
+                            }
+                        }
+                    }
+                }
+                val relayUrl = newRelay.trim().trimEnd('/').let { if (it.isNotEmpty() && "://" !in it) "wss://$it" else it }
+                val relayValid = Regex("^wss?://[^\\s/?#]+\\.[^\\s?#]+$").matches(relayUrl) && relayUrl !in relays
+                OutlinedTextField(
+                    newRelay, { newRelay = it.trim() }, Modifier.fillMaxWidth().testTag("bunker-relay-input"),
+                    placeholder = { Txt(stringResource(R.string.bunker_relay_add), color = Lw.MutedFg) }, singleLine = true,
+                    colors = lwFieldColors(), shape = RoundedCornerShape(12.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    trailingIcon = {
+                        Box(Modifier.size(40.dp).clickable(enabled = relayValid) { setRelays(relays + relayUrl); newRelay = "" }.testTag("bunker-relay-add"), contentAlignment = Alignment.Center) {
+                            LwIcon(L.drawable.lucide_ic_plus, size = 20.dp, tint = if (relayValid) Lw.Foreground else Lw.MutedFg, contentDescription = stringResource(R.string.bunker_relay_add))
+                        }
+                    },
+                )
+                MutedText(stringResource(R.string.bunker_relays_hint), size = 13.sp)
             }
             StatusCard(phase, authOpened, tab)
             ErrorText(error, Modifier.fillMaxWidth())

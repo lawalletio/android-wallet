@@ -200,8 +200,9 @@ class Nip46Client(
         private const val SUB_ID = "nip46"
         /** The only event the app signs remotely: NIP-98 HTTP auth for the LaWallet API. */
         const val PERMS = "sign_event:27235"
-        // Both verified to relay kind 24133. relay.nsec.app was unreachable (Nov 2026); signers that use only the first relay pick damus.
-        val DEFAULT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
+        // La Crypta's relay first (signers that use only the first relay pick it), Primal as a fallback. Both verified to
+        // relay kind 24133; relay.nsec.app was unreachable and damus intermittently 503 (Nov 2026). Users can edit the list.
+        val DEFAULT_RELAYS = listOf("wss://relay.lacrypta.ar", "wss://relay.primal.net")
         private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
         fun encodeRequest(id: String, method: String, params: List<String>) = json.encodeToString(Request.serializer(), Request(id, method, params))
