@@ -143,4 +143,22 @@
     <string name="welcome_chip_custody">self-custody</string>
     <string name="welcome_chip_lightning" translatable="false">lightning</string>
     <string name="welcome_chip_nostr" translatable="false">nostr</string>
+    <string name="login_bunker">Remote signer (bunker)</string>
+    <string name="bunker_title">Remote signer</string>
+    <string name="bunker_subtitle">Log in with a NIP-46 remote signer such as nsec.app or Amber. Your secret key never leaves the signer.</string>
+    <string name="bunker_tab_paste">Scan or paste</string>
+    <string name="bunker_tab_show">Show QR</string>
+    <string name="bunker_uri_label">bunker:// connection</string>
+    <string name="bunker_invalid">That isn\'t a valid bunker:// connection.</string>
+    <string name="bunker_connect">Connect</string>
+    <string name="bunker_retry">Try again</string>
+    <string name="bunker_show_caption">Scan this with your signer app to connect</string>
+    <string name="bunker_open_signer">Open signer app</string>
+    <string name="bunker_waiting">Waiting for your signer…</string>
+    <string name="bunker_waiting_scan">Scan the code with your signer and approve the connection.</string>
+    <string name="bunker_waiting_approve">Approve the connection in your signer.</string>
+    <string name="bunker_auth_url">Finish approving in the browser page that opened, then come back.</string>
+    <string name="bunker_connected">Signer connected</string>
+    <string name="bunker_signing_in">Signing in… approve the login request if your signer asks.</string>
+    <string name="bunker_method">Remote signer (NIP-46)</string>
 </resources>

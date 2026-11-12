@@ -98,9 +98,10 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             Trail.add("relay", "open")
             attempt = 0
-            _connected.value = true
             _lastError.value = null
+            // Subscriptions first: a publish waiting on `connected` must not beat the REQ for its reply.
             subs.forEach { (id, filter) -> send(JsonArray(listOf(JsonPrimitive("REQ"), JsonPrimitive(id), filter))) }
+            _connected.value = true
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {

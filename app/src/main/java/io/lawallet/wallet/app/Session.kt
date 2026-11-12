@@ -5,6 +5,8 @@ import io.lawallet.wallet.core.api.CurrentUser
 import io.lawallet.wallet.core.api.InstanceSettings
 import io.lawallet.wallet.core.api.LaWalletApi
 import io.lawallet.wallet.core.auth.AmberSigner
+import io.lawallet.wallet.core.auth.Nip46Client
+import io.lawallet.wallet.core.auth.Nip46Signer
 import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.LocalSigner
 import io.lawallet.wallet.core.nostr.Signer
@@ -35,6 +37,8 @@ class Session(
     private val scope: CoroutineScope,
     private val amber: AmberSigner.Factory,
     private val avatars: Avatars,
+    /** Opens a remote signer's `auth_url` approval page. */
+    private val openUrl: (String) -> Unit = {},
 ) {
     /** The instance API is unreachable: screens are showing cached data. */
     private val _offline = MutableStateFlow(false)
@@ -103,6 +107,7 @@ class Session(
 
     private fun loadSigner(): Signer? = when (prefs.loginMethod) {
         "amber" -> prefs.externalSigner?.let { (pk, pkg) -> amber.create(pk, pkg) }
+        "bunker" -> prefs.bunker?.let { b -> prefs.signerSecretBlob?.let { runCatching { Nip46Signer.restore(Keys.fromHex(SecretStore.decrypt(it)), b, http, scope, openUrl) }.getOrNull() } }
         null -> null
         else -> prefs.signerSecretBlob?.let { runCatching { LocalSigner(Keys.fromHex(SecretStore.decrypt(it))) }.getOrNull() }
     }
@@ -163,6 +168,15 @@ class Session(
         prefs.externalSigner = pubkey to pkg
     }
 
+    /** A fresh [Nip46Client] for the login screen, wired to open `auth_url` pages. */
+    fun newBunkerClient(relays: List<String>, clientKeys: Keys = Keys.generate()) = Nip46Client(clientKeys, relays, http, scope, openUrl)
+
+    /** NIP-46 login: [signer] is already connected; the JWT's NIP-98 event is its first remote signature. */
+    suspend fun loginWithBunker(signer: Nip46Signer) = login(signer, "bunker") {
+        prefs.signerSecretBlob = SecretStore.encrypt(signer.client.clientKeys.secretHex)
+        prefs.bunker = signer.session
+    }
+
     private suspend fun login(signer: Signer, method: String, loadMe: Boolean = true, persist: () -> Unit) {
         val previous = _signer.value
         _signer.value = signer
@@ -181,6 +195,7 @@ class Session(
     }
 
     fun logout() {
+        (_signer.value as? Nip46Signer)?.close()
         prefs.clearSession()
         scope.launch(Dispatchers.IO) { avatars.clear() }
         _signer.value = null

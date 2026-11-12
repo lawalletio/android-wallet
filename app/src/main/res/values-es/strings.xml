@@ -143,4 +143,22 @@
     <string name="welcome_headline">Bienvenido a</string>
     <string name="welcome_tagline">Tus claves. Tus sats.</string>
     <string name="welcome_chip_custody">autocustodia</string>
+    <string name="login_bunker">Firmante remoto (bunker)</string>
+    <string name="bunker_title">Firmante remoto</string>
+    <string name="bunker_subtitle">Ingresá con un firmante remoto NIP-46 como nsec.app o Amber. Tu clave secreta nunca sale del firmante.</string>
+    <string name="bunker_tab_paste">Escanear o pegar</string>
+    <string name="bunker_tab_show">Mostrar QR</string>
+    <string name="bunker_uri_label">Conexión bunker://</string>
+    <string name="bunker_invalid">Esa no es una conexión bunker:// válida.</string>
+    <string name="bunker_connect">Conectar</string>
+    <string name="bunker_retry">Reintentar</string>
+    <string name="bunker_show_caption">Escaneá este código con tu app firmante para conectar</string>
+    <string name="bunker_open_signer">Abrir app firmante</string>
+    <string name="bunker_waiting">Esperando a tu firmante…</string>
+    <string name="bunker_waiting_scan">Escaneá el código con tu firmante y aprobá la conexión.</string>
+    <string name="bunker_waiting_approve">Aprobá la conexión en tu firmante.</string>
+    <string name="bunker_auth_url">Terminá de aprobar en la página del navegador que se abrió y volvé.</string>
+    <string name="bunker_connected">Firmante conectado</string>
+    <string name="bunker_signing_in">Ingresando… aprobá el pedido de login si tu firmante lo solicita.</string>
+    <string name="bunker_method">Firmante remoto (NIP-46)</string>
 </resources>
