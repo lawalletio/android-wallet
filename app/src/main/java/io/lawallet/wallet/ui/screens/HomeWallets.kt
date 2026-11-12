@@ -309,15 +309,16 @@ private fun WalletRevealCard(
             val figure = lerp(Lw.MutedFg, Lw.Foreground, sel)
             when {
                 loading -> Spinner(16.dp, Lw.MutedFg)
-                balance != null -> Txt(
-                    if (hidden) "•••••" else Currencies.formatBalance(balance, code, rates),
-                    Modifier
+                balance != null -> {
+                    val m = Modifier
                         // The primary's figure is where the ghost lands: measured at rest, revealed as it arrives.
                         .then(if (w.isDefault) Modifier.onGloballyPositioned { reveal.target = it.rootRect() } else Modifier)
                         .graphicsLayer { if (w.isDefault) alpha = 0.15f + 0.85f * smooth(0.78f, 1f, reveal.progress) }
-                        .testTag("home-wallet-balance-${w.name}"),
-                    size = CARD_FIGURE, weight = FontWeight.SemiBold, color = figure,
-                )
+                        .testTag("home-wallet-balance-${w.name}")
+                    // Live updates roll digit by digit, like the main balance.
+                    if (hidden) Txt("•••••", m, size = CARD_FIGURE, weight = FontWeight.SemiBold, color = figure)
+                    else Odometer(Currencies.formatBalance(balance, code, rates), m, CARD_FIGURE, 0.sp, figure, fromZero = false, lineHeight = 24.sp)
+                }
                 else -> Txt("—", size = CARD_FIGURE, color = Lw.MutedFg)
             }
         }

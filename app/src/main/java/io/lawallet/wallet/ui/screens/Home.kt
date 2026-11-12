@@ -148,6 +148,18 @@ fun HomeScreen() {
         if (!open) return@LaunchedEffect
         launch { c.wallet.refreshBalance() }
         fetchRemoteWallets(c, { wallets = it }, walletBalances)
+        // Live while showing: every wallet is polled (failures keep the last figure).
+        while (true) {
+            delay(10_000)
+            wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+                launch { runCatching { c.session.api.value.remoteWalletBalance(w.id) }.onSuccess { walletBalances[w.id] = it } }
+            }
+        }
+    }
+    // A payment on the main connection (NWC notification) re-reads the primary card at once, from its own endpoint.
+    LaunchedEffect(open, balance) {
+        val primary = wallets?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
+        if (open && walletBalances.containsKey(primary.id)) runCatching { c.session.api.value.remoteWalletBalance(primary.id) }.onSuccess { walletBalances[primary.id] = it }
     }
     BackHandler(open) { scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
@@ -404,19 +416,19 @@ private fun BtcEmphasis(text: String, color: Color, fromZero: Boolean, modifier:
  * Wheels are keyed from the right, so units stay units when the number grows a digit.
  */
 @Composable
-private fun Odometer(text: String, modifier: Modifier, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean) {
+internal fun Odometer(text: String, modifier: Modifier, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean, lineHeight: TextUnit = 60.sp) {
     Row(modifier.clearAndSetSemantics { this.text = AnnotatedString(text) }) {
         text.forEachIndexed { i, ch ->
             key(text.length - i) {
-                if (ch.isDigit()) OdometerWheel(ch - '0', i, size, letterSpacing, color, fromZero)
-                else Txt(ch.toString(), Modifier.alignByBaseline(), size = size, weight = FontWeight.SemiBold, color = color, lineHeight = 60.sp, letterSpacing = letterSpacing)
+                if (ch.isDigit()) OdometerWheel(ch - '0', i, size, letterSpacing, color, fromZero, lineHeight)
+                else Txt(ch.toString(), Modifier.alignByBaseline(), size = size, weight = FontWeight.SemiBold, color = color, lineHeight = lineHeight, letterSpacing = letterSpacing)
             }
         }
     }
 }
 
 @Composable
-private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean) {
+private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean, lineHeight: TextUnit) {
     val pos = remember { Animatable(if (fromZero) 0f else digit.toFloat()) }
     LaunchedEffect(digit) {
         // Intro: left-most wheels settle first, the units keep spinning a beat longer.
@@ -425,7 +437,7 @@ private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, lette
     }
     // One Text node (transparent target digit) owns layout + baseline; the rolling faces are painted over it.
     val measurer = rememberTextMeasurer()
-    val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = 60.sp, letterSpacing = letterSpacing, color = color)
+    val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = lineHeight, letterSpacing = letterSpacing, color = color)
     Txt(
         digit.toString(),
         Modifier.alignByBaseline().drawWithContent {
@@ -439,7 +451,7 @@ private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, lette
                 if (frac > 0f) drawText(measurer.measure(((lo + 1) % 10).toString(), style), topLeft = Offset(0f, (1f - frac) * h), alpha = frac)
             }
         },
-        size = size, weight = FontWeight.SemiBold, color = Color.Transparent, lineHeight = 60.sp, letterSpacing = letterSpacing,
+        size = size, weight = FontWeight.SemiBold, color = Color.Transparent, lineHeight = lineHeight, letterSpacing = letterSpacing,
     )
 }
 
