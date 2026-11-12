@@ -69,6 +69,7 @@
     <string name="relay_retry">Retry</string>
     <string name="open_externally">Open in browser</string>
     <string name="paste">Paste</string>
+    <string name="home_primaryBalance">Primary balance</string>
     <string name="rw_add">Add wallet</string>
     <string name="rw_add_title">Connect a remote wallet</string>
     <string name="rw_name">Name</string>

@@ -264,7 +264,9 @@ fun HomeScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(stringResource(R.string.home_yourBalance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                        // "Your balance" → "Primary balance" once the wallets show: it is the primary wallet's balance.
+                        val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
+                        RollingLabel(stringResource(R.string.home_yourBalance), stringResource(R.string.home_primaryBalance), primaryLabel, 14.sp, Lw.MutedFg)
                         if (relayError != null && hasNwc) {
                             Spacer(Modifier.width(8.dp))
                             RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }

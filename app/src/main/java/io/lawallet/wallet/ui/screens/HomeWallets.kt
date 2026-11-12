@@ -50,6 +50,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -208,12 +211,12 @@ internal fun WalletsReveal(
                 LwIcon(L.drawable.lucide_ic_chevron_right, size = 16.dp, tint = Lw.MutedFg)
             }
             Row(
-                Modifier.glass(CircleShape, GlassLevel.Thin).clickable(onClick = onAdd).padding(horizontal = 12.dp, vertical = 7.dp).testTag("home-wallets-add"),
+                Modifier.height(40.dp).glass(CircleShape, GlassLevel.Regular).clickable(onClick = onAdd).padding(horizontal = 16.dp).testTag("home-wallets-add"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LwIcon(L.drawable.lucide_ic_plus, size = 14.dp)
-                Spacer(Modifier.width(6.dp))
-                Txt(stringResource(R.string.rw_add), size = 13.sp, weight = FontWeight.Medium)
+                LwIcon(L.drawable.lucide_ic_plus, size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Txt(stringResource(R.string.rw_add), size = 15.sp, weight = FontWeight.SemiBold)
             }
         }
         when {
@@ -364,3 +367,40 @@ internal fun BalanceGhost(reveal: HomeReveal, text: String, size: TextUnit) {
 
 /** Measures [this] node at rest in root space (before any reveal translation applied after it). */
 internal fun Modifier.measureRoot(onRect: (Rect) -> Unit) = onGloballyPositioned { onRect(it.rootRect()) }
+
+/**
+ * [from] rolls into [to] like an odometer wheel when [flipped]: only the words that differ roll (the
+ * shared prefix/suffix, e.g. " balance", stays put), and the wheel's width eases between the two.
+ */
+@Composable
+internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium) {
+    val t by animateFloatAsState(if (flipped) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "roll")
+    val fw = from.split(' ')
+    val tw = to.split(' ')
+    val head = fw.zip(tw).takeWhile { (x, y) -> x == y }.size
+    val tail = fw.drop(head).reversed().zip(tw.drop(head).reversed()).takeWhile { (x, y) -> x == y }.size
+    val pre = fw.take(head).joinToString(" ").let { if (it.isEmpty()) it else "$it " }
+    val suf = fw.takeLast(tail).joinToString(" ").let { if (it.isEmpty()) it else " $it" }
+    val a = fw.subList(head, fw.size - tail).joinToString(" ")
+    val b = tw.subList(head, tw.size - tail).joinToString(" ")
+    Row(Modifier.semantics(mergeDescendants = true) {}) {
+        if (pre.isNotEmpty()) Txt(pre, size = size, weight = weight, color = color, maxLines = 1)
+        Layout(
+            content = {
+                Txt(a, size = size, weight = weight, color = color, maxLines = 1)
+                Txt(b, size = size, weight = weight, color = color, maxLines = 1)
+            },
+            modifier = Modifier.clipToBounds(),
+        ) { ms, c ->
+            val pa = ms[0].measure(c.copy(minWidth = 0))
+            val pb = ms[1].measure(c.copy(minWidth = 0))
+            val h = maxOf(pa.height, pb.height)
+            layout((pa.width + (pb.width - pa.width) * t).toInt(), h) {
+                // Old face rolls up and out, new face rolls up from below (the odometer's direction).
+                pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
+                pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
+            }
+        }
+        if (suf.isNotEmpty()) Txt(suf, size = size, weight = weight, color = color, maxLines = 1)
+    }
+}

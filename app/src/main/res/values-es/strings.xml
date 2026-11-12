@@ -68,6 +68,7 @@
     <string name="relay_retry">Reintentar</string>
     <string name="open_externally">Abrir en el navegador</string>
     <string name="paste">Pegar</string>
+    <string name="home_primaryBalance">Saldo principal</string>
     <string name="rw_add">Agregar billetera</string>
     <string name="rw_add_title">Conectar una billetera remota</string>
     <string name="rw_name">Nombre</string>
