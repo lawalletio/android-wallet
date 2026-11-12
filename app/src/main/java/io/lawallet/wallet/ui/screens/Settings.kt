@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import io.lawallet.wallet.ui.components.autoFocus
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -181,8 +182,7 @@ fun SettingsScreen() {
     if (confirm) LwAlertDialog(
         onDismissRequest = { confirm = false },
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
-        confirmButton = { TextButton({ confirm = false; c.session.logout() }, Modifier.testTag("confirm-remove")) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
-        dismissButton = { TextButton({ confirm = false }) { Txt(stringResource(R.string.common_cancel)) } },
+        confirmButton = { ModalAction(stringResource(R.string.settings_removeWallet), { confirm = false; c.session.logout() }, Modifier.testTag("confirm-remove"), destructive = true) },
         containerColor = Glass.Dialog,
     )
 }
@@ -382,7 +382,7 @@ fun SecurityScreen() {
         title = { Txt(stringResource(R.string.security_delete_account), weight = FontWeight.SemiBold) },
         text = { Txt(stringResource(R.string.security_delete_confirm)) },
         confirmButton = {
-            TextButton({
+            ModalAction(stringResource(R.string.security_delete_account), {
                 deleting = true
                 scope.launch {
                     runCatching { c.session.api.value.deleteAccount() }
@@ -391,29 +391,26 @@ fun SecurityScreen() {
                     deleting = false
                     confirmDelete = false
                 }
-            }, Modifier.testTag("confirm-delete-account"), enabled = !deleting) { Txt(stringResource(R.string.security_delete_account), color = Lw.Red) }
+            }, Modifier.testTag("confirm-delete-account"), enabled = !deleting, destructive = true)
         },
-        dismissButton = { TextButton({ confirmDelete = false }, enabled = !deleting) { Txt(stringResource(R.string.common_cancel)) } },
         containerColor = Glass.Dialog,
     )
     if (deleteUnsupported) LwAlertDialog(
         onDismissRequest = { deleteUnsupported = false },
         text = { Txt(stringResource(R.string.security_delete_unsupported)) },
         confirmButton = {
-            TextButton({
+            ModalAction(stringResource(R.string.security_delete_steps), {
                 deleteUnsupported = false
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/blob/main/PRIVACY.md#account-deletion")))
-            }) { Txt(stringResource(R.string.security_delete_steps)) }
+            })
         },
-        dismissButton = { TextButton({ deleteUnsupported = false }) { Txt(stringResource(R.string.common_cancel)) } },
         containerColor = Glass.Dialog,
     )
     editing?.let { pk -> PasskeyDialog(pk, passkeys?.size ?: 0, onDone = { changed -> editing = null; if (changed) scope.launch { passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull() } }) }
     if (confirmRemove) LwAlertDialog(
         onDismissRequest = { confirmRemove = false },
         text = { Txt(stringResource(R.string.settings_securityScreen_removeConfirm)) },
-        confirmButton = { TextButton({ confirmRemove = false; c.session.logout() }) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
-        dismissButton = { TextButton({ confirmRemove = false }) { Txt(stringResource(R.string.common_cancel)) } },
+        confirmButton = { ModalAction(stringResource(R.string.settings_removeWallet), { confirmRemove = false; c.session.logout() }, destructive = true) },
         containerColor = Glass.Dialog,
     )
 }
@@ -440,12 +437,12 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
             else OutlinedTextField(label, { label = it.take(64) }, Modifier.autoFocus(), label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
         },
         confirmButton = {
-            if (deleting) TextButton({ scope.launch { runCatching { c.session.api.value.deletePasskey(pk.id) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }) { Txt(stringResource(R.string.settings_passkeysScreen_deleteConfirm), color = Lw.Red) }
-            else TextButton({ scope.launch { runCatching { c.session.api.value.renamePasskey(pk.id, label) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }, enabled = label.isNotBlank()) { Txt(stringResource(R.string.settings_passkeysScreen_saveName)) }
-        },
-        dismissButton = {
-            if (!deleting) TextButton({ deleting = true }) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
-            else TextButton({ onDone(false) }) { Txt(stringResource(R.string.common_cancel)) }
+            if (deleting) ModalAction(stringResource(R.string.settings_passkeysScreen_deleteConfirm), { scope.launch { runCatching { c.session.api.value.deletePasskey(pk.id) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }, destructive = true)
+            else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                ModalAction(stringResource(R.string.settings_passkeysScreen_saveName), { scope.launch { runCatching { c.session.api.value.renamePasskey(pk.id, label) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }, enabled = label.isNotBlank())
+                // Deleting is a second step (confirmed above), so it stays a quiet link under the main action.
+                TextButton({ deleting = true }, Modifier.padding(top = 4.dp)) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
+            }
         },
         containerColor = Glass.Dialog,
     )

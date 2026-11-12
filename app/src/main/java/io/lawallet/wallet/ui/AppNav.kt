@@ -4,6 +4,7 @@ import androidx.compose.ui.platform.testTag
 import io.lawallet.wallet.app.Updater
 import io.lawallet.wallet.ui.screens.UpdatesScreen
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -389,14 +390,13 @@ private fun UpdateDialog(available: Updater.State.Available, container: AppConta
             )
         },
         confirmButton = {
-            TextButton({
+            ModalAction(stringResource(R.string.update_prompt_update), {
                 container.updater.dismissed.value = available.version
                 // The download shows its progress on the Updates screen.
                 if (available.via == Updater.Via.DOWNLOAD) nav.navigate(R0.UPDATES) { launchSingleTop = true }
                 activity?.let { container.updater.start(it, container.scope) }
-            }, Modifier.testTag("update-prompt-update")) { Txt(stringResource(R.string.update_prompt_update)) }
+            }, Modifier.testTag("update-prompt-update"))
         },
-        dismissButton = { TextButton({ container.updater.dismissed.value = available.version }) { Txt(stringResource(R.string.update_prompt_later)) } },
         containerColor = Glass.Dialog,
     )
 }
@@ -408,8 +408,7 @@ private fun CrashReportDialog() {
         onDismissRequest = { Diagnostics.decline() },
         title = { Txt(stringResource(R.string.diag_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
         text = { Txt(stringResource(R.string.diag_prompt_body), color = Lw.MutedFg) },
-        confirmButton = { TextButton({ Diagnostics.accept(context) }) { Txt(stringResource(R.string.diag_prompt_send)) } },
-        dismissButton = { TextButton({ Diagnostics.decline() }) { Txt(stringResource(R.string.diag_prompt_no)) } },
+        confirmButton = { ModalAction(stringResource(R.string.diag_prompt_send), { Diagnostics.accept(context) }) },
         containerColor = Glass.Dialog,
     )
 }

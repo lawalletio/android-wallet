@@ -150,6 +150,9 @@ internal class HomeReveal {
         return (progress - old) * r
     }
 
+    /** Jumps straight to [target] (restoring a state, nothing to animate). */
+    fun snapTo(target: Float) { settling?.cancel(); progress = target }
+
     suspend fun settleTo(target: Float, velocity: Float = 0f) = coroutineScope {
         settling = coroutineContext[Job]
         val r = range.takeIf { it > 0f } ?: 1f

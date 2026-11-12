@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,11 +81,8 @@ fun RecoverMergeDialog(existing: RecoverySide, incoming: RecoverySide, onConfirm
             }
         },
         confirmButton = {
-            TextButton(onConfirm, Modifier.testTag("recover-merge-confirm")) {
-                Txt(stringResource(R.string.activate_recover_merge_confirm), weight = FontWeight.SemiBold, color = brand.t400)
-            }
+            ModalAction(stringResource(R.string.activate_recover_merge_confirm), onConfirm, Modifier.testTag("recover-merge-confirm"))
         },
-        dismissButton = { TextButton(onCancel) { Txt(stringResource(R.string.activate_recover_merge_cancel)) } },
         containerColor = Glass.Dialog,
     )
 }
@@ -220,16 +218,14 @@ fun AccountTransferredDialog(transfer: AccountTransfer) {
             }
         },
         confirmButton = {
-            TextButton({
+            ModalAction(stringResource(R.string.settings_accountTransfer_dismiss), {
                 busy = true; error = null
                 scope.launch {
                     runCatching { c.session.api.value.dismissAccountTransfer(); c.session.refreshMe() }
                         .onFailure { error = it.message }
                     busy = false
                 }
-            }, Modifier.testTag("account-transfer-dismiss"), enabled = !busy) {
-                Txt(stringResource(R.string.settings_accountTransfer_dismiss), weight = FontWeight.SemiBold)
-            }
+            }, Modifier.testTag("account-transfer-dismiss"), enabled = !busy)
         },
         containerColor = Glass.Dialog,
     )

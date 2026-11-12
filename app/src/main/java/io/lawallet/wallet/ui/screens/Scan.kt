@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -141,13 +142,12 @@ fun ScanScreen() {
 
     foreign?.let { f ->
         LwAlertDialog(
-            onDismissRequest = { foreign = null },
-            title = { Txt(stringResource(R.string.scan_differentCommunity), size = 16.sp) },
-            text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
-            confirmButton = { TextButton({ foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) { Txt(stringResource(R.string.scan_openLink)) } },
-            dismissButton = { TextButton({ foreign = null }) { Txt(stringResource(R.string.scan_scanAnother)) } },
-            containerColor = Glass.Dialog,
-        )
+        onDismissRequest = { foreign = null },
+        title = { Txt(stringResource(R.string.scan_differentCommunity), size = 16.sp) },
+        text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
+        confirmButton = { ModalAction(stringResource(R.string.scan_openLink), { foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) },
+        containerColor = Glass.Dialog,
+    )
     }
 }
 

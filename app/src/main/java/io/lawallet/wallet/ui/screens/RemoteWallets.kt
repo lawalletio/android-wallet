@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.foundation.layout.heightIn
 import io.lawallet.wallet.ui.components.GlassIconButton
 import io.lawallet.wallet.ui.components.autoFocus
@@ -396,16 +397,16 @@ fun RemoteWalletDetailScreen(id: String) {
         renaming = false; scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, name = v) }.onFailure { context.toast(it.message ?: "") }; load() }
     }
     if (deleting) LwAlertDialog(
-        onDismissRequest = { deleting = false }, containerColor = Glass.Dialog,
+        onDismissRequest = { deleting = false },
+        containerColor = Glass.Dialog,
         text = { Txt(stringResource(R.string.rw_delete_confirm)) },
-        confirmButton = { TextButton({
+        confirmButton = { ModalAction(stringResource(R.string.rw_delete), {
             deleting = false
             scope.launch {
                 runCatching { c.session.api.value.deleteRemoteWallet(id, permanent = wallet?.status != "ACTIVE") }
                     .onSuccess { runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { context.toast(it.message ?: "") }
             }
-        }) { Txt(stringResource(R.string.rw_delete), color = Lw.Red) } },
-        dismissButton = { TextButton({ deleting = false }) { Txt(stringResource(R.string.common_cancel)) } },
+        }, destructive = true) },
     )
     if (editingPlan) ForwardPlanDialog(action, onDismiss = { editingPlan = false }) { fee, base, dests ->
         editingPlan = false
@@ -422,33 +423,19 @@ internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, o
     // Opens focused with the current text selected: type to replace, Done (or the button) to save.
     var v by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
     val save = { if (v.text.isNotBlank()) onSave(v.text.trim()) }
-    // Wide (near full width), close at top left instead of a Cancel button, one prominent action.
     LwAlertDialog(
         onDismissRequest = onDismiss, containerColor = Glass.Dialog,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GlassIconButton(L.drawable.lucide_ic_x, onDismiss, Modifier.testTag("prompt-close"), size = 36.dp, contentDescription = stringResource(R.string.common_cancel))
-                Spacer(Modifier.width(12.dp))
-                Txt(title, size = 19.sp, weight = FontWeight.SemiBold)
-            }
-        },
+        title = { Txt(title, size = 19.sp, weight = FontWeight.SemiBold) },
         text = {
-            Column {
-                OutlinedTextField(
-                    v, { v = it.copy(text = it.text.take(64)) }, Modifier.fillMaxWidth().heightIn(min = 60.dp).autoFocus().testTag("prompt-field"),
-                    singleLine = true, colors = lwFieldColors(), shape = RoundedCornerShape(16.dp),
-                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 18.sp),
-                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
-                )
-                Spacer(Modifier.height(20.dp))
-                LwButton(title, save, Modifier.fillMaxWidth().testTag("prompt-save"), BtnVariant.Theme, enabled = v.text.isNotBlank(), height = 52.dp)
-            }
+            OutlinedTextField(
+                v, { v = it.copy(text = it.text.take(64)) }, Modifier.fillMaxWidth().heightIn(min = 60.dp).autoFocus().testTag("prompt-field"),
+                singleLine = true, colors = lwFieldColors(), shape = RoundedCornerShape(16.dp),
+                textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 18.sp),
+                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+            )
         },
-        // The action lives under the field (full width); AlertDialog still needs a slot.
-        confirmButton = {},
+        confirmButton = { ModalAction(title, save, Modifier.testTag("prompt-save"), enabled = v.text.isNotBlank()) },
     )
 }
 
@@ -458,7 +445,9 @@ private fun ForwardPlanDialog(current: ReceiveAction?, onDismiss: () -> Unit, on
     var base by remember { mutableStateOf((current?.revision?.baseFeeSats?.toLong() ?: 0).toString()) }
     val rows = remember { mutableStateListOf<Pair<String, String>>().apply { addAll(current?.revision?.destinations?.map { it.address to (it.allocationBps / 100.0).toString() } ?: listOf("" to "100")) } }
     val total = rows.sumOf { it.second.toDoubleOrNull() ?: 0.0 }
-    LwAlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog,
+    LwAlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Glass.Dialog,
         title = { Txt(stringResource(R.string.remoteWallets_forwarding_configTitle), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -479,11 +468,11 @@ private fun ForwardPlanDialog(current: ReceiveAction?, onDismiss: () -> Unit, on
             }
         },
         confirmButton = {
-            TextButton({
+            ModalAction(stringResource(R.string.remoteWallets_forwarding_saveAndEnable), {
                 onSave(fee.toIntOrNull() ?: 0, base.toLongOrNull() ?: 0, rows.map { ForwardDestination(it.first, ((it.second.toDoubleOrNull() ?: 0.0) * 100).toInt()) })
-            }, enabled = kotlin.math.abs(total - 100) < 0.001 && rows.all { it.first.contains('@') }) { Txt(stringResource(R.string.remoteWallets_forwarding_saveAndEnable)) }
+            }, enabled = kotlin.math.abs(total - 100) < 0.001 && rows.all { it.first.contains('@') })
         },
-        dismissButton = { TextButton(onDismiss) { Txt(stringResource(R.string.common_cancel)) } })
+    )
 }
 
 @Composable
@@ -491,7 +480,9 @@ private fun WebhookDialog(onDismiss: () -> Unit, onSave: (String, String, String
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("https://") }
     var action by remember { mutableStateOf("RECEIVED") }
-    LwAlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog,
+    LwAlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Glass.Dialog,
         title = { Txt(stringResource(R.string.notifications_add_webhook), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -502,6 +493,6 @@ private fun WebhookDialog(onDismiss: () -> Unit, onSave: (String, String, String
                 }
             }
         },
-        confirmButton = { TextButton({ onSave(name.ifBlank { "Webhook" }, action, url) }, enabled = url.startsWith("https://") && url.length > 10) { Txt(stringResource(R.string.common_done)) } },
-        dismissButton = { TextButton(onDismiss) { Txt(stringResource(R.string.common_cancel)) } })
+        confirmButton = { ModalAction(stringResource(R.string.common_done), { onSave(name.ifBlank { "Webhook" }, action, url) }, enabled = url.startsWith("https://") && url.length > 10) },
+    )
 }
