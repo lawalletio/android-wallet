@@ -29,8 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
@@ -67,6 +65,7 @@ import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
+import io.lawallet.wallet.ui.sharedAvatar
 import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
@@ -104,8 +103,6 @@ fun HomeScreen() {
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
     val scope = rememberCoroutineScope()
-    var menu by remember { mutableStateOf(false) }
-    var confirmLogout by remember { mutableStateOf(false) }
     val signer by c.session.signer.collectAsState()
     val profiles by c.session.profiles.entries.collectAsState()
     val avatar = signer?.pubkey?.let { profiles[it]?.picture }
@@ -169,18 +166,13 @@ fun HomeScreen() {
         sheet,
         header = {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box {
-                    Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
-                        if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                        else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
-                    }
-                    DropdownMenu(menu, { menu = false }, containerColor = Glass.Dialog, shape = RoundedCornerShape(16.dp)) {
-                        DropdownMenuItem(
-                            { Txt(stringResource(R.string.home_logOut)) },
-                            { menu = false; confirmLogout = true },
-                            leadingIcon = { LwIcon(L.drawable.lucide_ic_log_out, size = 16.dp) },
-                        )
-                    }
+                // Opens the profile; the avatar itself flies there (log out lives on the profile now).
+                Box(
+                    Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                    else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
                 }
                 // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
                 val address = me?.lightningAddress
@@ -280,14 +272,6 @@ fun HomeScreen() {
         },
       )
     }
-
-    if (confirmLogout) AlertDialog(
-        onDismissRequest = { confirmLogout = false },
-        confirmButton = { TextButton({ confirmLogout = false; c.session.logout() }) { Txt(stringResource(R.string.home_logOut), color = Lw.Red) } },
-        dismissButton = { TextButton({ confirmLogout = false }) { Txt(stringResource(R.string.common_cancel)) } },
-        text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
-        containerColor = Glass.Dialog,
-    )
 }
 
 /** Glass orb that drops in with the pull, winds its arrow up to full length, then spins while refreshing. */

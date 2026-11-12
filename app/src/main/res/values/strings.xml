@@ -176,4 +176,22 @@
     </plurals>
     <string name="activity_group_expand">Show payments</string>
     <string name="activity_group_collapse">Hide payments</string>
+    <string name="profile_open">Open profile</string>
+    <string name="profile_edit">Edit profile</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_saved">Profile updated</string>
+    <string name="profile_displayName">Display name</string>
+    <string name="profile_username">Username</string>
+    <string name="profile_about">About</string>
+    <string name="profile_aboutHint">Tell people a little about yourself</string>
+    <string name="profile_changeAvatar">Change photo</string>
+    <string name="profile_changeBanner">Change cover</string>
+    <string name="profile_cropAvatar">Move and scale your photo</string>
+    <string name="profile_cropBanner">Move and scale your cover</string>
+    <string name="profile_usePhoto">Use photo</string>
+    <string name="profile_uploadFailed">Upload failed. Tap to try again.</string>
+    <string name="profile_imageFailed">Couldn\'t open that image</string>
+    <string name="profile_loadFailed">Couldn\'t load your profile from Nostr relays.</string>
+    <string name="profile_saveFailed">Couldn\'t publish your profile. Try again.</string>
+    <string name="profile_unnamed">Anonymous</string>
 </resources>

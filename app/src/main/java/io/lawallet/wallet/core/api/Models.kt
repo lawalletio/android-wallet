@@ -19,6 +19,8 @@ data class InstanceSettings(
     val maintenance_enabled: String? = null,
     val lncurl_enabled: String? = null,
     val lncurl_auto_create: String? = null,
+    /** JSON array of Blossom media servers (unset → Blossom.DEFAULT_SERVERS). */
+    val blossom_servers: String? = null,
 ) {
     val lncurlAutoCreate get() = lncurl_auto_create == "true"
     val lncurlEnabled get() = lncurl_enabled == "true"
