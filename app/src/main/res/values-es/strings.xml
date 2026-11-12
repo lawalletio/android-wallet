@@ -156,13 +156,18 @@
     <string name="bunker_open_signer">Abrir app firmante</string>
     <string name="bunker_waiting">Esperando a tu firmante…</string>
     <string name="bunker_waiting_scan">Escaneá el código con tu firmante y aprobá la conexión.</string>
-    <string name="bunker_waiting_approve">Aprobá la conexión en tu firmante.</string>
     <string name="bunker_auth_url">Terminá de aprobar en la página del navegador que se abrió y volvé.</string>
-    <string name="bunker_connected">Firmante conectado</string>
-    <string name="bunker_signing_in">Ingresando… aprobá el pedido de login si tu firmante lo solicita.</string>
     <string name="bunker_method">Firmante remoto (NIP-46)</string>
     <string name="bunker_relays">Relays</string>
     <string name="bunker_relay_add">Agregar un relay (wss://…)</string>
     <string name="bunker_relay_remove">Quitar relay</string>
     <string name="bunker_relays_hint">Tu firmante tiene que responder en alguno de estos. Amber responde en los relays de su propia configuración: si no pasa nada después de aprobar, agregá uno de esos.</string>
+    <string name="bunker_step_connect">Conectando con tu firmante</string>
+    <string name="bunker_step_key">Obteniendo tu clave pública</string>
+    <string name="bunker_step_approve">Aprobá el ingreso</string>
+    <string name="bunker_step_signin">Ingresando a LaWallet</string>
+    <string name="bunker_done">¡Listo!</string>
+    <string name="bunker_failed">No se pudo ingresar</string>
+    <string name="bunker_hint_connect">Aprobá el pedido de conexión en tu firmante.</string>
+    <string name="bunker_hint_approve">Tu firmante te pide firmar el ingreso. Aprobalo ahí.</string>
 </resources>

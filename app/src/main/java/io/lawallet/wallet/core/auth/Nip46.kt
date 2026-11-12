@@ -89,6 +89,8 @@ class Nip46Client(
     /** The signer wants the user to approve in a browser (`auth_url`). */
     var onAuthUrl: (String) -> Unit = {},
 ) {
+    /** Each request as it goes out (`done` = false) and once answered (true) — drives the login progress UI. */
+    var onProgress: (method: String, done: Boolean) -> Unit = { _, _ -> }
     val relayUrls = relayUrls.distinct()
     private val relays = this.relayUrls.map { Relay(it, http, scope) }
     var remotePubkey: String? = null
@@ -151,6 +153,7 @@ class Nip46Client(
         val reply = CompletableDeferred<Response>()
         pending[id] = reply
         val started = System.currentTimeMillis()
+        onProgress(method, false)
         try {
             val ev = NostrEvent.sign(clientKeys, KIND, encrypt(encodeRequest(id, method, params), remote), listOf(listOf("p", remote)))
             // Any one relay taking it is enough (the signer listens on all); fail fast only when none does.
@@ -161,6 +164,7 @@ class Nip46Client(
             val res = withTimeoutOrNull(timeoutMs) { reply.await() } ?: throw Nip46Exception("The signer did not answer in time")
             if (!res.error.isNullOrEmpty()) throw Nip46Exception(res.error)
             Trail.add("nip46", "$method ok ${System.currentTimeMillis() - started}ms")
+            onProgress(method, true)
             res.result ?: ""
         } catch (e: Nip46Exception) {
             Trail.add("nip46", "$method failed ${System.currentTimeMillis() - started}ms", error = true)
