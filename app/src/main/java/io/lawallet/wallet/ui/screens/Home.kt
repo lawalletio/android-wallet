@@ -26,19 +26,13 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutCubic
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,13 +46,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshState
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import io.lawallet.wallet.core.api.RemoteWallet
+import io.lawallet.wallet.ui.components.toast
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,13 +107,11 @@ import io.lawallet.wallet.ui.theme.glass
 import io.lawallet.wallet.ui.components.CurrencyToggle
 import io.lawallet.wallet.ui.components.GlassIconButton
 import androidx.compose.ui.geometry.Offset
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen() {
     val c = LocalContainer.current
@@ -131,8 +132,65 @@ fun HomeScreen() {
     val profiles by c.session.profiles.entries.collectAsState()
     val avatar = signer?.pubkey?.let { profiles[it]?.picture }
     var bonus by remember { mutableStateOf(c.prefs.bonusSats.takeIf { it > 0 }) }
-    var refreshing by remember { mutableStateOf(false) }
-    val pull = rememberPullToRefreshState()
+    val context = LocalContext.current
+    val density = LocalDensity.current
+
+    // Swipe down: the balance settles at the bottom and the remote wallets show above it.
+    val reveal = remember { HomeReveal() }
+    reveal.bottomReserve = with(density) { 140.dp.toPx() } // floating tab bar (~92dp) plus breathing room
+    reveal.minTravel = with(density) { 48.dp.toPx() }
+    val open by remember { derivedStateOf { reveal.open } }
+    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
+    val walletBalances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
+    var promoting by remember { mutableStateOf<String?>(null) }
+    // While the primary switches, the main balance shows the new wallet's known balance until its own arrives.
+    var heldBalance by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(open) {
+        if (!open) return@LaunchedEffect
+        launch { c.wallet.refreshBalance() }
+        fetchRemoteWallets(c, { wallets = it }, walletBalances)
+        // Live while showing: every wallet is polled (failures keep the last figure).
+        while (true) {
+            delay(10_000)
+            wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+                launch { runCatching { c.session.api.value.remoteWalletBalance(w.id) }.onSuccess { walletBalances[w.id] = it } }
+            }
+        }
+    }
+    // A payment on the main connection (NWC notification) re-reads the primary card at once, from its own endpoint.
+    LaunchedEffect(open, balance) {
+        val primary = wallets?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
+        if (open && walletBalances.containsKey(primary.id)) runCatching { c.session.api.value.remoteWalletBalance(primary.id) }.onSuccess { walletBalances[primary.id] = it }
+    }
+    // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
+    var sweepFrom by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(open) { if (!open) sweepFrom = null }
+    LaunchedEffect(Unit) {
+        if (!c.flow.revealWallets) return@LaunchedEffect
+        c.flow.revealWallets = false
+        snapshotFlow { reveal.range }.first { it > 0f } // wait for the layout to measure
+        reveal.settleTo(1f)
+    }
+    BackHandler(open) { if (sweepFrom != null) sweepFrom = null else scope.launch { reveal.settleTo(0f) } }
+    // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
+    val setPrimary: (RemoteWallet) -> Unit = { w ->
+        if (promoting == null) scope.launch {
+            val before = wallets
+            val oldClient = c.wallet.client.value
+            promoting = w.id
+            wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
+            heldBalance = walletBalances[w.id]
+            runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }
+                .onSuccess {
+                    wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                    promoting = null
+                    runCatching { c.session.refreshMe() }
+                    withTimeoutOrNull(10_000) { c.wallet.client.first { it !== oldClient }; c.wallet.balance.first { it != null } }
+                    heldBalance = null
+                }
+                .onFailure { wallets = before; heldBalance = null; promoting = null; context.toast(it.message ?: "") }
+        }
+    }
 
     LaunchedEffect(Unit) {
         runCatching { c.session.refreshMe() }
@@ -169,29 +227,18 @@ fun HomeScreen() {
     val autoCreate = settings?.lncurlAutoCreate == true
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
 
-    // Pull-to-refresh: force-reload everything Home shows, and recheck releases (re-arming a "Later"d prompt).
-    val onRefresh: () -> Unit = {
-        refreshing = true
-        c.updater.dismissed.value = null
-        c.scope.launch { c.updater.checkNow() }
-        scope.launch {
-            coroutineScope {
-                launch { runCatching { c.session.refreshMe() } }
-                launch { c.session.refreshSettings() }
-                launch { c.wallet.refreshBalance() }
-                launch { c.wallet.refreshActivity() }
-                launch { c.session.refreshProfile(force = true) }
-            }
-            refreshing = false
-        }
-    }
+    val shown = heldBalance ?: balance
 
     val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
-    PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize().testTag("home-refresh"), state = pull, indicator = { RefreshOrb(pull, refreshing) }) {
+    reveal.sheetProgress = { sheet.progress }
+    Box(
+        Modifier.fillMaxSize().onGloballyPositioned { reveal.rootTop = it.positionInRoot().y; reveal.rootH = it.size.height.toFloat() }
+            .nestedScroll(reveal.connection).testTag("home-root"),
+    ) {
       ActivitySheetLayout(
         sheet,
         header = {
-            Row(Modifier.fillMaxWidth().riseIn(0, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().measureRoot { reveal.headerBottom = it.bottom }.riseIn(0, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Opens the profile; the avatar itself flies there (log out lives on the profile now).
                 Box(
                     Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
@@ -224,7 +271,11 @@ fun HomeScreen() {
         top = {
             // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
             Box(
-                Modifier.fillMaxWidth().riseIn(1, intro).padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
+                Modifier.fillMaxWidth()
+                    // Measured at rest; the reveal then slides it down to the bottom, 1:1 with the finger.
+                    .measureRoot { reveal.balanceTop = it.top; reveal.balanceH = it.height }
+                    .graphicsLayer { translationY = reveal.progress * reveal.range }
+                    .riseIn(1, intro).padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
                     if (glowAlpha > 0f) {
                         val r = size.width * 0.75f
                         drawCircle(Brush.radialGradient(0f to glowColor.copy(alpha = 0.42f * glowAlpha), 1f to Color.Transparent, center = Offset(size.width / 2, size.height * 0.38f), radius = r), r, Offset(size.width / 2, size.height * 0.38f))
@@ -236,7 +287,9 @@ fun HomeScreen() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(stringResource(R.string.home_yourBalance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                        // "Your balance" → "Primary balance" once the wallets show: it is the primary wallet's balance.
+                        val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
+                        RollingLabel(stringResource(R.string.home_yourBalance), stringResource(R.string.home_primaryBalance), primaryLabel, 14.sp, Lw.MutedFg)
                         if (relayError != null && hasNwc) {
                             Spacer(Modifier.width(8.dp))
                             RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }
@@ -247,12 +300,13 @@ fun HomeScreen() {
                         Modifier.fillMaxWidth()
                             // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
                             .clickable(null, null, onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)) { c.prefs.setHideBalance(!hidden) }
-                            .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle"),
+                            .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
+                            .measureRoot { if (reveal.progress == 0f) reveal.figure = it },
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
-                            balance == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
-                            balance == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
+                            shown == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
+                            shown == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
                             else -> AnimatedContent(
                                 code,
                                 transitionSpec = {
@@ -265,7 +319,7 @@ fun HomeScreen() {
                                 },
                                 contentAlignment = Alignment.Center,
                                 label = "currency",
-                            ) { cc -> BalanceFigure(balance ?: 0, cc, rates, hidden, motion, fromZero = intro) }
+                            ) { cc -> BalanceFigure(shown ?: 0, cc, rates, hidden, motion, fromZero = intro) }
                         }
                     }
                     bonus?.let { b ->
@@ -281,7 +335,7 @@ fun HomeScreen() {
             }
 
             if (me != null && me?.lightningAddress == null) Row(
-                    Modifier.riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
+                    Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
                         .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -293,7 +347,7 @@ fun HomeScreen() {
                     LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
                 }
             if (me != null && !hasNwc) {
-                Column(Modifier.riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
+                Column(Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
                     Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Txt(stringResource(if (autoCreate) R.string.home_autoCreateBody else R.string.home_noWalletBody), size = 13.sp, color = Lw.MutedFg, lineHeight = 18.sp)
@@ -306,37 +360,36 @@ fun HomeScreen() {
 
         },
         sheetContent = {
-            Box(Modifier.riseIn(4, intro, rise = 48.dp)) {
+            Box(Modifier.graphicsLayer {
+                // The activity sheet drops away faster than the balance, so the two never overlap.
+                translationY = reveal.progress * (reveal.range + 160.dp.toPx())
+                alpha = (1f - reveal.progress * 1.6f).coerceIn(0f, 1f)
+            }.riseIn(4, intro, rise = 48.dp)) {
                 ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
             }
         },
       )
+      WalletsReveal(
+          reveal, wallets, walletBalances, code, rates, hidden,
+          onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
+          onSetPrimary = setPrimary,
+          onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
+          onManage = { nav.navigate(R0.REMOTE_WALLETS) },
+          sweepFrom = sweepFrom,
+          onSweep = { sweepFrom = it.id },
+          onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
+          onSweepCancel = { sweepFrom = null },
+      )
+      if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
+          BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
+      }
     }
 }
 
-/** Glass orb that drops in with the pull, winds its arrow up to full length, then spins while refreshing. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun BoxScope.RefreshOrb(state: PullToRefreshState, refreshing: Boolean) {
-    val spin by rememberInfiniteTransition(label = "orb").animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin")
-    val ready = refreshing || state.distanceFraction >= 1f
-    val tint by animateColorAsState(if (ready) Lw.Green else Lw.MutedFg, tween(200), label = "orbTint")
-    Box(
-        Modifier.align(Alignment.TopCenter).graphicsLayer {
-            val f = if (refreshing) 1f else state.distanceFraction.coerceIn(0f, 1.4f)
-            translationY = f * 72.dp.toPx() - 44.dp.toPx()
-            alpha = f.coerceAtMost(1f)
-            val s = 0.6f + 0.4f * f.coerceAtMost(1f) + if (f > 1f) (f - 1f) * 0.25f else 0f
-            scaleX = s; scaleY = s
-        }.size(44.dp).glass(CircleShape, GlassLevel.Strong),
-        contentAlignment = Alignment.Center,
-    ) {
-        LwIcon(
-            L.drawable.lucide_ic_refresh_cw,
-            Modifier.graphicsLayer { rotationZ = if (refreshing) spin else state.distanceFraction * 270f },
-            size = 20.dp, tint = tint,
-        )
-    }
+/** Banners under the balance: ride down with it and fade, so the landed balance stands alone. */
+private fun Modifier.revealAside(reveal: HomeReveal) = graphicsLayer {
+    translationY = reveal.progress * reveal.range
+    alpha = (1f - reveal.progress * 2.5f).coerceIn(0f, 1f)
 }
 
 /** Fades and lifts into place, [index] steps (70ms each) after the first; a no-op unless [play]. */
@@ -378,19 +431,19 @@ private fun BtcEmphasis(text: String, color: Color, fromZero: Boolean, modifier:
  * Wheels are keyed from the right, so units stay units when the number grows a digit.
  */
 @Composable
-private fun Odometer(text: String, modifier: Modifier, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean) {
+internal fun Odometer(text: String, modifier: Modifier, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean, lineHeight: TextUnit = 60.sp) {
     Row(modifier.clearAndSetSemantics { this.text = AnnotatedString(text) }) {
         text.forEachIndexed { i, ch ->
             key(text.length - i) {
-                if (ch.isDigit()) OdometerWheel(ch - '0', i, size, letterSpacing, color, fromZero)
-                else Txt(ch.toString(), Modifier.alignByBaseline(), size = size, weight = FontWeight.SemiBold, color = color, lineHeight = 60.sp, letterSpacing = letterSpacing)
+                if (ch.isDigit()) OdometerWheel(ch - '0', i, size, letterSpacing, color, fromZero, lineHeight)
+                else Txt(ch.toString(), Modifier.alignByBaseline(), size = size, weight = FontWeight.SemiBold, color = color, lineHeight = lineHeight, letterSpacing = letterSpacing)
             }
         }
     }
 }
 
 @Composable
-private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean) {
+private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean, lineHeight: TextUnit) {
     val pos = remember { Animatable(if (fromZero) 0f else digit.toFloat()) }
     LaunchedEffect(digit) {
         // Intro: left-most wheels settle first, the units keep spinning a beat longer.
@@ -399,7 +452,7 @@ private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, lette
     }
     // One Text node (transparent target digit) owns layout + baseline; the rolling faces are painted over it.
     val measurer = rememberTextMeasurer()
-    val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = 60.sp, letterSpacing = letterSpacing, color = color)
+    val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = lineHeight, letterSpacing = letterSpacing, color = color)
     Txt(
         digit.toString(),
         Modifier.alignByBaseline().drawWithContent {
@@ -413,7 +466,7 @@ private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, lette
                 if (frac > 0f) drawText(measurer.measure(((lo + 1) % 10).toString(), style), topLeft = Offset(0f, (1f - frac) * h), alpha = frac)
             }
         },
-        size = size, weight = FontWeight.SemiBold, color = Color.Transparent, lineHeight = 60.sp, letterSpacing = letterSpacing,
+        size = size, weight = FontWeight.SemiBold, color = Color.Transparent, lineHeight = lineHeight, letterSpacing = letterSpacing,
     )
 }
 

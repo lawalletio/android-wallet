@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.core.api.ForwardDestination
 import io.lawallet.wallet.core.api.ReceiveAction
@@ -58,6 +59,7 @@ import io.lawallet.wallet.ui.LocalContainer
 import kotlinx.serialization.builtins.ListSerializer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
+import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.GroupDivider
@@ -81,22 +83,30 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
+internal val remoteWalletsSer = ListSerializer(RemoteWallet.serializer())
+
+/**
+ * Refreshes the remote wallets (cached under "remote-wallets", passed to [onList]) then each ACTIVE one's
+ * balance into [balances] (null = unavailable). Offline, balances load for the cached list. False if the list failed.
+ */
+internal suspend fun fetchRemoteWallets(c: AppContainer, onList: (List<RemoteWallet>) -> Unit, balances: MutableMap<String, Long?>): Boolean {
+    val list = runCatching { c.session.api.value.remoteWallets() }.onSuccess { onList(it); c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }.getOrNull()
+    coroutineScope {
+        (list ?: c.prefs.cached("remote-wallets", remoteWalletsSer)).orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+            launch { balances[w.id] = runCatching { c.session.api.value.remoteWalletBalance(w.id) }.getOrNull() }
+        }
+    }
+    return list != null
+}
+
 @Composable
 fun RemoteWalletsScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
-    val walletsSer = ListSerializer(RemoteWallet.serializer())
-    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", walletsSer)) }
+    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
     val balances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
     var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        runCatching { c.session.api.value.remoteWallets() }.onSuccess { wallets = it; failed = false; c.prefs.setCached("remote-wallets", walletsSer, it) }.onFailure { failed = true }
-        coroutineScope {
-            wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
-                launch { balances[w.id] = runCatching { c.session.api.value.remoteWalletBalance(w.id) }.getOrNull() }
-            }
-        }
-    }
+    LaunchedEffect(Unit) { failed = !fetchRemoteWallets(c, { wallets = it }, balances) }
     Column(Modifier.fillMaxSize()) {
         SettingsHeader(stringResource(R.string.settings_remoteWallets), { nav.popBackStack() }, stringResource(R.string.common_back))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -193,7 +203,10 @@ fun AddRemoteWalletScreen() {
     var step by remember { mutableStateOf<String?>(null) } // null = choose, "nwc", "lncurl"
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
-    var primary by remember { mutableStateOf(true) }
+    // Primary is opt-in, except for the first wallet (it has to be the primary). Cached list first, then the server's.
+    var primary by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).isNullOrEmpty()) }
+    var primaryTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { c.session.api.value.remoteWallets() }.onSuccess { if (!primaryTouched) primary = it.isEmpty() } }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
@@ -205,7 +218,12 @@ fun AddRemoteWalletScreen() {
     fun submit(create: suspend () -> Unit) {
         busy = true; error = null
         scope.launch {
-            runCatching { create() }.onSuccess { runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { error = it.message }
+            runCatching { create() }.onSuccess {
+                runCatching { c.session.refreshMe() }
+                // Back to Home with the wallet list open, so the new wallet is right there.
+                c.flow.revealWallets = true
+                if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
+            }.onFailure { error = it.message }
             busy = false
         }
     }
@@ -228,12 +246,12 @@ fun AddRemoteWalletScreen() {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
                         trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
                     OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name_optional)) }, placeholder = { Txt(derivedName, color = Lw.MutedFg) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
                 }
                 "lncurl" -> {
                     MutedText(stringResource(R.string.rw_lncurl_body))
                     OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
                 }
             }
             ErrorText(error)

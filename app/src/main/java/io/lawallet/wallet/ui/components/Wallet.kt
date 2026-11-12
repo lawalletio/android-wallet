@@ -17,6 +17,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import io.lawallet.wallet.app.paymentKey
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.animation.core.Animatable
@@ -241,7 +244,7 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
     val dest = if (tx.incoming) null else destinations[tx.paymentHash]
     val (label, describedComment) = splitPaymentDescription(tx.description)
     val comment = if (dest != null) dest.comment else describedComment
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("tx-row"), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.freshEntrance(tx).fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("tx-row"), verticalAlignment = Alignment.CenterVertically) {
         if (dest != null) Box {
             AsyncImage(c.avatars.of(dest.address), null, Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong).clip(CircleShape), contentScale = ContentScale.Crop)
             Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
@@ -278,7 +281,7 @@ fun TransactionGroup(txs: List<Tx>, onOpen: (Tx) -> Unit) {
     val turn by animateFloatAsState(if (open) 180f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "chevron")
     val well by animateFloatAsState(if (open) 0.05f else 0f, tween(220), label = "well")
     val shape = RoundedCornerShape(24.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(shape).background(Color.White.copy(alpha = well))) {
+    Column(Modifier.freshEntrance(first).fillMaxWidth().padding(horizontal = 8.dp).clip(shape).background(Color.White.copy(alpha = well))) {
         Row(
             Modifier.fillMaxWidth().clip(shape)
                 .clickable(onClickLabel = stringResource(if (open) R.string.activity_group_collapse else R.string.activity_group_expand)) { open = !open }
@@ -578,4 +581,39 @@ private val CardShadow: androidx.compose.ui.graphics.drawscope.DrawScope.() -> U
         }
         canvas.drawRoundRect(0f, 6.dp.toPx(), size.width, size.height + 6.dp.toPx(), r, r, paint)
     } }
+}
+
+/**
+ * A payment that just arrived makes its entrance once: the row opens its own height (so the rows below
+ * glide down rather than jump), slides in from the side its money moved (incoming from the left,
+ * outgoing from the right) and fades up, then a green/coral wash lingers and fades. Older rows: no-op.
+ */
+@Composable
+private fun Modifier.freshEntrance(tx: Tx): Modifier {
+    val c = LocalContainer.current
+    val key = paymentKey(tx)
+    val p = remember(key) { Animatable(if (c.wallet.consumeFresh(key)) 0f else 1f) }
+    if (p.value >= 1f && !p.isRunning) return this
+    LaunchedEffect(key) { p.animateTo(1f, tween(1800, easing = LinearEasing)) }
+    val tint = if (tx.incoming) Lw.Green else Lw.Orange
+    val dir = if (tx.incoming) -1f else 1f
+    return this
+        .layout { m, cs ->
+            val pl = m.measure(cs)
+            val h = (pl.height * FastOutSlowInEasing.transform((p.value / 0.28f).coerceIn(0f, 1f))).roundToInt()
+            layout(pl.width, h) { pl.place(0, 0) }
+        }
+        .graphicsLayer {
+            val t = FastOutSlowInEasing.transform(((p.value - 0.08f) / 0.32f).coerceIn(0f, 1f))
+            translationX = (1f - t) * dir * 56.dp.toPx()
+            alpha = t
+            clip = false
+        }
+        .drawBehind {
+            val g = 1f - ((p.value - 0.4f) / 0.6f).coerceIn(0f, 1f)
+            if (g > 0f) {
+                val inset = 8.dp.toPx()
+                drawRoundRect(tint.copy(alpha = 0.16f * g), Offset(inset, 0f), Size(size.width - 2 * inset, size.height), CornerRadius(20.dp.toPx()))
+            }
+        }
 }

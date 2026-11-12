@@ -94,6 +94,13 @@ class WalletRepository(
     private val _notices = MutableSharedFlow<PaymentNotice>(extraBufferCapacity = 16)
     val notices: SharedFlow<PaymentNotice> = _notices
 
+    /**
+     * Payments that just arrived (live or caught up), by [paymentKey]: their row plays an entrance once,
+     * then [consumeFresh] drops them. Marked before the list updates, so the new row already sees it.
+     */
+    private val fresh = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    fun consumeFresh(key: String): Boolean = fresh.remove(key)
+
     /** True while the app is visible: drives balance polling (notifications stream regardless). */
     val active = MutableStateFlow(false)
     private var jobs: List<Job> = emptyList()
@@ -235,6 +242,7 @@ class WalletRepository(
         if (id in seen || "$type:${tx.paymentHash}" in seen) return
         prefs.setSeen(key, seen + id)
         prefs.setLastSeen(key, maxOf(prefs.lastSeen(key), (tx.settledAt ?: tx.createdAt) / 1000))
+        fresh += id
         merge(listOf(tx))
         _notices.emit(PaymentNotice(id, type, tx))
         refreshBalance()
@@ -245,6 +253,9 @@ class WalletRepository(
         val now = System.currentTimeMillis()
         val tx = Tx(if (incoming) "incoming" else "outgoing", sats, 0, "Dev payment", "dev-$now", null, now, now, "settled")
         _balance.value = ((_balance.value ?: 0) + if (incoming) sats else -sats).coerceAtLeast(0)
+        // In memory only (never the activity cache): the next refresh drops it.
+        fresh += paymentKey(tx)
+        _recent.value = listOf(tx) + _recent.value
         _notices.emit(PaymentNotice("dev:$now", if (incoming) "payment_received" else "payment_sent", tx))
     }
 
