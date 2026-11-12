@@ -26,7 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.autoFocus
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -177,7 +178,7 @@ fun SettingsScreen() {
             }
         }
     }
-    if (confirm) AlertDialog(
+    if (confirm) LwAlertDialog(
         onDismissRequest = { confirm = false },
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
         confirmButton = { TextButton({ confirm = false; c.session.logout() }, Modifier.testTag("confirm-remove")) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
@@ -376,7 +377,7 @@ fun SecurityScreen() {
         }
     }
     // Modal while the request runs (back is ignored), so the screen can't be left with the account gone but the session kept.
-    if (confirmDelete) AlertDialog(
+    if (confirmDelete) LwAlertDialog(
         onDismissRequest = { if (!deleting) confirmDelete = false },
         title = { Txt(stringResource(R.string.security_delete_account), weight = FontWeight.SemiBold) },
         text = { Txt(stringResource(R.string.security_delete_confirm)) },
@@ -395,7 +396,7 @@ fun SecurityScreen() {
         dismissButton = { TextButton({ confirmDelete = false }, enabled = !deleting) { Txt(stringResource(R.string.common_cancel)) } },
         containerColor = Glass.Dialog,
     )
-    if (deleteUnsupported) AlertDialog(
+    if (deleteUnsupported) LwAlertDialog(
         onDismissRequest = { deleteUnsupported = false },
         text = { Txt(stringResource(R.string.security_delete_unsupported)) },
         confirmButton = {
@@ -408,7 +409,7 @@ fun SecurityScreen() {
         containerColor = Glass.Dialog,
     )
     editing?.let { pk -> PasskeyDialog(pk, passkeys?.size ?: 0, onDone = { changed -> editing = null; if (changed) scope.launch { passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull() } }) }
-    if (confirmRemove) AlertDialog(
+    if (confirmRemove) LwAlertDialog(
         onDismissRequest = { confirmRemove = false },
         text = { Txt(stringResource(R.string.settings_securityScreen_removeConfirm)) },
         confirmButton = { TextButton({ confirmRemove = false; c.session.logout() }) { Txt(stringResource(R.string.settings_removeWallet), color = Lw.Red) } },
@@ -431,12 +432,12 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf(pk.label ?: "") }
     var deleting by remember { mutableStateOf(false) }
-    AlertDialog(
+    LwAlertDialog(
         onDismissRequest = { onDone(false) },
         title = { Txt(stringResource(if (deleting) (if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyTitle else R.string.settings_passkeysScreen_deleteTitle) else R.string.settings_passkeysScreen_manage), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             if (deleting) Txt(stringResource(if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyBody else R.string.settings_passkeysScreen_deleteBody), color = Lw.MutedFg)
-            else OutlinedTextField(label, { label = it.take(64) }, label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
+            else OutlinedTextField(label, { label = it.take(64) }, Modifier.autoFocus(), label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
         },
         confirmButton = {
             if (deleting) TextButton({ scope.launch { runCatching { c.session.api.value.deletePasskey(pk.id) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }) { Txt(stringResource(R.string.settings_passkeysScreen_deleteConfirm), color = Lw.Red) }

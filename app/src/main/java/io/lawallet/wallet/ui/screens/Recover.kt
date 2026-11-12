@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,7 +65,7 @@ private fun counts(cards: Int, wallets: Int) =
 @Composable
 fun RecoverMergeDialog(existing: RecoverySide, incoming: RecoverySide, onConfirm: () -> Unit, onCancel: () -> Unit) {
     val brand = LocalBrand.current
-    AlertDialog(
+    LwAlertDialog(
         onDismissRequest = onCancel,
         title = { Txt(stringResource(R.string.activate_recover_merge_title), size = 20.sp, weight = FontWeight.SemiBold) },
         text = {
@@ -200,7 +200,7 @@ fun AccountTransferredDialog(transfer: AccountTransfer) {
             .getOrDefault(transfer.transferredAt)
     }
     val card = transfer.cardTitle ?: stringResource(R.string.settings_accountTransfer_unnamedCard)
-    AlertDialog(
+    LwAlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         icon = { LwIcon(L.drawable.lucide_ic_shield_alert, size = 28.dp, tint = Lw.Red) },

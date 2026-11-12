@@ -45,7 +45,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -488,7 +488,7 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
         if (hasCached) Box(Modifier.size(8.dp).clip(CircleShape).background(Lw.Red))
         else Box(Modifier.glass(CircleShape, GlassLevel.Thin, tint = Lw.Red.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp)) { Txt(stringResource(R.string.shared_relay_offline), size = 11.sp, color = Lw.Red) }
     }
-    if (open) AlertDialog(
+    if (open) LwAlertDialog(
         onDismissRequest = { open = false },
         title = { Txt(stringResource(R.string.shared_relay_title), weight = FontWeight.SemiBold, size = 16.sp) },
         text = { Txt(if (error.contains("time", true)) stringResource(R.string.shared_relay_timeout) else stringResource(R.string.shared_relay_generic), color = Lw.MutedFg) },

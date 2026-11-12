@@ -3,7 +3,7 @@ package io.lawallet.wallet.ui
 import androidx.compose.ui.platform.testTag
 import io.lawallet.wallet.app.Updater
 import io.lawallet.wallet.ui.screens.UpdatesScreen
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -378,7 +378,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
 @Composable
 private fun UpdateDialog(available: Updater.State.Available, container: AppContainer, nav: NavHostController) {
     val activity = androidx.activity.compose.LocalActivity.current
-    AlertDialog(
+    LwAlertDialog(
         onDismissRequest = { container.updater.dismissed.value = available.version },
         title = { Txt(stringResource(R.string.update_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
@@ -404,7 +404,7 @@ private fun UpdateDialog(available: Updater.State.Available, container: AppConta
 @Composable
 private fun CrashReportDialog() {
     val context = LocalContext.current
-    AlertDialog(
+    LwAlertDialog(
         onDismissRequest = { Diagnostics.decline() },
         title = { Txt(stringResource(R.string.diag_prompt_title), size = 16.sp, weight = FontWeight.SemiBold) },
         text = { Txt(stringResource(R.string.diag_prompt_body), color = Lw.MutedFg) },

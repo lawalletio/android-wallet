@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -140,7 +140,7 @@ fun ScanScreen() {
     }
 
     foreign?.let { f ->
-        AlertDialog(
+        LwAlertDialog(
             onDismissRequest = { foreign = null },
             title = { Txt(stringResource(R.string.scan_differentCommunity), size = 16.sp) },
             text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },

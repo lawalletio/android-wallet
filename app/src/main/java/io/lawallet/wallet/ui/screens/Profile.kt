@@ -46,7 +46,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -315,7 +315,7 @@ fun ProfileScreen() {
         )
     }
 
-    if (confirmLogout) AlertDialog(
+    if (confirmLogout) LwAlertDialog(
         onDismissRequest = { confirmLogout = false },
         confirmButton = { TextButton({ confirmLogout = false; c.session.logout() }) { Txt(stringResource(R.string.home_logOut), color = Lw.Red) } },
         dismissButton = { TextButton({ confirmLogout = false }) { Txt(stringResource(R.string.common_cancel)) } },

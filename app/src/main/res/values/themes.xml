@@ -13,4 +13,9 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
         <item name="postSplashScreenTheme">@style/Theme.LaWallet</item>
     </style>
+    <!-- Modals: zoom out on dismiss (applied to each dialog window by LwAlertDialog). -->
+    <style name="LwDialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/lw_dialog_none</item>
+        <item name="android:windowExitAnimation">@anim/lw_dialog_out</item>
+    </style>
 </resources>
