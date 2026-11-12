@@ -1,11 +1,14 @@
 package io.lawallet.wallet.ui.screens
 
 import android.os.Build
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
 import io.lawallet.wallet.ui.theme.Glass
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.runtime.remember
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.infiniteRepeatable
@@ -406,24 +409,11 @@ private fun WalletRevealCard(
             }
         }
     }
-    DropdownMenu(
-        menu, { menu = false },
-        offset = DpOffset(16.dp, 0.dp),
-        shape = RoundedCornerShape(18.dp),
-        containerColor = Glass.Dialog,
-        modifier = Modifier.testTag("home-wallet-menu"),
-    ) {
-        DropdownMenuItem(
-            { Txt(stringResource(R.string.sweep_menu_details), size = 15.sp) }, { menu = false; onOpen() },
-            leadingIcon = { LwIcon(L.drawable.lucide_ic_info, size = 18.dp, tint = Lw.MutedFg) },
-            modifier = Modifier.testTag("home-wallet-menu-details"),
-        )
-        if (active && (balance ?: 0L) > 0L) DropdownMenuItem(
-            { Txt(stringResource(R.string.sweep_menu), size = 15.sp) }, { menu = false; onSweep() },
-            leadingIcon = { LwIcon(L.drawable.lucide_ic_arrow_right_left, size = 18.dp, tint = brand.t400) },
-            modifier = Modifier.testTag("home-wallet-menu-sweep"),
-        )
-    }
+    if (menu) WalletActionsSheet(
+        w, if (hidden || balance == null) null else Currencies.formatBalance(balance, code, rates),
+        canSweep = active && (balance ?: 0L) > 0L,
+        onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep,
+    )
     }
 }
 
@@ -530,3 +520,51 @@ private fun SweepPickBanner(onCancel: () -> Unit) {
         )
     }
 }
+
+/**
+ * The long-press menu, as a bottom sheet (Spotify-style): the wallet up top so it's clear what the
+ * actions apply to, then one big row per action. The sheet slides away before the action runs.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val brand = LocalBrand.current
+    val lncurl = w.provider == "lncurl"
+    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
+    fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
+        modifier = Modifier.testTag("home-wallet-menu"),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.36f), accent.copy(alpha = 0.10f)))),
+                contentAlignment = Alignment.Center,
+            ) { LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 24.dp, tint = accent) }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                Txt(listOfNotNull(if (lncurl) "LNCurl" else "NWC", balance?.let { "$it sats" }).joinToString(" · "), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "home-wallet-menu-details") { then(onDetails) }
+        if (canSweep) SheetAction(L.drawable.lucide_ic_arrow_right_left, stringResource(R.string.sweep_menu), brand.t400, "home-wallet-menu-sweep") { then(onSweep) }
+        Spacer(Modifier.height(16.dp).navigationBarsPadding())
+    }
+}
+
+@Composable
+private fun SheetAction(icon: Int, label: String, tint: Color, tag: String, onClick: () -> Unit) =
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 16.dp).testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LwIcon(icon, size = 22.dp, tint = tint)
+        Spacer(Modifier.width(18.dp))
+        Txt(label, size = 16.sp, weight = FontWeight.Medium)
+    }
