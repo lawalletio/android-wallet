@@ -144,7 +144,6 @@ fun HomeScreen() {
 
     val hasNwc = client != null
     val autoCreate = settings?.lncurlAutoCreate == true
-    val canReceive = hasNwc || autoCreate
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
 
     // Pull-to-refresh: force-reload everything Home shows, and recheck releases (re-arming a "Later"d prompt).
@@ -168,7 +167,7 @@ fun HomeScreen() {
     PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize().testTag("home-refresh"), state = pull, indicator = { RefreshOrb(pull, refreshing) }) {
       ActivitySheetLayout(
         sheet,
-        top = {
+        header = {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box {
                     Box(Modifier.size(44.dp).glass(CircleShape).clickable { menu = true }.testTag("avatar"), contentAlignment = Alignment.Center) {
@@ -197,12 +196,14 @@ fun HomeScreen() {
                 else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                     BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
+                // Hiding the balance stays one tap away: tap the figure itself.
                 GlassIconButton(
-                    if (hidden) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye, { c.prefs.setHideBalance(!hidden) },
-                    Modifier.testTag("toggle-balance"), contentDescription = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance),
+                    L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+                    Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
                 )
             }
-
+        },
+        top = {
             // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
             Box(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
@@ -244,12 +245,8 @@ fun HomeScreen() {
                             Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
                         }
                     }
+                    // Receive / Send live in the bottom bar.
                     if (currencies.active.size >= 2) CurrencyToggle(currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) })
-                    Spacer(Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        LwButton(stringResource(R.string.home_receive), { nav.navigate(R0.RECEIVE) }, Modifier.weight(1f).testTag("home-receive"), BtnVariant.Secondary, enabled = canReceive, height = 52.dp, icon = L.drawable.lucide_ic_arrow_down_left)
-                        LwButton(stringResource(R.string.home_send), { nav.navigate(R0.SEND) }, Modifier.weight(1f).testTag("home-send"), BtnVariant.Theme, enabled = hasNwc, height = 52.dp, icon = L.drawable.lucide_ic_arrow_up_right)
-                    }
                 }
             }
 

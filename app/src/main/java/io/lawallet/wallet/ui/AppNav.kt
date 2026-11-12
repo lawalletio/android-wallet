@@ -197,15 +197,17 @@ private fun AnimatedContentScope.TrackTab(route: String, into: MutableMap<String
  */
 @Composable
 private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHostController, haze: HazeState, modifier: Modifier) {
-    val lastTab = remember { mutableStateOf("home") }
-    when (route) { R0.HOME -> lastTab.value = "home"; R0.SETTINGS -> lastTab.value = "settings" }
     if (shown.isEmpty()) return
+    val c = LocalContainer.current
+    val client by c.wallet.client.collectAsState()
+    val settings by c.session.settings.collectAsState()
     NavTabBar(
-        current = lastTab.value,
-        onHome = { nav.navigate(R0.HOME) { popUpTo(R0.HOME); launchSingleTop = true } },
-        onSettings = { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+        onReceive = { nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
+        onSend = { nav.navigate(R0.SEND) { launchSingleTop = true } },
         onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
         haze = haze,
+        canReceive = client != null || settings?.lncurlAutoCreate == true,
+        canSend = client != null,
         // Both tabs composed = switching tabs: the bar stays put.
         modifier = modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f },
     )

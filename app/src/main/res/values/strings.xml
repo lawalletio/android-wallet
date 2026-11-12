@@ -170,4 +170,10 @@
     <string name="bunker_failed">Couldn\'t sign in</string>
     <string name="bunker_hint_connect">Approve the connection request in your signer.</string>
     <string name="bunker_hint_approve">Your signer is asking you to sign the login. Approve it there.</string>
+    <plurals name="activity_group_count">
+        <item quantity="one">%d payment</item>
+        <item quantity="other">%d payments</item>
+    </plurals>
+    <string name="activity_group_expand">Show payments</string>
+    <string name="activity_group_collapse">Hide payments</string>
 </resources>

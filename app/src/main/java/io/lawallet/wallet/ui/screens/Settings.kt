@@ -128,7 +128,8 @@ fun SettingsScreen() {
     var confirm by remember { mutableStateOf(false) }
     val bg by c.prefs.backgroundListener.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        Txt(stringResource(R.string.settings_title), Modifier.padding(start = 20.dp, top = 24.dp, bottom = 16.dp), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
+        SettingsHeader(stringResource(R.string.settings_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        Spacer(Modifier.height(12.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             SettingsGroup(stringResource(R.string.settings_account)) {
                 SettingsRow(stringResource(R.string.settings_myCards), { nav.navigate(R0.CARDS) }, Modifier.testTag("settings-cards"), icon = L.drawable.lucide_ic_credit_card)

@@ -170,4 +170,10 @@
     <string name="bunker_failed">No se pudo ingresar</string>
     <string name="bunker_hint_connect">Aprobá el pedido de conexión en tu firmante.</string>
     <string name="bunker_hint_approve">Tu firmante te pide firmar el ingreso. Aprobalo ahí.</string>
+    <plurals name="activity_group_count">
+        <item quantity="one">%d pago</item>
+        <item quantity="other">%d pagos</item>
+    </plurals>
+    <string name="activity_group_expand">Mostrar pagos</string>
+    <string name="activity_group_collapse">Ocultar pagos</string>
 </resources>

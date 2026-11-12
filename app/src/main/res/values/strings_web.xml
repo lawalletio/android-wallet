@@ -375,6 +375,7 @@
     <string name="withdraw_celebration_claimed">Claimed +%1$s</string>
     <string name="withdraw_celebration_chest">Treasure chest opening</string>
     <string name="receive_title">Receive</string>
+    <string name="receive_yourAddress">Your Lightning address</string>
     <string name="receive_invoiceTitle">Invoice</string>
     <string name="receive_noAddress">You don\'t have a Lightning address yet. Claim one to receive payments.</string>
     <string name="receive_claimUsername">Claim a username</string>
