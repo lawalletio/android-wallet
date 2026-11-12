@@ -27,7 +27,10 @@ class AppContainer(context: Context) {
     val prefs = Prefs(context)
     val activityBridge = ActivityBridge()
     val avatars = Avatars(context.applicationContext)
-    val session = Session(prefs, http, scope, AmberSigner.Factory(context.applicationContext, activityBridge), avatars)
+    val session = Session(prefs, http, scope, AmberSigner.Factory(context.applicationContext, activityBridge), avatars) { url ->
+        // A remote signer asks for approval in the browser; it may come from a background request.
+        runCatching { context.applicationContext.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
     val wallet = WalletRepository(session, prefs, http, scope)
     val rates = RatesRepository(YadioRates(http), prefs, scope)
     val lnurl = Lnurl(http)

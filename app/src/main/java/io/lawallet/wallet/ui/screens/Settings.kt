@@ -304,6 +304,7 @@ fun SecurityScreen() {
             SettingsRow(stringResource(R.string.settings_securityScreen_loginMethod), null, value = when (method) {
                 "passkey" -> stringResource(R.string.settings_securityScreen_methods_passkey)
                 "amber" -> "Amber (NIP-55)"
+                "bunker" -> stringResource(R.string.bunker_method)
                 "nsec" -> stringResource(R.string.settings_securityScreen_methods_nsec)
                 else -> stringResource(R.string.settings_securityScreen_unknown)
             })

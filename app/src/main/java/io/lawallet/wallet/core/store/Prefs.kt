@@ -41,6 +41,16 @@ class Prefs(context: Context) {
         get() = sp.getString("ext-signer-pubkey", null)?.let { it to (sp.getString("ext-signer-pkg", null) ?: "") }
         set(v) = sp.edit { putString("ext-signer-pubkey", v?.first); putString("ext-signer-pkg", v?.second) }
 
+    /** NIP-46 bunker session (remote signer, user pubkey, relays); its client key is in [signerSecretBlob]. */
+    var bunker: io.lawallet.wallet.core.auth.BunkerSession?
+        get() = sp.getString("bunker", null)?.let { runCatching { json.decodeFromString(io.lawallet.wallet.core.auth.BunkerSession.serializer(), it) }.getOrNull() }
+        set(v) = sp.edit { putString("bunker", v?.let { json.encodeToString(io.lawallet.wallet.core.auth.BunkerSession.serializer(), it) }) }
+
+    /** Relays the nostrconnect:// QR lists — a device preference, kept across logouts. */
+    var bunkerRelays: List<String>?
+        get() = sp.getString("bunker-relays", null)?.let { runCatching { json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
+        set(v) = sp.edit { putString("bunker-relays", v?.let { json.encodeToString(ListSerializer(String.serializer()), it) }) }
+
     var jwt: String?
         get() = sp.getString("jwt", null)
         set(v) = sp.edit { putString("jwt", v) }
@@ -155,14 +165,14 @@ class Prefs(context: Context) {
 
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "bunker-relays") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg", "bunker", "bunker-relays") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }

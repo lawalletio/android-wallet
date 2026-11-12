@@ -371,6 +371,7 @@ fun NostrLoginScreen() {
                 loading = true
                 amberLauncher.launch(AmberSigner.loginIntent())
             }, Modifier.fillMaxWidth(), BtnVariant.Secondary, enabled = !loading, icon = L.drawable.lucide_ic_smartphone)
+            LwButton(stringResource(R.string.login_bunker), { nav.navigate(R0.LOGIN_BUNKER) }, Modifier.fillMaxWidth().testTag("login-bunker"), BtnVariant.Secondary, enabled = !loading, icon = L.drawable.lucide_ic_radio_tower)
         }
     }
 }

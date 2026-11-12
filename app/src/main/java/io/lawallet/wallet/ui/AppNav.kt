@@ -103,6 +103,7 @@ object R0 {
     const val CREATE_PASSKEY = "create-passkey"
     const val LOGIN = "login"
     const val LOGIN_NOSTR = "login/nostr"
+    const val LOGIN_BUNKER = "login/bunker"
     const val WELCOME = "welcome"
     const val HOME = "home"
     const val ACTIVITY = "activity"
@@ -264,6 +265,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.CREATE_PASSKEY) { CreatePasskeyScreen() }
                 composable(R0.LOGIN) { LoginScreen() }
                 composable(R0.LOGIN_NOSTR) { NostrLoginScreen() }
+                composable(R0.LOGIN_BUNKER) { BunkerLoginScreen() }
                 composable(R0.WELCOME) { WelcomeScreen() }
                 composable(R0.HOME) { TrackTab(R0.HOME, tabShown); HomeScreen() }
                 composable(R0.ACTIVITY) { ActivityScreen() }
@@ -362,7 +364,7 @@ private fun CrashReportDialog() {
     )
 }
 
-private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, "activate/{id}")
+private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, R0.LOGIN_BUNKER, "activate/{id}")
 
 /** wallet-loading-screen.tsx — isotype in an 80dp tile, indeterminate bar, version. */
 @Composable
