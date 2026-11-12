@@ -50,6 +50,8 @@ class CurrencyKeypadTest {
         assertEquals("21.00", Currencies.format(21_000, "USD", rates, us))
         assertEquals("< 0.01", Currencies.format(1, "USD", rates, us))
         assertEquals("—", Currencies.format(1, "EUR", rates, us))
+        assertEquals("21", Currencies.formatBalance(21_000, "ARS", mapOf("ARS" to 100_000.0), us))
+        assertEquals("21.00", Currencies.formatBalance(21_000, "USD", rates, us))
         assertEquals("sats", Currencies.unitLabel("SAT"))
     }
 

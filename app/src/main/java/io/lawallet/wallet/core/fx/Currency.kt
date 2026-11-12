@@ -45,6 +45,16 @@ object Currencies {
             roundingMode = RoundingMode.HALF_EVEN
         }.format(value)
 
+    /** Currencies whose cents are noise in a balance (ARS: 1 sat ≈ 1 peso). */
+    private val WHOLE_BALANCE = setOf("ARS")
+
+    /** Balance display: [format], minus the cents for [WHOLE_BALANCE] currencies. */
+    fun formatBalance(sats: Long, code: String, rates: Rates?, locale: Locale = Locale.getDefault()): String {
+        if (code !in WHOLE_BALANCE) return format(sats, code, rates, locale)
+        val v = convertSats(sats, code, rates) ?: return "—"
+        return fmt(v, 0, 0, locale)
+    }
+
     /** format-sats.ts `formatSatsAmount`: `—` without a rate, `< 0.01` for dust fiat. */
     fun format(sats: Long, code: String, rates: Rates?, locale: Locale = Locale.getDefault()): String {
         val v = convertSats(sats, code, rates) ?: return "—"

@@ -42,6 +42,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -414,13 +418,13 @@ private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.C
 @Composable
 fun LoadingScreen() {
     val brand = LocalBrand.current
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(80.dp).glass(RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
-            BrandImage(brand.isotype, "isotype.svg", Modifier.size(48.dp))
-        }
-        Spacer(Modifier.height(24.dp))
-        LinearProgressIndicator(Modifier.width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)), color = brand.t400, trackColor = Color.White.copy(alpha = 0.08f))
-        Spacer(Modifier.height(16.dp))
-        Txt("v${BuildConfig.VERSION_NAME}", size = 12.sp, color = Lw.MutedFg)
+    Box(Modifier.fillMaxSize()) {
+        // Same drawable + size as the system splash, so the hand-off doesn't jump.
+        Image(painterResource(R.drawable.ic_splash), null, Modifier.size(240.dp).align(Alignment.Center))
+        LinearProgressIndicator(
+            Modifier.align(Alignment.Center).offset(y = 100.dp).width(160.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).testTag("splash-progress"),
+            color = brand.t400, trackColor = Color.White.copy(alpha = 0.08f),
+        )
+        Txt("v${BuildConfig.VERSION_NAME}", Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp).testTag("splash-version"), size = 12.sp, color = Lw.MutedFg)
     }
 }
