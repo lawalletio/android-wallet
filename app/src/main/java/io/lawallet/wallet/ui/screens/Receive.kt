@@ -276,7 +276,6 @@ fun ReceiveSummaryScreen() {
         }
         ReceiptFooter(
             onShare = { context.shareText("$title: ${Currencies.formatSats(tx.amountSats)} sats\n${tx.paymentHash}") },
-            onActivity = { c.flow.resetReceive(); nav.navigate(R0.ACTIVITY) { popUpTo(R0.HOME) } },
             onDone = { c.flow.resetReceive(); nav.goHome() },
         )
     }

@@ -173,9 +173,6 @@
     <string name="home_install_iosBody">Tap Share, then Add to Home Screen. You can keep using the wallet either way.</string>
     <string name="home_install_install">Install</string>
     <string name="home_install_dismiss">Dismiss install prompt</string>
-    <string name="activity_title">Activity</string>
-    <string name="activity_all">All</string>
-    <string name="activity_transfers">Transfers</string>
     <string name="activity_connectWallet">Connect a wallet to see your transaction history.</string>
     <string name="activity_loading">Loading activity…</string>
     <string name="activity_loadFailed">Failed to load activity</string>
@@ -233,11 +230,10 @@
     <string name="shared_receipt_settled">Settled</string>
     <string name="shared_receipt_unavailable">Unavailable</string>
     <string name="shared_receipt_proofTitle">Payment proof</string>
-    <string name="shared_receipt_proofHint">Reveal or copy these only when you need a receipt.</string>
+    <string name="shared_receipt_proofHint">Copy these only when you need a receipt.</string>
+    <string name="shared_receipt_displayProof">Display proof</string>
+    <string name="shared_receipt_hideProof">Hide proof</string>
     <string name="shared_receipt_notProvided">Not provided by wallet</string>
-    <string name="shared_receipt_show">Show %1$s</string>
-    <string name="shared_receipt_hide">Hide %1$s</string>
-    <string name="shared_receipt_viewActivity">View activity</string>
     <string name="shared_receipt_text_title">LaWallet payment receipt</string>
     <string name="shared_receipt_text_status">Status</string>
     <string name="shared_receipt_text_amount">Amount</string>

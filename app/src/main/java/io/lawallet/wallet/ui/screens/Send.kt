@@ -435,7 +435,6 @@ fun SendSummaryScreen() {
         }
         ReceiptFooter(
             onShare = { context.shareText("$title: ${Currencies.formatSats(r.amountSats)} sats → ${r.to}\n${r.paymentHash ?: ""}") },
-            onActivity = { c.flow.resetSend(); nav.navigate(R0.ACTIVITY) { popUpTo(R0.HOME) } },
             onDone = { c.flow.resetSend(); nav.goHome() },
         )
     }

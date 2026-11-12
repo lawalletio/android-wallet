@@ -136,7 +136,6 @@ object R0 {
     const val WELCOME = "welcome"
     const val HOME = "home"
     const val PROFILE = "profile"
-    const val ACTIVITY = "activity"
     const val SEND = "send"
     const val SEND_AMOUNT = "send/amount"
     const val SEND_PREVIEW = "send/preview"
@@ -315,7 +314,6 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                     R0.PROFILE,
                     enterTransition = { ProfileFadeIn }, popExitTransition = { ProfileFadeOut },
                 ) { CompositionLocalProvider(LocalDestScope provides this) { ProfileScreen() } }
-                composable(R0.ACTIVITY) { ActivityScreen() }
                 composable("activity/{hash}") { ActivityDetailScreen(it.arguments?.getString("hash").orEmpty()) }
                 composable(R0.SEND) { SendRecipientScreen() }
                 composable(R0.SEND_AMOUNT) { SendAmountScreen() }
