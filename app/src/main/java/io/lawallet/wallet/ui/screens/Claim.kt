@@ -1,5 +1,50 @@
 package io.lawallet.wallet.ui.screens
 
+import android.provider.Settings
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.CacheDrawScope
+import androidx.compose.ui.draw.DrawResult
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.semantics
+import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.theme.Glass
+import io.lawallet.wallet.ui.theme.Inter
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.graphics.drawscope.rotate
+import io.lawallet.wallet.ui.theme.glass
+import kotlinx.coroutines.flow.first
+import kotlin.math.sin
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +75,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +112,6 @@ private val USERNAME = Regex("^[a-z0-9]+$")
 fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     val c = LocalContainer.current
     val nav = LocalNav.current
-    val brand = LocalBrand.current
     val scope = rememberCoroutineScope()
     val settings by c.session.settings.collectAsState()
     var username by rememberSaveable { mutableStateOf("") }
@@ -115,9 +158,10 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
         c.lnurl.pollVerify(verify, timeoutMs = 600_000)?.let { claimPaid(inv, it) }
     }
 
+    val celebrate = rememberCelebration(step == "success")
     androidx.activity.compose.BackHandler(step == "payment") { step = "username"; invoice = null }
     Column(Modifier.fillMaxSize().imePadding()) {
-        ScreenHeader(stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if (fromActivate && step == "username") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
+        ScreenHeader(if (step == "success") null else stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if ((fromActivate && step == "username") || step == "success") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             when (step) {
                 "username" -> {
@@ -168,12 +212,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                         }
                     }
                 }
-                else -> Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(Modifier.size(80.dp).clip(CircleShape).background(brand.t400.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_check, size = 40.dp, tint = brand.t400) }
-                    Txt(stringResource(R.string.claim_claimedTitle), size = 24.sp, weight = FontWeight.SemiBold)
-                    Txt(claimed ?: "", size = 18.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("claimed-address"))
-                    MutedText(stringResource(R.string.claim_claimedBody), align = TextAlign.Center)
-                }
+                else -> ClaimedHero(claimed ?: "$username@$domain", celebrate)
             }
         }
         when (step) {
@@ -200,8 +239,159 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                 },
                 Modifier.fillMaxWidth().padding(16.dp).testTag("claim-submit"), BtnVariant.Theme, enabled = username.isNotEmpty() && validation == null && available != false, loading = loading,
             )
-            "success" -> LwButton(stringResource(R.string.claim_goToWallet), { nav.goHome() }, Modifier.fillMaxWidth().padding(16.dp).testTag("claim-done"))
+            "success" -> LwButton(
+                stringResource(R.string.claim_goToWallet), { nav.goHome() },
+                Modifier.fillMaxWidth().padding(16.dp).graphicsLayer {
+                    val p = celebrate.phase(0.70f, 0.92f)
+                    alpha = p; translationY = (1f - p) * 16.dp.toPx()
+                }.testTag("claim-done"),
+                BtnVariant.Theme, height = 58.dp, icon = L.drawable.lucide_ic_wallet,
+            )
             else -> Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/*
+ * "Address claimed!" choreography. One linear clock (0→1) drives everything; each element maps a
+ * slice of it through its own easing, read inside graphicsLayer/draw lambdas so frames only
+ * redraw, never recompose:
+ *   title in → card rises → bolt strikes down into the card → flash + shockwave, badge pops,
+ *   address reveals → sheen sweeps the card → button settles in.
+ */
+private const val CELEBRATION_MS = 1900
+private const val STRIKE = 0.46f // the moment the bolt hits the card
+private val BOLT_DROP = 116.dp
+private val Overshoot = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
+
+private fun Animatable<Float, *>.phase(from: Float, to: Float, easing: Easing = FastOutSlowInEasing) =
+    easing.transform(((value - from) / (to - from)).coerceIn(0f, 1f))
+
+@Composable
+private fun rememberCelebration(active: Boolean): Animatable<Float, AnimationVector1D> {
+    val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    // Animations off (animator scale 0): start on the final frame, so there's no blank first frame either.
+    val still = remember { Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+    val clock = remember { Animatable(if (still) 1f else 0f) }
+    LaunchedEffect(active) {
+        if (!active || clock.value >= 1f) return@LaunchedEffect
+        launch { snapshotFlow { clock.value >= STRIKE }.first { it }; haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+        clock.animateTo(1f, tween(CELEBRATION_MS, easing = LinearEasing))
+    }
+    return clock
+}
+
+@Composable
+private fun ClaimedHero(address: String, clock: Animatable<Float, AnimationVector1D>) {
+    val brand = LocalBrand.current
+    val name = address.substringBefore('@')
+    val host = address.substringAfter('@', "")
+    val cardShape = RoundedCornerShape(24.dp)
+    // Oversized "@" watermark behind the address, brand-tinted and fading out toward the bottom-left.
+    val measurer = rememberTextMeasurer()
+    val at = remember(measurer) { measurer.measure("@", TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 210.sp)) }
+    val atBrush = Brush.linearGradient(listOf(brand.t400.copy(alpha = 0.55f), brand.t400.copy(alpha = 0.12f), Color.Transparent))
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Txt(
+            stringResource(R.string.claim_claimedTitle), size = 26.sp, weight = FontWeight.SemiBold, align = TextAlign.Center,
+            modifier = Modifier.graphicsLayer { val p = clock.phase(0f, 0.18f); alpha = p; translationY = (1f - p) * 14.dp.toPx() },
+        )
+        Box(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth()) {
+                Spacer(Modifier.height(BOLT_DROP))
+                Column(
+                    Modifier.fillMaxWidth()
+                        .graphicsLayer { val p = clock.phase(0.06f, 0.34f); alpha = p; scaleX = 0.92f + 0.08f * p; scaleY = scaleX; translationY = (1f - p) * 24.dp.toPx() }
+                        .drawBehind {
+                            // Brand glow under the glass: builds at the strike, flares with the flash, then holds.
+                            val glow = 0.55f * clock.phase(STRIKE, 0.8f) + 0.45f * impact(clock)
+                            if (glow > 0f) scale(1f, 0.6f) {
+                                drawCircle(Brush.radialGradient(listOf(brand.t400.copy(alpha = 0.6f * glow), Color.Transparent), center, size.width * 0.75f), size.width * 0.75f)
+                            }
+                        }
+                        .glass(cardShape, GlassLevel.Strong, tint = brand.t400.copy(alpha = 0.10f))
+                        .drawWithContent {
+                            // Watermark drifts in and settles with the address reveal.
+                            val w = clock.phase(STRIKE, 0.9f)
+                            if (w > 0f) {
+                                val tl = Offset(size.width - at.size.width * 0.82f + (1f - w) * 48.dp.toPx(), (size.height - at.size.height) / 2f + 6.dp.toPx())
+                                rotate(-14f + 6f * w, tl + Offset(at.size.width / 2f, at.size.height / 2f)) { drawText(at, atBrush, tl, alpha = w) }
+                            }
+                            drawContent()
+                            val flash = impact(clock)
+                            if (flash > 0f) drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.35f * flash), brand.t400.copy(alpha = 0.25f * flash), Color.Transparent), Offset(size.width / 2, 0f), size.width * 0.8f))
+                            val sweep = clock.phase(0.66f, 0.98f)
+                            if (sweep > 0f && sweep < 1f) {
+                                val x = -0.5f * size.width + 2f * size.width * sweep
+                                drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.12f), Color.Transparent), Offset(x - size.width * 0.3f, 0f), Offset(x + size.width * 0.1f, size.height)))
+                            }
+                        }
+                        .padding(top = 34.dp, bottom = 26.dp, start = 20.dp, end = 20.dp)
+                        .testTag("claimed-address").semantics(mergeDescendants = true) {},
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Column(
+                        Modifier.graphicsLayer { val p = clock.phase(STRIKE, 0.72f); alpha = p; scaleX = 0.86f + 0.14f * p; scaleY = scaleX },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Txt(name, size = if (name.length <= 10) 42.sp else 34.sp, weight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.5).sp) // 16-char max still fits on one line
+                        if (host.isNotEmpty()) Txt("@$host", size = 22.sp, weight = FontWeight.Medium, color = lerp(brand.t400, Color.White, 0.35f), maxLines = 1)
+                    }
+                }
+            }
+            Spacer(Modifier.matchParentSize().drawWithCache { lightning(clock, brand.t400, brand.t300) })
+            Box(
+                Modifier.align(Alignment.TopCenter).padding(top = BOLT_DROP - 30.dp).size(60.dp)
+                    .graphicsLayer { val p = clock.phase(STRIKE - 0.02f, 0.64f, Overshoot); scaleX = p; scaleY = p; alpha = (p * 3f).coerceAtMost(1f) }
+                    .shadow(16.dp, CircleShape, ambientColor = brand.t400, spotColor = brand.t400)
+                    .background(Glass.Dialog, CircleShape)
+                    .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), brand.t400.copy(alpha = 0.8f))), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Image(painterResource(R.drawable.ic_isotype), stringResource(R.string.app_name), Modifier.height(32.dp)) }
+        }
+        MutedText(
+            stringResource(R.string.claim_claimedBody), align = TextAlign.Center,
+            modifier = Modifier.padding(top = 20.dp, start = 12.dp, end = 12.dp).graphicsLayer { val p = clock.phase(0.60f, 0.84f); alpha = p; translationY = (1f - p) * 10.dp.toPx() },
+        )
+    }
+}
+
+/** 1 at the strike, decaying to 0. */
+private fun impact(clock: Animatable<Float, *>) = if (clock.value < STRIKE) 0f else 1f - clock.phase(STRIKE, 0.66f, LinearOutSlowInEasing)
+
+/** The bolt: drawn progressively from above the card into the badge, then flickers out, plus the impact burst. */
+private fun CacheDrawScope.lightning(clock: Animatable<Float, *>, t400: Color, t300: Color): DrawResult {
+    val end = Offset(size.width / 2, BOLT_DROP.toPx())
+    val top = 14.dp.toPx() // clear of the title above
+    // Zigzag as (fraction of the drop, x offset in dp), ending dead centre on the badge.
+    val zig = listOf(0f to 26f, 0.2f to -10f, 0.36f to 18f, 0.54f to -16f, 0.7f to 10f, 0.86f to -6f, 1f to 0f)
+    fun at(i: Int) = Offset(end.x + zig[i].second.dp.toPx(), top + (end.y - top) * zig[i].first)
+    val main = Path().apply { moveTo(at(0).x, at(0).y); for (i in 1 until zig.size) lineTo(at(i).x, at(i).y) }
+    val fork = Path().apply { val o = at(3); moveTo(o.x, o.y); lineTo(o.x - 16.dp.toPx(), o.y + 14.dp.toPx()); lineTo(o.x - 12.dp.toPx(), o.y + 30.dp.toPx()) }
+    val mainM = PathMeasure().apply { setPath(main, false) }
+    val forkM = PathMeasure().apply { setPath(fork, false) }
+    val seg = Path()
+    val forkSeg = Path()
+    val widths = listOf(16.dp.toPx(), 6.dp.toPx(), 2.2.dp.toPx())
+    return onDrawBehind {
+        val draw = clock.phase(0.26f, STRIKE, FastOutLinearInEasing)
+        val fade = 1f - clock.phase(STRIKE + 0.04f, 0.72f, LinearEasing)
+        if (draw > 0f && fade > 0f) {
+            val a = fade * (if (fade < 1f) 0.8f + 0.2f * sin(clock.value * 260f) else 1f) // flicker on the way out
+            seg.reset(); mainM.getSegment(0f, mainM.length * draw, seg, true)
+            forkSeg.reset(); val fp = ((draw - 0.45f) / 0.55f).coerceIn(0f, 1f); if (fp > 0f) forkM.getSegment(0f, forkM.length * fp, forkSeg, true)
+            listOf(t400.copy(alpha = 0.28f * a), t300.copy(alpha = 0.7f * a), Color.White.copy(alpha = a)).forEachIndexed { i, c ->
+                drawPath(seg, c, style = Stroke(widths[i], cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawPath(forkSeg, c, style = Stroke(widths[i] * 0.6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            }
+        }
+        val burst = clock.phase(STRIKE, 0.70f, LinearOutSlowInEasing)
+        if (clock.value >= STRIKE && burst < 1f) {
+            val a = 1f - burst
+            val r = 28.dp.toPx() + 70.dp.toPx() * burst
+            drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.8f * a), t400.copy(alpha = 0.35f * a), Color.Transparent), end, r), r, end)
+            drawCircle(t300.copy(alpha = 0.8f * a), 30.dp.toPx() + 90.dp.toPx() * burst, end, style = Stroke(2.5.dp.toPx() * a + 0.5.dp.toPx()))
         }
     }
 }

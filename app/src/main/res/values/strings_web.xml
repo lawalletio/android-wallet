@@ -430,7 +430,7 @@
     <string name="claim_checkNow">I’ve paid — check now</string>
     <string name="claim_detected">Payment detected! Claiming address…</string>
     <string name="claim_claimedTitle">Address claimed!</string>
-    <string name="claim_claimedBody">Your new Lightning address is ready to receive payments.</string>
+    <string name="claim_claimedBody">Use this address to receive lightning network payments</string>
     <string name="claim_goToWallet">Go to wallet</string>
     <string name="claim_yourDomain">your-domain</string>
     <string name="claim_dialog_title">New address</string>

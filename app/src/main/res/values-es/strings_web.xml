@@ -430,7 +430,7 @@
     <string name="claim_checkNow">Ya pagué — verificar ahora</string>
     <string name="claim_detected">¡Pago detectado! Reclamando dirección…</string>
     <string name="claim_claimedTitle">¡Dirección reclamada!</string>
-    <string name="claim_claimedBody">Tu nueva dirección Lightning está lista para recibir pagos.</string>
+    <string name="claim_claimedBody">Usa esta dirección para recibir pagos de la red Lightning</string>
     <string name="claim_goToWallet">Ir a la billetera</string>
     <string name="claim_yourDomain">tu-dominio</string>
     <string name="claim_dialog_title">Nueva dirección</string>
