@@ -137,6 +137,7 @@ fun HomeScreen() {
     // Swipe down: the balance settles at the bottom and the remote wallets show above it.
     val reveal = remember { HomeReveal() }
     reveal.bottomReserve = with(density) { 140.dp.toPx() } // floating tab bar (~92dp) plus breathing room
+    reveal.minTravel = with(density) { 48.dp.toPx() }
     val open by remember { derivedStateOf { reveal.open } }
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
     val walletBalances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
@@ -343,17 +344,15 @@ fun HomeScreen() {
             }
         },
       )
-      if (open) {
-          WalletsReveal(
-              reveal, wallets, walletBalances, code, rates, hidden,
-              onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
-              onSetPrimary = setPrimary,
-              onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
-              onManage = { nav.navigate(R0.REMOTE_WALLETS) },
-          )
-          if (wallets.orEmpty().any { it.isDefault } && shown != null) {
-              BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
-          }
+      WalletsReveal(
+          reveal, wallets, walletBalances, code, rates, hidden,
+          onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
+          onSetPrimary = setPrimary,
+          onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
+          onManage = { nav.navigate(R0.REMOTE_WALLETS) },
+      )
+      if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
+          BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
       }
     }
 }

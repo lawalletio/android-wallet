@@ -105,7 +105,13 @@ internal class HomeReveal {
     var target by mutableStateOf(Rect.Zero)
 
     /** Where the balance block's top lands when open. */
-    val landing get() = rootTop + rootH - bottomReserve - balanceH
+    /** Height the wallet list wants (measured even while closed, so the first drag already knows where it lands). */
+    var listH by mutableFloatStateOf(0f)
+    var minTravel by mutableFloatStateOf(0f)
+    /** Lowest the balance may go: just above the tab bar. */
+    val maxLanding get() = rootTop + rootH - bottomReserve - balanceH
+    /** The balance tucks right under the list: more wallets, further down (never past [maxLanding]). */
+    val landing get() = (headerBottom + listH).coerceAtMost(maxLanding).coerceAtLeast(balanceTop + minTravel)
     /** Px the balance travels: the finger moves it 1:1. */
     val range get() = (landing - balanceTop).coerceAtLeast(0f)
     val open get() = progress > 0f
@@ -178,11 +184,16 @@ internal fun WalletsReveal(
     onManage: () -> Unit,
 ) {
     val top = reveal.headerBottom - reveal.rootTop
-    val bottom = reveal.landing - reveal.rootTop
+    val bottom = reveal.maxLanding - reveal.rootTop
     if (bottom - top <= 0f) return
     Column(
         Modifier.fillMaxWidth()
-            .layoutBetween(top, bottom)
+            .layout { m, c ->
+                // Wraps its content up to the room above the tab bar; only placed (drawn, touchable) while open.
+                val p = m.measure(c.copy(minHeight = 0, maxHeight = (bottom - top).toInt().coerceAtLeast(0)))
+                reveal.listH = p.height.toFloat()
+                layout(p.width, p.height) { if (reveal.open) p.place(0, top.toInt()) }
+            }
             .graphicsLayer { alpha = smooth(0.05f, 0.35f, reveal.progress) }
             .testTag("home-wallets"),
     ) {
@@ -213,19 +224,20 @@ internal fun WalletsReveal(
                 MutedText(stringResource(R.string.remoteWallets_list_emptyTitle))
             }
             else -> {
-                val sorted = wallets.sortedWith(compareByDescending<RemoteWallet> { it.isDefault }.thenBy { it.status != "ACTIVE" })
+                val sorted = wallets.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
                 LazyColumn(
                     Modifier.fillMaxWidth().nestedScroll(reveal.listConnection),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     itemsIndexed(sorted, key = { _, w -> w.id }) { i, w ->
                         Box(
                             Modifier.animateItem(placementSpec = spring(0.8f, Spring.StiffnessMediumLow)).graphicsLayer {
                                 // The deck fans out from under the header, one card a beat after the other.
-                                val t = smooth(0.12f + i * 0.06f, 0.7f + i * 0.06f, reveal.progress)
+                                val d = sorted.size - 1 - i // the primary (nearest the balance) leads
+                                val t = smooth(0.12f + d * 0.06f, 0.7f + d * 0.06f, reveal.progress)
                                 alpha = t
-                                translationY = (1f - t) * -(18.dp.toPx() * (i + 1))
+                                translationY = (1f - t) * -(18.dp.toPx() * (d + 1))
                                 val s = 0.92f + 0.08f * t
                                 scaleX = s; scaleY = s
                             },
@@ -241,15 +253,6 @@ internal fun WalletsReveal(
         }
     }
 }
-
-/** Places the content in the band [top]..[bottom] (px, Home-root space) without measuring it twice. */
-private fun Modifier.layoutBetween(top: Float, bottom: Float) = this.then(
-    Modifier.layout { m, c ->
-        val h = (bottom - top).toInt().coerceAtLeast(0)
-        val p = m.measure(c.copy(minHeight = h, maxHeight = h))
-        layout(p.width, h) { p.place(0, top.toInt()) }
-    },
-)
 
 /**
  * The primary reads as selected (brand ring and wash, full colour). The rest sit back, desaturated and
