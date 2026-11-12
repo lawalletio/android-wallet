@@ -73,6 +73,22 @@ import io.lawallet.wallet.ui.theme.glass
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @Composable
 fun ActivityScreen() {
@@ -94,8 +110,12 @@ fun ActivityScreen() {
             }
         }
         val labels = rememberDayLabels()
-        LazyColumn(Modifier.weight(1f), state = list) {
-            activityList(items, labels, paging) { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }
+        val rows = remember(items) { activityRows(items, months = true) }
+        Box(Modifier.weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize().testTag("activity-list"), state = list) {
+                activityList(rows, items, labels, paging) { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) }
+            }
+            TimelineScrubber(list, rows, Modifier.align(Alignment.CenterEnd))
         }
     }
 }
@@ -124,14 +144,39 @@ internal fun rememberActivityPaging(list: LazyListState, firstPage: Boolean, ena
 @Composable
 internal fun rememberDayLabels() = DayLabels(stringResource(R.string.activity_today), stringResource(R.string.activity_yesterday))
 
-/** Day-grouped transaction rows plus the paging footer; shared by the Activity screen and Home's sheet. */
-internal fun LazyListScope.activityList(items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
+/** One LazyColumn item of the activity list; the flat list lets the timeline scrubber map months to item indices. */
+internal sealed interface ActivityRow {
+    data class Month(val startMs: Long) : ActivityRow
+    data class Day(val day: Pair<Long, Int>) : ActivityRow
+    data class Run(val txs: List<Tx>) : ActivityRow
+}
+
+/** Day groups (and, with [months], a header whenever the month changes), then runs of transactions. */
+internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> = buildList {
+    var month = -1L
     items.groupBy { dayLabel(it.createdAt) }.forEach { (day, txs) ->
-        item(day.first) { Txt(labels.of(day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
-        groupRuns(txs).forEach { run ->
-            val first = run.first()
-            if (run.size == 1) item(first.paymentHash + first.createdAt) { TransactionRow(first) { onOpen(first) } }
-            else item("group-" + first.paymentHash + first.createdAt) { TransactionGroup(run, onOpen) }
+        val m = monthStart(day.first)
+        if (months && m != month) { month = m; add(ActivityRow.Month(m)) }
+        add(ActivityRow.Day(day))
+        groupRuns(txs).forEach { add(ActivityRow.Run(it)) }
+    }
+}
+
+/** Day-grouped transaction rows plus the paging footer; shared by the Activity screen and Home's sheet. */
+@OptIn(ExperimentalFoundationApi::class)
+internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
+    rows.forEach { row ->
+        when (row) {
+            is ActivityRow.Month -> stickyHeader("month-" + row.startMs) {
+                Txt(monthLabel(row.startMs, "MMMMyyyy"), Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp).glass(CircleShape, GlassLevel.Strong, tint = Lw.Background.copy(alpha = 0.6f)).padding(horizontal = 12.dp, vertical = 6.dp), size = 14.sp, weight = FontWeight.SemiBold)
+            }
+            is ActivityRow.Day -> item(row.day.first) { Txt(labels.of(row.day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
+            is ActivityRow.Run -> {
+                val run = row.txs
+                val first = run.first()
+                if (run.size == 1) item(first.paymentHash + first.createdAt) { TransactionRow(first) { onOpen(first) } }
+                else item("group-" + first.paymentHash + first.createdAt) { TransactionGroup(run, onOpen) }
+            }
         }
     }
     item("footer") {
@@ -174,6 +219,92 @@ private fun dayLabel(ms: Long): Pair<Long, Int> {
     val cal = Calendar.getInstance().apply { timeInMillis = ms; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
     val today = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
     return cal.timeInMillis to ((today.timeInMillis - cal.timeInMillis) / 86_400_000L).toInt()
+}
+
+private fun monthStart(ms: Long): Long = Calendar.getInstance().apply { timeInMillis = ms; set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+
+private fun yearOf(ms: Long) = Calendar.getInstance().apply { timeInMillis = ms }.get(Calendar.YEAR)
+
+/** Localized month label from a skeleton ("MMMMyyyy" → "November 2026", "MMM" → "Nov"). */
+private fun monthLabel(ms: Long, skeleton: String): String {
+    val locale = java.util.Locale.getDefault()
+    return java.text.SimpleDateFormat(android.text.format.DateFormat.getBestDateTimePattern(locale, skeleton), locale).format(Date(ms)).replaceFirstChar { it.uppercase() }
+}
+
+/**
+ * Google Photos–style fast-scroll timeline on the right edge: fades in while the list scrolls, out after
+ * 1.5 s idle. Month ticks (year labels at each new year, month labels too when few enough) sit at their
+ * item's proportional position; dragging the thumb jumps the list.
+ */
+@Composable
+internal fun TimelineScrubber(list: LazyListState, rows: List<ActivityRow>, modifier: Modifier) {
+    val months = remember(rows) { rows.mapIndexedNotNull { i, r -> (r as? ActivityRow.Month)?.let { i to it.startMs } } }
+    if (months.size < 2) return
+    val total = rows.size + 1 // + paging footer
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var dragFrac by remember { mutableFloatStateOf(0f) }
+    var visible by remember { mutableStateOf(false) }
+    val active = list.isScrollInProgress || dragging
+    LaunchedEffect(active) { if (active) visible = true else { delay(1500); visible = false } }
+    val alpha by animateFloatAsState(if (visible) 1f else 0f, label = "scrubber")
+    if (alpha == 0f) return
+    val density = LocalDensity.current
+    val thumbH = 40.dp
+    val fracOf = { index: Int -> index.toFloat() / (total - 1) }
+    val frac = if (dragging) dragFrac else (fracOf(list.firstVisibleItemIndex)).coerceIn(0f, 1f)
+    val current = (if (dragging) (dragFrac * (total - 1)).roundToInt() else list.firstVisibleItemIndex)
+        .let { idx -> months.lastOrNull { it.first <= idx } ?: months.first() }.second
+    val year = yearOf(System.currentTimeMillis())
+    BoxWithConstraints(modifier.fillMaxHeight().padding(vertical = 8.dp).graphicsLayer { this.alpha = alpha }) {
+        val trackH = maxHeight - thumbH
+        val yOf = { f: Float -> trackH * f + thumbH / 2 }
+        // Labels: a year at each new year; months too when they fit. Skip any that would collide with the previous one.
+        val labels = remember(months, trackH) {
+            var lastY = -100.dp
+            months.mapIndexedNotNull { i, (idx, ms) ->
+                val prev = months.getOrNull(i - 1)?.second
+                val newYear = prev == null || yearOf(prev) != yearOf(ms)
+                val text = when {
+                    newYear && (yearOf(ms) != year || prev != null) -> yearOf(ms).toString()
+                    months.size <= 12 || prev == null -> monthLabel(ms, "MMM")
+                    else -> null
+                } ?: return@mapIndexedNotNull null
+                val y = yOf(fracOf(idx))
+                if (y - lastY < 22.dp) null else { lastY = y; y to text }
+            }
+        }
+        Canvas(Modifier.align(Alignment.TopEnd).padding(end = 6.dp).width(2.dp).fillMaxHeight()) {
+            drawRect(Lw.Border, size = Size(size.width, size.height))
+            months.forEach { (idx, _) -> drawRect(Lw.MutedFg, Offset(-6.dp.toPx(), yOf(fracOf(idx)).toPx()), Size(6.dp.toPx(), 1.5.dp.toPx())) }
+        }
+        labels.forEach { (y, text) ->
+            Txt(text, Modifier.align(Alignment.TopEnd).offset(y = y - 9.dp).padding(end = 18.dp).clip(CircleShape).background(Lw.Card).border(1.dp, Lw.Border, CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
+                size = 11.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        }
+        // Thumb + its drag target (a strip along the edge, so taps on rows still go to the list).
+        Box(
+            Modifier.align(Alignment.TopEnd).width(32.dp).fillMaxHeight().testTag("activity-scrubber").pointerInput(total) {
+                val thumbPx = with(density) { thumbH.toPx() }
+                fun jump(y: Float) {
+                    dragFrac = ((y - thumbPx / 2) / (size.height - thumbPx)).coerceIn(0f, 1f)
+                    scope.launch { list.scrollToItem((dragFrac * (total - 1)).roundToInt()) }
+                }
+                detectVerticalDragGestures(
+                    onDragStart = { dragging = true; jump(it.y) },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
+                ) { change, _ -> change.consume(); jump(change.position.y) }
+            },
+        ) {
+            Box(Modifier.align(Alignment.TopEnd).offset(y = trackH * frac).padding(end = 2.dp).size(10.dp, thumbH).clip(CircleShape).background(Lw.Foreground))
+        }
+        if (dragging) {
+            Txt(monthLabel(current, "MMMyyyy"), Modifier.align(Alignment.TopEnd).offset(y = trackH * frac + thumbH / 2 - 16.dp).padding(end = 44.dp)
+                .clip(CircleShape).background(Lw.Card).border(1.dp, Lw.Border, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp),
+                size = 14.sp, weight = FontWeight.SemiBold)
+        }
+    }
 }
 
 @Composable

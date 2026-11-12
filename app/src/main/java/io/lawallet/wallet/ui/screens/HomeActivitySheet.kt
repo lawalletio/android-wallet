@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -204,8 +205,14 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
         else {
             val labels = rememberDayLabels()
             // Bottom padding lets the last rows scroll clear of the faded tail and the tab bar.
-            LazyColumn(Modifier.weight(1f).testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {
-                activityList(recent, labels, paging, onOpen)
+            val rows = remember(recent) { activityRows(recent, months = true) }
+            val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
+            Box(Modifier.weight(1f)) {
+                LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {
+                    activityList(rows, recent, labels, paging, onOpen)
+                }
+                // Clear of the floating Receive/Scan/Send bar.
+                if (expanded) TimelineScrubber(list, rows, Modifier.align(Alignment.TopEnd).padding(bottom = 120.dp))
             }
         }
     }
