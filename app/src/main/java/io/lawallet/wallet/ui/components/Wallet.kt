@@ -113,6 +113,11 @@ import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.unit.Constraints
 import com.composables.icons.lucide.R as L
 
 /** Floating frosted pill (real backdrop blur over the scrolling screen): Receive · brand scan button · Send. */
@@ -205,17 +210,37 @@ fun AmountKeypad(value: String, onChange: (String) -> Unit, mode: KeypadMode, mo
     }
 }
 
-/** currency-toggle.tsx — pill group; active is bg-background with shadow. */
+/** currency-toggle.tsx — pill group; one glass indicator springs between the measured segments. */
 @Composable
 fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     if (codes.size < 2) return
-    Row(modifier.glass(CircleShape, GlassLevel.Thin).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        codes.forEach { code ->
-            val active = code == selected
-            Box(
-                Modifier.clip(CircleShape).then(if (active) Modifier.glass(CircleShape, GlassLevel.Strong) else Modifier)
-                    .clickable { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
-            ) { Txt(if (code == "SAT") "SAT" else code, size = 12.sp, weight = FontWeight.SemiBold, color = if (active) Lw.Foreground else Lw.MutedFg) }
+    // Segment x/width in px, relative to the Row; labels vary in width ("SAT" vs "USD" vs "EUR").
+    val bounds = remember { mutableStateMapOf<String, Pair<Float, Float>>() }
+    val x = remember { Animatable(0f) }
+    val w = remember { Animatable(0f) }
+    val target = bounds[selected]
+    LaunchedEffect(target) {
+        val (tx, tw) = target ?: return@LaunchedEffect
+        if (w.value == 0f) { x.snapTo(tx); w.snapTo(tw); return@LaunchedEffect } // first layout: no slide-in from 0
+        val bounce = spring<Float>(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
+        launch { x.animateTo(tx, bounce) }
+        w.animateTo(tw, bounce)
+    }
+    Box(modifier.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
+        Box(
+            Modifier.matchParentSize().layout { m, c ->
+                val p = m.measure(Constraints.fixed(w.value.roundToInt().coerceAtLeast(0), c.maxHeight))
+                layout(c.maxWidth, c.maxHeight) { p.place(x.value.roundToInt(), 0) }
+            }.glass(CircleShape, GlassLevel.Strong),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            codes.forEach { code ->
+                val fg by animateColorAsState(if (code == selected) Lw.Foreground else Lw.MutedFg, spring(stiffness = Spring.StiffnessMedium), label = "currency-fg")
+                Box(
+                    Modifier.onPlaced { bounds[code] = it.positionInParent().x to it.size.width.toFloat() }
+                        .clip(CircleShape).clickable { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
+                ) { Txt(code, size = 12.sp, weight = FontWeight.SemiBold, color = fg) }
+            }
         }
     }
 }

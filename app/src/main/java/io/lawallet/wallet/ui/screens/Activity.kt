@@ -75,7 +75,6 @@ import java.util.Calendar
 import java.util.Date
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -163,13 +162,11 @@ internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> =
 }
 
 /** Day-grouped transaction rows plus the paging footer; shared by the Activity screen and Home's sheet. */
-@OptIn(ExperimentalFoundationApi::class)
 internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
     rows.forEach { row ->
         when (row) {
-            is ActivityRow.Month -> stickyHeader("month-" + row.startMs) {
-                Txt(monthLabel(row.startMs, "MMMMyyyy"), Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp).glass(CircleShape, GlassLevel.Strong, tint = Lw.Background.copy(alpha = 0.6f)).padding(horizontal = 12.dp, vertical = 6.dp), size = 14.sp, weight = FontWeight.SemiBold)
-            }
+            // Zero-height marker: the month only shows as the scrubber's drag overlay.
+            is ActivityRow.Month -> item("month-" + row.startMs) {}
             is ActivityRow.Day -> item(row.day.first) { Txt(labels.of(row.day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
             is ActivityRow.Run -> {
                 val run = row.txs
@@ -278,7 +275,7 @@ internal fun TimelineScrubber(list: LazyListState, rows: List<ActivityRow>, modi
             drawRect(Lw.Border, size = Size(size.width, size.height))
             months.forEach { (idx, _) -> drawRect(Lw.MutedFg, Offset(-6.dp.toPx(), yOf(fracOf(idx)).toPx()), Size(6.dp.toPx(), 1.5.dp.toPx())) }
         }
-        labels.forEach { (y, text) ->
+        if (dragging) labels.forEach { (y, text) ->
             Txt(text, Modifier.align(Alignment.TopEnd).offset(y = y - 9.dp).padding(end = 18.dp).clip(CircleShape).background(Lw.Card).border(1.dp, Lw.Border, CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
                 size = 11.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         }

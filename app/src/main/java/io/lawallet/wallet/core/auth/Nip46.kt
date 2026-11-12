@@ -9,6 +9,7 @@ import io.lawallet.wallet.core.nostr.Signer
 import io.lawallet.wallet.core.nostr.randomBytes
 import io.lawallet.wallet.core.nostr.toHex
 import io.lawallet.wallet.core.nwc.Relay
+import io.lawallet.wallet.core.nwc.RelayPool
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,9 @@ class Nip46Client(
     /** Each request as it goes out (`done` = false) and once answered (true) — drives the login progress UI. */
     var onProgress: (method: String, done: Boolean) -> Unit = { _, _ -> }
     val relayUrls = relayUrls.distinct()
-    private val relays = this.relayUrls.map { Relay(it, http, scope) }
+    private val relays = this.relayUrls.map { RelayPool.get(it, http) }
+    // Per client key: relays are shared, so two signers' listeners must not replace each other's REQ.
+    private val subId = "nip46-" + clientKeys.pubkey.take(12)
     var remotePubkey: String? = null
     @Volatile private var nip04 = false
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Response>>()
@@ -111,7 +114,7 @@ class Nip46Client(
         listener = scope.launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
             relays.map { it.messages }.merge().filterIsInstance<Relay.Msg.Event>().collect { onEvent(it.event) }
         }
-        relays.forEach { it.subscribe(SUB_ID, filter) }
+        relays.forEach { it.subscribe(subId, filter) }
     }
 
     private fun onEvent(ev: NostrEvent) {
@@ -187,7 +190,8 @@ class Nip46Client(
 
     fun close() {
         listener?.cancel()
-        relays.forEach { it.close() }
+        if (listener != null) relays.forEach { it.unsubscribe(subId) }
+        listener = null
     }
 
     private fun encrypt(plain: String, peer: String) =
@@ -201,7 +205,6 @@ class Nip46Client(
 
     companion object {
         const val KIND = 24133
-        private const val SUB_ID = "nip46"
         /** The only event the app signs remotely: NIP-98 HTTP auth for the LaWallet API. */
         const val PERMS = "sign_event:27235"
         // La Crypta's relay first (signers that use only the first relay pick it), Primal as a fallback. Both verified to

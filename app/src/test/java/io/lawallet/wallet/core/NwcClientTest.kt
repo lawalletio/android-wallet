@@ -30,7 +30,7 @@ class NwcClientTest {
 
     private fun client(nip44: Boolean): Pair<FakeNwcWallet, NwcClient> {
         val w = FakeNwcWallet(nip44).start().also { wallets += it }
-        return w to NwcClient(NwcUri.parse(w.connectionString), http, scope)
+        return w to NwcClient(NwcUri.parse(w.connectionString), http)
     }
 
     @Test fun parsesConnectionString() {
@@ -53,7 +53,6 @@ class NwcClientTest {
         assertEquals(1000L, nwc.payInvoice("lnbc1x").feesPaid)
         wallet.balanceMsat = 0
         assertEquals("INSUFFICIENT_BALANCE", assertThrows(NwcException::class.java) { runBlocking { nwc.payInvoice("lnbc1x") } }.code)
-        nwc.close()
     }
 
     @Test fun notificationsSurviveReconnect() = runBlocking {
@@ -73,7 +72,20 @@ class NwcClientTest {
             val n = second.await()
             assertEquals("payment_received", n.type)
             assertEquals(7_000L, n.tx.amount)
-            nwc.close()
+            }
+    }
+
+    /** Switching away from a wallet and back (a new NwcClient each time) reuses the one pooled socket. */
+    @Test fun switchingClientsReusesTheSocket() = runBlocking {
+        withTimeout(20_000) {
+            val (wallet, first) = client(nip44 = true)
+            first.getBalanceMsat()
+            val ntf = async { first.notifications().first() }
+            delay(300)
+            ntf.cancel() // wallet switch: the old stream CLOSEs its sub
+            val again = NwcClient(NwcUri.parse(wallet.connectionString), http)
+            assertEquals(21_000_000L, again.getBalanceMsat())
+            assertEquals(1, wallet.server.requestCount)
         }
     }
 }

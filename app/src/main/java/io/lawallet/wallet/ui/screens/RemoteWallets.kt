@@ -299,9 +299,8 @@ fun RemoteWalletDetailScreen(id: String) {
     LaunchedEffect(id) {
         load()
         connection?.let { cs ->
-            val client = runCatching { NwcClient(NwcUri.parse(cs), c.http, c.scope) }.getOrNull()
+            val client = runCatching { NwcClient(NwcUri.parse(cs), c.http) }.getOrNull()
             txs = runCatching { client?.listTransactions(limit = 20)?.map(Tx::from) }.getOrNull() ?: emptyList()
-            client?.close()
         }
     }
     Column(Modifier.fillMaxSize()) {
