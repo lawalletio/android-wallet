@@ -104,7 +104,7 @@ class Nip46Client(
         val filter = buildJsonObject {
             putJsonArray("kinds") { add(JsonPrimitive(KIND)) }
             putJsonArray("#p") { add(JsonPrimitive(clientKeys.pubkey)) }
-            put("since", NostrEvent.nowSeconds() - 30)
+            // No `since`: 24133 is ephemeral (nothing to replay), and a signer whose clock runs behind would be filtered out.
         }
         listener = scope.launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
             relays.map { it.messages }.merge().filterIsInstance<Relay.Msg.Event>().collect { onEvent(it.event) }
@@ -117,9 +117,13 @@ class Nip46Client(
         val known = remotePubkey
         if (known != null && ev.pubkey != known) return
         val usedNip04 = ev.content.contains("?iv=")
-        val res = runCatching { decode(decrypt(ev.content, ev.pubkey)) }.getOrNull() ?: return
+        val res = runCatching { decode(decrypt(ev.content, ev.pubkey)) }.getOrNull()
+            ?: return Trail.add("nip46", "undecryptable reply", error = true)
         handshake?.let { (secret, done) ->
-            if (known == null && res.result == secret) { if (usedNip04) nip04 = true; done.complete(ev.pubkey); return }
+            // Spec: the signer echoes our secret. Older signers (pre-2024 Amber, nsecBunker) answer "ack" instead; the
+            // reply is still encrypted to our one-off key, which only the QR carried.
+            if (known == null && (res.result == secret || res.result == "ack")) { if (usedNip04) nip04 = true; done.complete(ev.pubkey); return }
+            if (known == null) Trail.add("nip46", "handshake reply without our secret", error = true)
         }
         if (ev.pubkey != known) return
         if (usedNip04) nip04 = true
@@ -196,7 +200,8 @@ class Nip46Client(
         private const val SUB_ID = "nip46"
         /** The only event the app signs remotely: NIP-98 HTTP auth for the LaWallet API. */
         const val PERMS = "sign_event:27235"
-        val DEFAULT_RELAYS = listOf("wss://relay.nsec.app", "wss://relay.damus.io")
+        // Both verified to relay kind 24133. relay.nsec.app was unreachable (Nov 2026); signers that use only the first relay pick damus.
+        val DEFAULT_RELAYS = listOf("wss://relay.damus.io", "wss://relay.primal.net")
         private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
         fun encodeRequest(id: String, method: String, params: List<String>) = json.encodeToString(Request.serializer(), Request(id, method, params))

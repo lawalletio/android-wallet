@@ -125,6 +125,16 @@ class Nip46Test {
         client.close()
     }
 
+    @Test fun nostrConnectAcceptsLegacyAck() = runBlocking {
+        val b = FakeBunker(nip44 = true).start().also { bunkers += it }
+        val keys = Keys.generate()
+        val client = Nip46Client(keys, listOf(b.relayUrl), http, scope)
+        val remote = async(start = CoroutineStart.UNDISPATCHED) { client.awaitConnect("s", 10_000) }
+        b.scanNostrConnect(NostrConnectUri(keys.pubkey, listOf(b.relayUrl), "ack", null, null))
+        assertEquals(b.signerKeys.pubkey, remote.await())
+        client.close()
+    }
+
     /** A relay and a NIP-46 remote signer in one. Signer key != user key, as nsec.app does it. */
     class FakeBunker(private val nip44: Boolean, private val authUrlFirst: Boolean = false, private val rejectSecret: Boolean = false) : WebSocketListener() {
         val server = MockWebServer()
