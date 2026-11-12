@@ -60,6 +60,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
             override fun onStart(owner: LifecycleOwner) {
                 c.wallet.active.value = true
                 c.rates.active.value = true
+                io.lawallet.wallet.core.nwc.RelayPool.foreground()
                 runCatching { Notifications.clearPayments(this@LaWalletApp) }
                 c.scope.launch { c.updater.checkIfDue() }
                 c.session.retryIfOffline()
@@ -73,6 +74,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
                 // Balance polling stops in the background; the relay notification stream keeps
                 // running (kept alive by the listener service when enabled).
                 c.wallet.active.value = false
+                io.lawallet.wallet.core.nwc.RelayPool.background()
             }
         })
 

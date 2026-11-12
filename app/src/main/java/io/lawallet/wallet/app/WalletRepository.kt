@@ -75,6 +75,7 @@ class WalletRepository(
     private val http: OkHttpClient,
     private val scope: CoroutineScope,
 ) {
+    private companion object { const val SWITCH_DEBOUNCE_MS = 400L }
     private val json = Json { ignoreUnknownKeys = true }
     private val _client = MutableStateFlow<NwcClient?>(null)
     val client: StateFlow<NwcClient?> = _client
@@ -138,8 +139,10 @@ class WalletRepository(
     private fun connect(nwc: String?) {
         if (nwc == currentNwc) return
         currentNwc = nwc
+        // The relay socket is shared (RelayPool) and stays up: cancelling the jobs only CLOSEs this wallet's subs.
         jobs.forEach { it.cancel() }
-        _client.value?.close()
+        // A switch (not the first connect) waits a beat, so flicking through wallets sends no REQs for the ones skipped.
+        val settle = if (_client.value != null) SWITCH_DEBOUNCE_MS else 0L
         val uri = nwc?.let { runCatching { NwcUri.parse(it) }.getOrNull() }
         if (uri == null) {
             _client.value = null
@@ -154,18 +157,18 @@ class WalletRepository(
         if (prefs.lastSeen(key) == 0L) prefs.setLastSeen(key, System.currentTimeMillis() / 1000)
         _balance.value = prefs.cachedBalance(key)
         _recent.value = prefs.activityCache(key)?.let { runCatching { json.decodeFromString(ListSerializer(Tx.serializer()), it) }.getOrNull() } ?: emptyList()
-        val c = NwcClient(uri, http, scope)
+        val c = NwcClient(uri, http)
         _client.value = c
         jobs = listOf(
-            scope.launch { pollLoop(c) },
-            scope.launch { notificationLoop(c, key) },
+            scope.launch { delay(settle); pollLoop(c) },
+            scope.launch { delay(settle); notificationLoop(c, key) },
             scope.launch {
-                // Every reconnect after the first one: catch up on payments missed while offline.
+                // Every reconnect after the current state: catch up on payments missed while offline.
                 c.relay.connected.drop(1).filter { it }.collect { catchUp(c, key) }
             },
             scope.launch { c.relay.lastError.collect { if (it != null && _balance.value == null) _error.value = it } },
+            scope.launch { delay(settle); refreshActivity() },
         )
-        scope.launch { refreshActivity() }
     }
 
     private suspend fun pollLoop(c: NwcClient) {

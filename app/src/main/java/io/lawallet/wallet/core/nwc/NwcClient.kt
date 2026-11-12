@@ -8,7 +8,6 @@ import io.lawallet.wallet.core.nostr.randomBytes
 import io.lawallet.wallet.core.nostr.toHex
 import io.sentry.Sentry
 import io.sentry.SpanStatus
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -39,19 +38,17 @@ import okhttp3.OkHttpClient
  * NIP-47 client — the Kotlin counterpart of @getalby/sdk `NWCClient` the web wallet uses.
  * Talks straight to the wallet's relay; the LaWallet server is never in the payment path.
  */
-class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
+class NwcClient(val uri: NwcUri, http: OkHttpClient) {
     // ponytail: first relay only (same as the web SDK default); fan out if wallets start listing several.
-    val relay = Relay(uri.relays.first(), http, scope)
+    // Shared socket (RelayPool): switching wallets swaps subscriptions, never the connection.
+    val relay = RelayPool.get(uri.relays.first(), http)
     private val keys = uri.secret
     val clientPubkey: String get() = keys.pubkey
 
     private enum class Enc { NIP04, NIP44 }
-    private var encryption: Enc? = null
     private val infoLock = Mutex()
     private val conversationKey by lazy { Nip44.conversationKey(keys, uri.walletPubkey) }
     private val nip04Secret by lazy { keys.sharedX(uri.walletPubkey) }
-
-    fun close() = relay.close()
 
     suspend fun getBalanceMsat(): Long = request<BalanceResult>("get_balance").balance
 
@@ -84,7 +81,8 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
      * every notification on both kinds would otherwise deliver each payment twice.
      */
     fun notifications(): Flow<NwcNotification> {
-        val subId = "ntf-" + randomBytes(6).toHex()
+        // Same wallet + client key → same id: a second collector shares the REQ (refcounted) instead of opening another.
+        val subId = "ntf-" + keys.pubkey.take(8) + uri.walletPubkey.take(8)
         return relay.messages
             .onStart {
                 val kind = if (encryption() == Enc.NIP44) 23197 else 23196
@@ -92,6 +90,8 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
                     putJsonArray("kinds") { add(JsonPrimitive(kind)) }
                     putJsonArray("authors") { add(JsonPrimitive(uri.walletPubkey)) }
                     putJsonArray("#p") { add(JsonPrimitive(keys.pubkey)) }
+                    // Live only: missed payments come from list_transactions catch-up, not a replay of stored events.
+                    put("since", System.currentTimeMillis() / 1000 - 60)
                 })
             }
             .filterIsInstance<Relay.Msg.Event>()
@@ -172,7 +172,7 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
 
     /** Reads the wallet's kind-13194 info event: nip44 when it advertises `nip44_v2`, else nip04. */
     private suspend fun encryption(): Enc = infoLock.withLock {
-        encryption?.let { return it }
+        encryptionCache[uri.walletPubkey]?.let { return it }
         val subId = "info-" + randomBytes(6).toHex()
         val result = kotlinx.coroutines.coroutineScope {
             val first = async(start = CoroutineStart.UNDISPATCHED) {
@@ -183,13 +183,17 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
                 putJsonArray("authors") { add(JsonPrimitive(uri.walletPubkey)) }
                 put("limit", 1)
             })
-            val msg = withTimeoutOrNull(10_000) { first.await() }
-            first.cancel()
-            relay.unsubscribe(subId)
+            val msg = try {
+                withTimeoutOrNull(10_000) { first.await() }
+            } finally {
+                // Also when a wallet switch cancels us mid-wait: a leaked sub would be replayed forever.
+                first.cancel()
+                relay.unsubscribe(subId)
+            }
             val tag = (msg as? Relay.Msg.Event)?.event?.tag("encryption")
             if (tag != null && tag.split(' ').contains("nip44_v2")) Enc.NIP44 else Enc.NIP04
         }
-        encryption = result
+        encryptionCache[uri.walletPubkey] = result
         result
     }
 
@@ -203,6 +207,8 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, scope: CoroutineScope) {
     }
 
     companion object {
+        /** Per wallet pubkey: switching back to a wallet skips its kind-13194 lookup. */
+        private val encryptionCache = java.util.concurrent.ConcurrentHashMap<String, Enc>()
         val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
     }
 

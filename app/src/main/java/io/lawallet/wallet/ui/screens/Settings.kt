@@ -74,7 +74,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import io.lawallet.wallet.core.nostr.NostrEvent
 import io.lawallet.wallet.core.nostr.toHex
-import io.lawallet.wallet.core.nwc.Relay
+import io.lawallet.wallet.core.nwc.RelayPool
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -600,13 +600,9 @@ private suspend fun sendFeedback(c: io.lawallet.wallet.app.AppContainer, message
     val to = Bech32.decodeBytes(FEEDBACK_NPUB).second.toHex()
     val event = NostrEvent.sign(keys, 4, Nip04.encrypt(message, keys, to), listOf(listOf("p", to)))
     coroutineScope {
-        val relays = FEEDBACK_RELAYS.map { Relay(it, c.http, this) }
-        try {
-            val results = relays.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
-            if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
-        } finally {
-            relays.forEach { it.close() }
-        }
+        val relays = FEEDBACK_RELAYS.map { RelayPool.get(it, c.http) }
+        val results = relays.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
+        if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
     }
 }
 

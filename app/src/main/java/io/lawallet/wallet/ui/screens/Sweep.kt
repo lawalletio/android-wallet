@@ -138,8 +138,8 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
         var dst: NwcClient? = null
         try {
             step(Step.Connect) {
-                src = NwcClient(NwcUri.parse(api.remoteWalletConnectionString(from.id)), c.http, c.scope)
-                dst = NwcClient(NwcUri.parse(api.remoteWalletConnectionString(to.id)), c.http, c.scope)
+                src = NwcClient(NwcUri.parse(api.remoteWalletConnectionString(from.id)), c.http)
+                dst = NwcClient(NwcUri.parse(api.remoteWalletConnectionString(to.id)), c.http)
             }
             val s = src!!
             val d = dst!!
@@ -188,7 +188,6 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
             error = e.message
             phase = Phase.Failed
         } finally {
-            src?.close(); dst?.close()
             runCatching { c.wallet.refreshBalance() }
             runCatching { c.wallet.refreshActivity() }
         }
