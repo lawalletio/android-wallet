@@ -59,6 +59,7 @@ import io.lawallet.wallet.ui.LocalContainer
 import kotlinx.serialization.builtins.ListSerializer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
+import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.GroupDivider
@@ -202,7 +203,10 @@ fun AddRemoteWalletScreen() {
     var step by remember { mutableStateOf<String?>(null) } // null = choose, "nwc", "lncurl"
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
-    var primary by remember { mutableStateOf(true) }
+    // Primary is opt-in, except for the first wallet (it has to be the primary). Cached list first, then the server's.
+    var primary by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).isNullOrEmpty()) }
+    var primaryTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { c.session.api.value.remoteWallets() }.onSuccess { if (!primaryTouched) primary = it.isEmpty() } }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
@@ -214,7 +218,12 @@ fun AddRemoteWalletScreen() {
     fun submit(create: suspend () -> Unit) {
         busy = true; error = null
         scope.launch {
-            runCatching { create() }.onSuccess { runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { error = it.message }
+            runCatching { create() }.onSuccess {
+                runCatching { c.session.refreshMe() }
+                // Back to Home with the wallet list open, so the new wallet is right there.
+                c.flow.revealWallets = true
+                if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
+            }.onFailure { error = it.message }
             busy = false
         }
     }
@@ -237,12 +246,12 @@ fun AddRemoteWalletScreen() {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
                         trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
                     OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name_optional)) }, placeholder = { Txt(derivedName, color = Lw.MutedFg) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
                 }
                 "lncurl" -> {
                     MutedText(stringResource(R.string.rw_lncurl_body))
                     OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primary = !primary }) { Switch(primary, { primary = it }, colors = lwSwitchColors()) } }
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
                 }
             }
             ErrorText(error)

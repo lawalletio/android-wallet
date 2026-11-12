@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -164,6 +165,12 @@ fun HomeScreen() {
     // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
     var sweepFrom by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(open) { if (!open) sweepFrom = null }
+    LaunchedEffect(Unit) {
+        if (!c.flow.revealWallets) return@LaunchedEffect
+        c.flow.revealWallets = false
+        snapshotFlow { reveal.range }.first { it > 0f } // wait for the layout to measure
+        reveal.settleTo(1f)
+    }
     BackHandler(open) { if (sweepFrom != null) sweepFrom = null else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
     val setPrimary: (RemoteWallet) -> Unit = { w ->

@@ -6,6 +6,9 @@ import io.lawallet.wallet.core.ln.WithdrawParams
 
 /** In-memory hand-off between flow steps (wallet-flow-store.ts) — deliberately not persisted. */
 class FlowStore {
+    /** Set after adding a remote wallet: Home opens its wallet list on return, showing the new one. */
+    var revealWallets = false
+
     data class Send(
         val destination: Destination? = null,
         val recipientLabel: String? = null,
