@@ -45,7 +45,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -165,11 +166,17 @@ fun HomeScreen() {
     // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
     var sweepFrom by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(open) { if (!open) sweepFrom = null }
+    // Coming back to Home (from a wallet's details, Add wallet, a sweep…) finds the wallet list as it was left:
+    // open stays open (placed at once, no replay), and a just-added wallet opens it.
+    var revealSaved by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        if (!c.flow.revealWallets) return@LaunchedEffect
+        val reopen = revealSaved || c.flow.revealWallets
         c.flow.revealWallets = false
-        snapshotFlow { reveal.range }.first { it > 0f } // wait for the layout to measure
-        reveal.settleTo(1f)
+        if (reopen) {
+            snapshotFlow { reveal.range }.first { it > 0f } // wait for the layout to measure
+            if (revealSaved) reveal.snapTo(1f) else reveal.settleTo(1f)
+        }
+        snapshotFlow { reveal.progress >= 1f }.collect { revealSaved = it }
     }
     BackHandler(open) { if (sweepFrom != null) sweepFrom = null else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
@@ -379,6 +386,16 @@ fun HomeScreen() {
           onSweep = { sweepFrom = it.id },
           onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
           onSweepCancel = { sweepFrom = null },
+          // Optimistic: the card shows the new name at once; a failed save puts the old one back.
+          onRename = { w, name ->
+              val before = wallets
+              wallets = wallets?.map { if (it.id == w.id) it.copy(name = name) else it }
+              scope.launch {
+                  runCatching { c.session.api.value.updateRemoteWallet(w.id, name = name) }
+                      .onSuccess { wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) } }
+                      .onFailure { wallets = before; context.toast(it.message ?: "") }
+              }
+          },
       )
       if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
@@ -478,11 +495,11 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
         if (hasCached) Box(Modifier.size(8.dp).clip(CircleShape).background(Lw.Red))
         else Box(Modifier.glass(CircleShape, GlassLevel.Thin, tint = Lw.Red.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp)) { Txt(stringResource(R.string.shared_relay_offline), size = 11.sp, color = Lw.Red) }
     }
-    if (open) AlertDialog(
+    if (open) LwAlertDialog(
         onDismissRequest = { open = false },
         title = { Txt(stringResource(R.string.shared_relay_title), weight = FontWeight.SemiBold, size = 16.sp) },
         text = { Txt(if (error.contains("time", true)) stringResource(R.string.shared_relay_timeout) else stringResource(R.string.shared_relay_generic), color = Lw.MutedFg) },
-        confirmButton = { TextButton({ open = false; onRetry() }) { Txt(stringResource(R.string.common_retry)) } },
+        confirmButton = { ModalAction(stringResource(R.string.common_retry), { open = false; onRetry() }) },
         containerColor = Glass.Dialog,
     )
 }

@@ -46,7 +46,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -318,18 +319,17 @@ fun ProfileScreen() {
         )
     }
 
-    if (nostrOnly) AlertDialog(
+    if (nostrOnly) LwAlertDialog(
         onDismissRequest = { nostrOnly = false },
-        confirmButton = { TextButton({ nostrOnly = false }) { Txt(stringResource(R.string.common_ok)) } },
+        confirmButton = { ModalAction(stringResource(R.string.common_ok), { nostrOnly = false }) },
         title = { Txt(stringResource(R.string.profile_nostrOnly_title), weight = FontWeight.SemiBold) },
         text = { Txt(stringResource(R.string.profile_nostrOnly_body)) },
         containerColor = Glass.Dialog,
     )
 
-    if (confirmLogout) AlertDialog(
+    if (confirmLogout) LwAlertDialog(
         onDismissRequest = { confirmLogout = false },
-        confirmButton = { TextButton({ confirmLogout = false; c.session.logout() }) { Txt(stringResource(R.string.home_logOut), color = Lw.Red) } },
-        dismissButton = { TextButton({ confirmLogout = false }) { Txt(stringResource(R.string.common_cancel)) } },
+        confirmButton = { ModalAction(stringResource(R.string.home_logOut), { confirmLogout = false; c.session.logout() }, destructive = true) },
         text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
         containerColor = Glass.Dialog,
     )
