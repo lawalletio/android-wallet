@@ -261,9 +261,21 @@ class LaWalletApi(
 
         /** True when the JWT's `exp` is < 5 min away (jwt-expiry.ts). Unparseable tokens count as expired. */
         fun expiresSoon(token: String, nowMs: Long = System.currentTimeMillis()): Boolean = runCatching {
-            val payload = String(Base64.getUrlDecoder().decode(token.split('.')[1].padEnd((token.split('.')[1].length + 3) / 4 * 4, '=')))
-            val exp = json.parseToJsonElement(payload).jsonObject["exp"]!!.jsonPrimitive.content.toLong()
+            val exp = claims(token)["exp"]!!.jsonPrimitive.content.toLong()
             exp * 1000 - nowMs < 5 * 60_000
         }.getOrDefault(true)
+
+        /**
+         * The account's primary pubkey when [token] was minted by [signerPubkey]. A passkey added to a
+         * nostr account is a secondary key: the server puts the primary in `pubkey`, the signer in `authPubkey`.
+         */
+        fun accountPubkey(token: String, signerPubkey: String): String? = runCatching {
+            val c = claims(token)
+            c["pubkey"]!!.jsonPrimitive.content.takeIf { c["authPubkey"]?.jsonPrimitive?.content == signerPubkey }
+        }.getOrNull()
+
+        private fun claims(token: String) = token.split('.')[1].let { p ->
+            json.parseToJsonElement(String(Base64.getUrlDecoder().decode(p.padEnd((p.length + 3) / 4 * 4, '=')))).jsonObject
+        }
     }
 }

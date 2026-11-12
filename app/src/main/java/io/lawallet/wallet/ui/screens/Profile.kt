@@ -133,7 +133,9 @@ fun ProfileScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val signer by c.session.signer.collectAsState()
-    val pubkey = signer?.pubkey
+    val pubkey by c.session.accountPubkey.collectAsState()
+    // A passkey linked to a nostr account can't sign the account's kind 0.
+    val canEdit = signer?.pubkey == pubkey
     val cached by c.session.profiles.entries.collectAsState()
     val profile by c.session.nostrProfile.collectAsState()
     val me by c.session.me.collectAsState()
@@ -158,6 +160,7 @@ fun ProfileScreen() {
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     var confirmLogout by remember { mutableStateOf(false) }
+    var nostrOnly by remember { mutableStateOf(false) }
 
     fun startEdit() {
         val p = profile ?: return
@@ -244,7 +247,7 @@ fun ProfileScreen() {
                             enabled = !avatar.busy && !banner.busy && !avatar.failed && !banner.failed, loading = saving, height = 38.dp, icon = L.drawable.lucide_ic_check,
                         )
                         else LwButton(
-                            stringResource(R.string.profile_edit), ::startEdit, Modifier.testTag("profile-edit"), BtnVariant.Secondary,
+                            stringResource(R.string.profile_edit), { if (canEdit) startEdit() else nostrOnly = true }, Modifier.testTag("profile-edit"), BtnVariant.Secondary,
                             enabled = profile != null, height = 38.dp, icon = L.drawable.lucide_ic_pencil,
                         )
                     }
@@ -314,6 +317,14 @@ fun ProfileScreen() {
             },
         )
     }
+
+    if (nostrOnly) AlertDialog(
+        onDismissRequest = { nostrOnly = false },
+        confirmButton = { TextButton({ nostrOnly = false }) { Txt(stringResource(R.string.common_ok)) } },
+        title = { Txt(stringResource(R.string.profile_nostrOnly_title), weight = FontWeight.SemiBold) },
+        text = { Txt(stringResource(R.string.profile_nostrOnly_body)) },
+        containerColor = Glass.Dialog,
+    )
 
     if (confirmLogout) AlertDialog(
         onDismissRequest = { confirmLogout = false },

@@ -128,9 +128,9 @@ fun HomeScreen() {
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
     val scope = rememberCoroutineScope()
-    val signer by c.session.signer.collectAsState()
+    val accountPubkey by c.session.accountPubkey.collectAsState()
     val profiles by c.session.profiles.entries.collectAsState()
-    val avatar = signer?.pubkey?.let { profiles[it]?.picture }
+    val avatar = accountPubkey?.let { profiles[it]?.picture }
     var bonus by remember { mutableStateOf(c.prefs.bonusSats.takeIf { it > 0 }) }
     val context = LocalContext.current
     val density = LocalDensity.current

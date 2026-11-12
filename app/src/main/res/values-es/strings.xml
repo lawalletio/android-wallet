@@ -179,6 +179,9 @@
     <string name="activity_group_collapse">Ocultar pagos</string>
     <string name="profile_open">Abrir perfil</string>
     <string name="profile_edit">Editar perfil</string>
+    <string name="profile_nostrOnly_title">Iniciá sesión con Nostr para editar</string>
+    <string name="profile_nostrOnly_body">Ingresaste con una passkey vinculada a esta cuenta. Los cambios del perfil se firman con la clave Nostr de la cuenta: cerrá sesión e ingresá con tu nsec, Amber o un bunker para actualizar tu perfil.</string>
+    <string name="common_ok">OK</string>
     <string name="profile_save">Guardar</string>
     <string name="profile_saved">Perfil actualizado</string>
     <string name="profile_displayName">Nombre visible</string>

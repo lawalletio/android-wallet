@@ -179,6 +179,9 @@
     <string name="activity_group_collapse">Hide payments</string>
     <string name="profile_open">Open profile</string>
     <string name="profile_edit">Edit profile</string>
+    <string name="profile_nostrOnly_title">Log in with Nostr to edit</string>
+    <string name="profile_nostrOnly_body">You signed in with a passkey linked to this account. Profile changes must be signed with the account\'s Nostr key: log out and sign in with your nsec, Amber or a bunker to update your profile.</string>
+    <string name="common_ok">OK</string>
     <string name="profile_save">Save</string>
     <string name="profile_saved">Profile updated</string>
     <string name="profile_displayName">Display name</string>

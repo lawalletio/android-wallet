@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
@@ -51,6 +54,13 @@ class Session(
 
     private val _signer = MutableStateFlow<Signer?>(null)
     val signer: StateFlow<Signer?> = _signer
+
+    private val _jwt = MutableStateFlow(prefs.jwt)
+
+    /** Whose profile this session shows: the account's primary pubkey, which a passkey signer may not be. */
+    val accountPubkey: StateFlow<String?> = combine(_signer, _jwt, ::accountPubkeyOf).stateIn(scope, SharingStarted.Eagerly, null)
+    private fun accountPubkey() = accountPubkeyOf(_signer.value, _jwt.value)
+    private fun accountPubkeyOf(s: Signer?, jwt: String?) = s?.pubkey?.let { pk -> jwt?.let { LaWalletApi.accountPubkey(it, pk) } ?: pk }
 
     private val _api = MutableStateFlow(buildApi(prefs.instanceUrl))
     val api: StateFlow<LaWalletApi> = _api
@@ -85,7 +95,7 @@ class Session(
     init {
         scope.launch { refreshSettings() }
         // Every app start (session restore) and every login: fresh avatar + kind 0, not the 12h-old cache.
-        scope.launch { _signer.filterNotNull().distinctUntilChangedBy { it.pubkey }.collectLatest { refreshProfile(force = true) } }
+        scope.launch { accountPubkey.filterNotNull().distinctUntilChanged().collectLatest { refreshProfile(force = true) } }
         // Offline: poll until the server answers, then refetch `me` (which refreshes the wallet).
         scope.launch {
             _offline.drop(1).collectLatest { off ->
@@ -126,7 +136,7 @@ class Session(
     /** [probe]: a candidate instance being validated, whose reachability says nothing about ours. */
     private fun buildApi(url: String, probe: Boolean = false) = LaWalletApi(url, http, { _signer.value }, object : LaWalletApi.TokenStore {
         override fun load() = prefs.jwt
-        override fun save(token: String?) { prefs.jwt = token }
+        override fun save(token: String?) { prefs.jwt = token; if (!probe) _jwt.value = token }
     }, { _settings.value?.endpoint?.takeIf { it.isNotBlank() } }, { reachable ->
         if (!probe) {
             if (reachable && _offline.value) Trail.add("api", "reachable again")
@@ -158,7 +168,7 @@ class Session(
 
     /** Own avatar: background refresh past the TTL, or now when [force]d (pull-to-refresh). */
     suspend fun refreshProfile(force: Boolean = false) {
-        val pk = _signer.value?.pubkey ?: return
+        val pk = accountPubkey() ?: return
         // Forced: relays first. The server's cache can lag behind an edit (it refreshes after answering,
         // and ignores `force` for wallet users), so asking it first would flash the old avatar back.
         if (force && loadNostrProfile()) return
@@ -167,9 +177,9 @@ class Session(
 
     /** Fetches our kind-0 from relays. False when none answered: editing must wait, or a save would wipe the profile. */
     suspend fun loadNostrProfile(): Boolean {
-        val pk = _signer.value?.pubkey ?: return false
+        val pk = accountPubkey() ?: return false
         val k = Profiles.fetch(http, pk) ?: return false
-        if (_signer.value?.pubkey != pk) return false
+        if (accountPubkey() != pk) return false
         if (k.createdAt >= (_nostrProfile.value?.createdAt ?: 0)) _nostrProfile.value = k
         // The newest we know (a relay may still lag behind our own save); also restarts the avatar's TTL.
         profiles.put(pk, _nostrProfile.value?.picture)
@@ -183,6 +193,7 @@ class Session(
     /** Publishes our kind-0 with [patch] over every existing key (blank removes one). */
     suspend fun saveProfile(patch: Map<String, String?>) {
         val signer = _signer.value ?: error("Not signed in")
+        check(signer.pubkey == accountPubkey()) { "This key can't sign the account's profile" }
         val base = _nostrProfile.value ?: error("Profile not loaded")
         val saved = Kind0.of(Profiles.publish(http, signer, base.merged(patch)))
         _nostrProfile.value = saved

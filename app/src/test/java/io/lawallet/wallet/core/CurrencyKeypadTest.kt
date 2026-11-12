@@ -62,4 +62,14 @@ class CurrencyKeypadTest {
         assertTrue(LaWalletApi.expiresSoon(jwt(now / 1000 + 60), now))
         assertTrue(LaWalletApi.expiresSoon("garbage", now))
     }
+
+    @Test fun jwtAccountPubkey() {
+        fun jwt(claims: String) = "h." + Base64.getUrlEncoder().withoutPadding().encodeToString(claims.toByteArray()) + ".s"
+        // Passkey (secondary) signed in: the account's primary pubkey wins.
+        assertEquals("primary", LaWalletApi.accountPubkey(jwt("""{"pubkey":"primary","authPubkey":"passkey"}"""), "passkey"))
+        // Token minted by another key (stale), or an old server without authPubkey: no answer.
+        assertNull(LaWalletApi.accountPubkey(jwt("""{"pubkey":"primary","authPubkey":"other"}"""), "passkey"))
+        assertNull(LaWalletApi.accountPubkey(jwt("""{"pubkey":"primary"}"""), "passkey"))
+        assertNull(LaWalletApi.accountPubkey("garbage", "passkey"))
+    }
 }
