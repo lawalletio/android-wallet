@@ -31,5 +31,11 @@ class ProfileCache(
         save(_entries.value)
     }
 
+    /** Our own avatar just changed: show it now, not at the next fetch. */
+    suspend fun put(pubkey: String, picture: String?) = lock.withLock {
+        _entries.value = _entries.value + (pubkey to Entry(picture, now()))
+        save(_entries.value)
+    }
+
     fun clear() { _entries.value = emptyMap() }
 }

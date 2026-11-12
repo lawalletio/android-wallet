@@ -16,6 +16,12 @@ import io.lawallet.wallet.ui.theme.GlassLevel
 import androidx.compose.foundation.shape.CircleShape
 import io.lawallet.wallet.ui.screens.DiagnosticsScreen
 import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.animateFloat
@@ -98,6 +104,25 @@ import kotlinx.coroutines.flow.receiveAsFlow
 
 val LocalContainer = staticCompositionLocalOf<AppContainer> { error("AppContainer not provided") }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("NavController not provided") }
+/** Shared-element scopes: the layout around the NavHost, and the destination's own enter/exit. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+val LocalSharedScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
+val LocalDestScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
+
+/** The user's avatar, which flies between Home's header and the profile screen. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.sharedAvatar(): Modifier {
+    val shared = LocalSharedScope.current ?: return this
+    val dest = LocalDestScope.current ?: return this
+    return with(shared) {
+        this@sharedAvatar.sharedElement(
+            rememberSharedContentState("me-avatar"), dest,
+            boundsTransform = { _, _ -> spring(dampingRatio = 0.82f, stiffness = 380f) },
+            clipInOverlayDuringTransition = OverlayClip(CircleShape),
+        )
+    }
+}
 
 /** Routes mirror /wallet paths. */
 object R0 {
@@ -110,6 +135,7 @@ object R0 {
     const val LOGIN_BUNKER = "login/bunker"
     const val WELCOME = "welcome"
     const val HOME = "home"
+    const val PROFILE = "profile"
     const val ACTIVITY = "activity"
     const val SEND = "send"
     const val SEND_AMOUNT = "send/amount"
@@ -180,6 +206,8 @@ fun LaWalletRoot(container: AppContainer) {
 // slow first frame (Home recomposing on pop) can't stretch the overlap back in.
 private val ScreenOut = fadeOut(tween(90, easing = FastOutLinearInEasing))
 private val ScreenIn = fadeIn(tween(210, delayMillis = 90, easing = LinearOutSlowInEasing))
+private val ProfileFadeIn = fadeIn(tween(260, delayMillis = 60, easing = LinearOutSlowInEasing))
+private val ProfileFadeOut = fadeOut(tween(160, easing = FastOutLinearInEasing))
 private val PopIn = ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { -it / 14 }
 private val PopOut = ScreenOut + slideOutHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 }
 
@@ -217,6 +245,7 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     )
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     val nav = rememberNavController()
@@ -254,6 +283,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
             // Fixed for the NavHost's lifetime: changing it would reset the back stack on login
             // (skipping the welcome screen / pending activation).
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
+            SharedTransitionLayout(Modifier.fillMaxSize()) {
+            CompositionLocalProvider(LocalSharedScope provides this) {
             NavHost(
                 nav, startDestination = start, modifier = Modifier.fillMaxSize().safeDrawingPadding(),
                 enterTransition = { ScreenIn + slideInHorizontally(tween(280, easing = EaseOutCubic)) { it / 10 } },
@@ -273,7 +304,16 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.LOGIN_NOSTR) { NostrLoginScreen() }
                 composable(R0.LOGIN_BUNKER) { BunkerLoginScreen() }
                 composable(R0.WELCOME) { WelcomeScreen() }
-                composable(R0.HOME) { TrackTab(R0.HOME, tabShown); HomeScreen() }
+                // Home ↔ profile is a plain cross-fade, so the avatar flying between them is the motion.
+                composable(
+                    R0.HOME,
+                    exitTransition = { if (targetState.destination.route == R0.PROFILE) ProfileFadeOut else null },
+                    popEnterTransition = { if (initialState.destination.route == R0.PROFILE) ProfileFadeIn else null },
+                ) { TrackTab(R0.HOME, tabShown); CompositionLocalProvider(LocalDestScope provides this) { HomeScreen() } }
+                composable(
+                    R0.PROFILE,
+                    enterTransition = { ProfileFadeIn }, popExitTransition = { ProfileFadeOut },
+                ) { CompositionLocalProvider(LocalDestScope provides this) { ProfileScreen() } }
                 composable(R0.ACTIVITY) { ActivityScreen() }
                 composable("activity/{hash}") { ActivityDetailScreen(it.arguments?.getString("hash").orEmpty()) }
                 composable(R0.SEND) { SendRecipientScreen() }
@@ -302,6 +342,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
                 composable(R0.UPDATES) { UpdatesScreen() }
                 composable(R0.FEEDBACK) { FeedbackScreen() }
+            }
+            }
             }
           }
             TabBar(route, tabShown, nav, haze, Modifier.align(Alignment.BottomCenter))

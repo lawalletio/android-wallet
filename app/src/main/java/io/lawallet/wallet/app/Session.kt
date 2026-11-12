@@ -7,7 +7,10 @@ import io.lawallet.wallet.core.api.LaWalletApi
 import io.lawallet.wallet.core.auth.AmberSigner
 import io.lawallet.wallet.core.auth.Nip46Client
 import io.lawallet.wallet.core.auth.Nip46Signer
+import io.lawallet.wallet.core.nostr.Blossom
 import io.lawallet.wallet.core.nostr.Keys
+import io.lawallet.wallet.core.nostr.Kind0
+import io.lawallet.wallet.core.nostr.Profiles
 import io.lawallet.wallet.core.nostr.LocalSigner
 import io.lawallet.wallet.core.nostr.Signer
 import io.lawallet.wallet.core.store.Prefs
@@ -58,6 +61,10 @@ class Session(
 
     /** Kind-0 pictures, from disk on the first frame; refetched at most once per TTL. */
     val profiles = ProfileCache({ prefs.profileCache }, { prefs.profileCache = it })
+
+    /** Our full kind-0 from relays (about, banner…); null until a relay has answered. */
+    private val _nostrProfile = MutableStateFlow<Kind0?>(null)
+    val nostrProfile: StateFlow<Kind0?> = _nostrProfile
 
     private val _auth = MutableStateFlow(if (prefs.loginMethod == null) AuthState.LoggedOut else AuthState.Loading)
     val auth: StateFlow<AuthState> = _auth
@@ -151,6 +158,29 @@ class Session(
         runCatching { profiles.refresh(pk, force) { _api.value.profiles(listOf(it)).firstOrNull()?.picture } }
     }
 
+    /** Fetches our kind-0 from relays. False when none answered: editing must wait, or a save would wipe the profile. */
+    suspend fun loadNostrProfile(): Boolean {
+        val pk = _signer.value?.pubkey ?: return false
+        val k = Profiles.fetch(http, pk) ?: return false
+        if (_signer.value?.pubkey != pk) return false
+        if (k.createdAt >= (_nostrProfile.value?.createdAt ?: 0)) _nostrProfile.value = k
+        k.picture?.let { if (it != profiles.entries.value[pk]?.picture) profiles.put(pk, it) }
+        return true
+    }
+
+    /** Uploads a profile image to the instance's Blossom servers; returns its URL. */
+    suspend fun uploadImage(bytes: ByteArray, onProgress: (Float) -> Unit): String =
+        Blossom.upload(http, _signer.value ?: error("Not signed in"), Blossom.servers(_settings.value?.blossom_servers), bytes, "image/jpeg", onProgress)
+
+    /** Publishes our kind-0 with [patch] over every existing key (blank removes one). */
+    suspend fun saveProfile(patch: Map<String, String?>) {
+        val signer = _signer.value ?: error("Not signed in")
+        val base = _nostrProfile.value ?: error("Profile not loaded")
+        val saved = Kind0.of(Profiles.publish(http, signer, base.merged(patch)))
+        _nostrProfile.value = saved
+        profiles.put(signer.pubkey, saved.picture)
+    }
+
     /**
      * nsec / passkey login. Mints the JWT and materializes the account before returning — unless
      * [loadMe] is false: a card-recovery claim must be the account's first sight of a brand-new key,
@@ -200,6 +230,7 @@ class Session(
         scope.launch(Dispatchers.IO) { avatars.clear() }
         _signer.value = null
         _me.value = null
+        _nostrProfile.value = null
         profiles.clear()
         _api.value = buildApi(prefs.instanceUrl)
         _auth.value = AuthState.LoggedOut

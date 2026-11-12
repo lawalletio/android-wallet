@@ -176,4 +176,22 @@
     </plurals>
     <string name="activity_group_expand">Mostrar pagos</string>
     <string name="activity_group_collapse">Ocultar pagos</string>
+    <string name="profile_open">Abrir perfil</string>
+    <string name="profile_edit">Editar perfil</string>
+    <string name="profile_save">Guardar</string>
+    <string name="profile_saved">Perfil actualizado</string>
+    <string name="profile_displayName">Nombre visible</string>
+    <string name="profile_username">Usuario</string>
+    <string name="profile_about">Biografía</string>
+    <string name="profile_aboutHint">Contale a la gente un poco sobre vos</string>
+    <string name="profile_changeAvatar">Cambiar foto</string>
+    <string name="profile_changeBanner">Cambiar portada</string>
+    <string name="profile_cropAvatar">Mové y escalá tu foto</string>
+    <string name="profile_cropBanner">Mové y escalá tu portada</string>
+    <string name="profile_usePhoto">Usar foto</string>
+    <string name="profile_uploadFailed">Falló la subida. Tocá para reintentar.</string>
+    <string name="profile_imageFailed">No se pudo abrir esa imagen</string>
+    <string name="profile_loadFailed">No se pudo cargar tu perfil desde los relays de Nostr.</string>
+    <string name="profile_saveFailed">No se pudo publicar tu perfil. Probá de nuevo.</string>
+    <string name="profile_unnamed">Anónimo</string>
 </resources>
