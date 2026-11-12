@@ -1,18 +1,11 @@
 package io.lawallet.wallet.ui.screens
 
 import android.os.Build
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +42,9 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -176,7 +172,6 @@ internal fun WalletsReveal(
     code: String,
     rates: Rates?,
     hidden: Boolean,
-    busy: String?,
     onOpen: (RemoteWallet) -> Unit,
     onSetPrimary: (RemoteWallet) -> Unit,
     onAdd: () -> Unit,
@@ -237,7 +232,7 @@ internal fun WalletsReveal(
                         ) {
                             WalletRevealCard(
                                 w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
-                                code, rates, hidden, busy == w.id, reveal, { onOpen(w) }, { onSetPrimary(w) },
+                                code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
                             )
                         }
                     }
@@ -256,83 +251,56 @@ private fun Modifier.layoutBetween(top: Float, bottom: Float) = this.then(
     },
 )
 
+/**
+ * The primary reads as selected (brand ring and wash, full colour). The rest sit back, desaturated and
+ * dimmed; tapping one makes it primary, and the two cards cross-fade their states. Long press opens details.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WalletRevealCard(
-    w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean, busy: Boolean,
-    reveal: HomeReveal, onClick: () -> Unit, onSetPrimary: () -> Unit,
+    w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
+    reveal: HomeReveal, onOpen: () -> Unit, onSetPrimary: () -> Unit,
 ) {
     val brand = LocalBrand.current
     val haptics = LocalHapticFeedback.current
     val lncurl = w.provider == "lncurl"
-    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
     val active = w.status == "ACTIVE"
-    val canPromote = active && !w.isDefault
-    val ring by animateColorAsState(if (w.isDefault) brand.t400.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.06f), tween(380), label = "ring")
-    val wash by animateColorAsState(if (w.isDefault) brand.t400.copy(alpha = 0.10f) else Color.Transparent, tween(380), label = "wash")
+    val sel by animateFloatAsState(if (w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
+    val accent = lerp(Lw.MutedFg, if (lncurl) Lw.Gold else Lw.NwcPurple, sel)
     val shape = RoundedCornerShape(24.dp)
     Row(
         Modifier.fillMaxWidth()
-            .glass(shape, GlassLevel.Regular, tint = wash)
-            .border(1.dp, ring, shape)
+            .graphicsLayer { alpha = (if (active) 0.55f else 0.35f) + (1f - if (active) 0.55f else 0.35f) * sel }
+            .glass(shape, if (w.isDefault) GlassLevel.Regular else GlassLevel.Thin, tint = brand.t400.copy(alpha = 0.10f * sel))
+            .border(1.dp, lerp(Color.White.copy(alpha = 0.05f), brand.t400.copy(alpha = 0.6f), sel), shape)
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = if (canPromote) ({ haptics.performHapticFeedback(HapticFeedbackType.LongPress); onSetPrimary() }) else null,
+                onClick = { if (w.isDefault || !active) onOpen() else { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSetPrimary() } },
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onOpen() },
             )
             .padding(horizontal = 16.dp, vertical = 14.dp)
+            .semantics { selected = w.isDefault }
             .testTag("home-wallet-${w.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
-                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.34f), accent.copy(alpha = 0.10f)))),
+                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel)))),
             contentAlignment = Alignment.Center,
         ) {
-            LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 20.dp, tint = if (active) accent else Lw.MutedFg)
+            LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 20.dp, tint = accent)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Txt(w.name, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = if (active) Lw.Foreground else Lw.MutedFg)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                when (w.status) {
-                    "DEAD" -> Chip(stringResource(R.string.rw_dead), Lw.Red)
-                    "DISABLED" -> Chip(stringResource(R.string.remoteWallets_paused), Lw.MutedFg)
-                    else -> Chip(if (lncurl) "LNCurl" else "NWC", accent)
-                }
-                // The primary badge pops in where the "Set primary" action was, and back.
-                AnimatedContent(
-                    when { busy -> 2; w.isDefault -> 1; canPromote -> 0; else -> -1 },
-                    transitionSpec = {
-                        (scaleIn(spring(0.55f, Spring.StiffnessMedium), initialScale = 0.6f) + fadeIn(tween(160)))
-                            .togetherWith(scaleOut(tween(140), targetScale = 0.8f) + fadeOut(tween(120)))
-                    },
-                    contentAlignment = Alignment.CenterStart,
-                    label = "primary",
-                ) { s ->
-                    when (s) {
-                        2 -> Box(Modifier.padding(horizontal = 6.dp)) { Spinner(14.dp, brand.t400) }
-                        1 -> Row(
-                            Modifier.clip(CircleShape).background(brand.t400.copy(alpha = 0.18f)).padding(start = 7.dp, end = 9.dp, top = 3.dp, bottom = 3.dp).testTag("home-wallet-primary"),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            LwIcon(L.drawable.lucide_ic_check, size = 12.dp, tint = brand.t400)
-                            Spacer(Modifier.width(4.dp))
-                            Txt(stringResource(R.string.remoteWallets_list_primary), size = 11.sp, weight = FontWeight.SemiBold, color = brand.t400)
-                        }
-                        0 -> Txt(
-                            stringResource(R.string.remoteWallets_list_setPrimary),
-                            Modifier.clip(CircleShape).border(1.dp, Lw.Foreground.copy(alpha = 0.16f), CircleShape).clickable(onClick = onSetPrimary)
-                                .padding(horizontal = 9.dp, vertical = 3.dp).testTag("home-wallet-set-primary-${w.name}"),
-                            size = 11.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.8f),
-                        )
-                        else -> Spacer(Modifier.size(0.dp))
-                    }
-                }
-            }
+            Txt(w.name, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel))
+            Spacer(Modifier.height(4.dp))
+            Txt(
+                when (w.status) { "DEAD" -> stringResource(R.string.rw_dead); "DISABLED" -> stringResource(R.string.remoteWallets_paused); else -> if (lncurl) "LNCurl" else "NWC" },
+                size = 12.sp, weight = FontWeight.Medium, color = if (w.status == "DEAD") Lw.Red.copy(alpha = 0.8f) else accent,
+            )
         }
         Spacer(Modifier.width(12.dp))
         Box(contentAlignment = Alignment.CenterEnd) {
+            val figure = lerp(Lw.MutedFg, Lw.Foreground, sel)
             when {
                 loading -> Spinner(16.dp, Lw.MutedFg)
                 balance != null -> Txt(
@@ -342,7 +310,7 @@ private fun WalletRevealCard(
                         .then(if (w.isDefault) Modifier.onGloballyPositioned { reveal.target = it.rootRect() } else Modifier)
                         .graphicsLayer { if (w.isDefault) alpha = 0.15f + 0.85f * smooth(0.78f, 1f, reveal.progress) }
                         .testTag("home-wallet-balance-${w.name}"),
-                    size = CARD_FIGURE, weight = FontWeight.SemiBold,
+                    size = CARD_FIGURE, weight = FontWeight.SemiBold, color = figure,
                 )
                 else -> Txt("—", size = CARD_FIGURE, color = Lw.MutedFg)
             }
@@ -351,10 +319,6 @@ private fun WalletRevealCard(
 }
 
 private val CARD_FIGURE = 18.sp
-
-@Composable
-private fun Chip(text: String, color: Color) =
-    Txt(text, Modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
 
 /**
  * The ghost: a translucent copy of the balance that lifts off it, arcs into the primary card's figure and

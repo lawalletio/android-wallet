@@ -149,21 +149,23 @@ fun HomeScreen() {
         fetchRemoteWallets(c, { wallets = it }, walletBalances)
     }
     BackHandler(open) { scope.launch { reveal.settleTo(0f) } }
+    // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
     val setPrimary: (RemoteWallet) -> Unit = { w ->
         if (promoting == null) scope.launch {
             val before = wallets
             val oldClient = c.wallet.client.value
             promoting = w.id
+            wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
+            heldBalance = walletBalances[w.id]
             runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }
                 .onSuccess {
-                    wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }?.also { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
-                    heldBalance = walletBalances[w.id]
+                    wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
                     promoting = null
                     runCatching { c.session.refreshMe() }
                     withTimeoutOrNull(10_000) { c.wallet.client.first { it !== oldClient }; c.wallet.balance.first { it != null } }
                     heldBalance = null
                 }
-                .onFailure { wallets = before; promoting = null; context.toast(it.message ?: "") }
+                .onFailure { wallets = before; heldBalance = null; promoting = null; context.toast(it.message ?: "") }
         }
     }
 
@@ -343,7 +345,7 @@ fun HomeScreen() {
       )
       if (open) {
           WalletsReveal(
-              reveal, wallets, walletBalances, code, rates, hidden, promoting,
+              reveal, wallets, walletBalances, code, rates, hidden,
               onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
               onSetPrimary = setPrimary,
               onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
