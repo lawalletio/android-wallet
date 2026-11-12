@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import androidx.compose.foundation.layout.heightIn
+import io.lawallet.wallet.ui.components.GlassIconButton
 import io.lawallet.wallet.ui.components.autoFocus
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -417,18 +419,37 @@ fun RemoteWalletDetailScreen(id: String) {
 
 @Composable
 internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    // Opens focused with the current text selected: type to replace, Done to save.
+    // Opens focused with the current text selected: type to replace, Done (or the button) to save.
     var v by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
-    LwAlertDialog(onDismissRequest = onDismiss, containerColor = Glass.Dialog, title = { Txt(title, size = 16.sp, weight = FontWeight.SemiBold) },
-        text = {
-            OutlinedTextField(
-                v, { v = it.copy(text = it.text.take(64)) }, Modifier.autoFocus(), singleLine = true, colors = lwFieldColors(),
-                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (v.text.isNotBlank()) onSave(v.text.trim()) }),
-            )
+    val save = { if (v.text.isNotBlank()) onSave(v.text.trim()) }
+    // Wide (near full width), close at top left instead of a Cancel button, one prominent action.
+    LwAlertDialog(
+        onDismissRequest = onDismiss, containerColor = Glass.Dialog,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GlassIconButton(L.drawable.lucide_ic_x, onDismiss, Modifier.testTag("prompt-close"), size = 36.dp, contentDescription = stringResource(R.string.common_cancel))
+                Spacer(Modifier.width(12.dp))
+                Txt(title, size = 19.sp, weight = FontWeight.SemiBold)
+            }
         },
-        confirmButton = { TextButton({ onSave(v.text.trim()) }, enabled = v.text.isNotBlank()) { Txt(stringResource(R.string.common_done)) } },
-        dismissButton = { TextButton(onDismiss) { Txt(stringResource(R.string.common_cancel)) } })
+        text = {
+            Column {
+                OutlinedTextField(
+                    v, { v = it.copy(text = it.text.take(64)) }, Modifier.fillMaxWidth().heightIn(min = 60.dp).autoFocus().testTag("prompt-field"),
+                    singleLine = true, colors = lwFieldColors(), shape = RoundedCornerShape(16.dp),
+                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 18.sp),
+                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+                )
+                Spacer(Modifier.height(20.dp))
+                LwButton(title, save, Modifier.fillMaxWidth().testTag("prompt-save"), BtnVariant.Theme, enabled = v.text.isNotBlank(), height = 52.dp)
+            }
+        },
+        // The action lives under the field (full width); AlertDialog still needs a slot.
+        confirmButton = {},
+    )
 }
 
 @Composable
