@@ -161,15 +161,43 @@ internal class HomeReveal {
         return Velocity(0f, v)
     }
 
-    /** On Home's root: down-drags nothing else used open it; while open, up-drags close it first. */
+    /** The activity sheet's progress (0 = docked), so one swipe never runs through Home's middle state. */
+    var sheetProgress: () -> Float = { 0f }
+
+    /** Who the current swipe moves; decided on its first delta, cleared when it is released. */
+    private enum class Owner { Reveal, Other }
+    private var owner: Owner? = null
+
+    /**
+     * Home has three rests: wallets (reveal open), the middle (balance + docked activity) and the
+     * activity sheet raised. A swipe moves one layer and stops at the middle: closing the wallets never
+     * carries on into lifting the activity, and lowering the activity never carries on into the wallets.
+     * From the middle, the first direction picks the layer (down = wallets, up = activity).
+     */
+    private fun ownerFor(dy: Float) = owner ?: when {
+        progress > 0f -> Owner.Reveal
+        sheetProgress() > 0f -> Owner.Other
+        dy > 0f -> Owner.Reveal
+        else -> Owner.Other
+    }.also { owner = it }
+
+    /** On Home's root. */
     val connection = object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource) =
-            if (available.y < 0f && progress > 0f && source == NestedScrollSource.UserInput) Offset(0f, dragBy(available.y)) else Offset.Zero
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (source != NestedScrollSource.UserInput || available.y == 0f || ownerFor(available.y) != Owner.Reveal) return Offset.Zero
+            // While the swipe is ours, up-drags close the wallets and the rest is swallowed: the sheet never lifts.
+            if (available.y < 0f) { dragBy(available.y); return Offset(0f, available.y) }
+            return Offset.Zero
+        }
 
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource) =
-            if (available.y > 0f && source == NestedScrollSource.UserInput) Offset(0f, dragBy(available.y)) else Offset.Zero
+            if (available.y > 0f && source == NestedScrollSource.UserInput && ownerFor(available.y) == Owner.Reveal) Offset(0f, dragBy(available.y)) else Offset.Zero
 
-        override suspend fun onPreFling(available: Velocity) = fling(available.y) ?: Velocity.Zero
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            val mine = owner == Owner.Reveal
+            owner = null
+            return if (mine) fling(available.y) ?: Velocity.Zero else Velocity.Zero
+        }
     }
 
     /** On the wallet list: it scrolls first, whatever it leaves over moves the reveal. */

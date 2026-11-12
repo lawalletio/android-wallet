@@ -223,6 +223,7 @@ fun HomeScreen() {
     val shown = heldBalance ?: balance
 
     val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
+    reveal.sheetProgress = { sheet.progress }
     Box(
         Modifier.fillMaxSize().onGloballyPositioned { reveal.rootTop = it.positionInRoot().y; reveal.rootH = it.size.height.toFloat() }
             .nestedScroll(reveal.connection).testTag("home-root"),
