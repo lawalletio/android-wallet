@@ -76,6 +76,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
@@ -143,9 +145,11 @@ fun ProfileScreen() {
         loadFailed = !c.session.loadNostrProfile() && c.session.nostrProfile.value == null
         loading = false
     }
-    LaunchedEffect(Unit) { load() }
 
     var editing by rememberSaveable { mutableStateOf(false) }
+    // Every visit, and every return to the app while here: the profile may have changed elsewhere.
+    // Not mid-edit (the photo picker resumes us too): the draft would be left behind.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { if (!editing) load() }
     var displayName by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
     var about by rememberSaveable { mutableStateOf("") }

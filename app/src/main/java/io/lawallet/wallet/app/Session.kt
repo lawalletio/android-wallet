@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -82,6 +84,8 @@ class Session(
 
     init {
         scope.launch { refreshSettings() }
+        // Every app start (session restore) and every login: fresh avatar + kind 0, not the 12h-old cache.
+        scope.launch { _signer.filterNotNull().distinctUntilChangedBy { it.pubkey }.collectLatest { refreshProfile(force = true) } }
         // Offline: poll until the server answers, then refetch `me` (which refreshes the wallet).
         scope.launch {
             _offline.drop(1).collectLatest { off ->
@@ -155,6 +159,9 @@ class Session(
     /** Own avatar: background refresh past the TTL, or now when [force]d (pull-to-refresh). */
     suspend fun refreshProfile(force: Boolean = false) {
         val pk = _signer.value?.pubkey ?: return
+        // Forced: relays first. The server's cache can lag behind an edit (it refreshes after answering,
+        // and ignores `force` for wallet users), so asking it first would flash the old avatar back.
+        if (force && loadNostrProfile()) return
         runCatching { profiles.refresh(pk, force) { _api.value.profiles(listOf(it)).firstOrNull()?.picture } }
     }
 
@@ -164,7 +171,8 @@ class Session(
         val k = Profiles.fetch(http, pk) ?: return false
         if (_signer.value?.pubkey != pk) return false
         if (k.createdAt >= (_nostrProfile.value?.createdAt ?: 0)) _nostrProfile.value = k
-        k.picture?.let { if (it != profiles.entries.value[pk]?.picture) profiles.put(pk, it) }
+        // The newest we know (a relay may still lag behind our own save); also restarts the avatar's TTL.
+        profiles.put(pk, _nostrProfile.value?.picture)
         return true
     }
 
