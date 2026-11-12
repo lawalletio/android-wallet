@@ -88,7 +88,7 @@ fun WithdrawScreen() {
                     else -> stringResource(R.string.withdraw_celebration_pendingBody)
                 }, align = TextAlign.Center,
             )
-            if (phase != "claiming") LwButton(stringResource(R.string.withdraw_celebration_collect), { c.flow.withdraw = null; nav.goHome() }, Modifier.fillMaxWidth().padding(top = 32.dp), BtnVariant.Theme)
+            if (phase != "claiming") LwButton(stringResource(R.string.withdraw_celebration_collect), { c.flow.withdraw = null; backToOrigin(nav) }, Modifier.fillMaxWidth().padding(top = 32.dp), BtnVariant.Theme)
         }
         return
     }
@@ -140,4 +140,11 @@ fun WithdrawScreen() {
             Modifier.fillMaxWidth().padding(16.dp).testTag("withdraw-cta"), BtnVariant.Theme, enabled = valid,
         )
     }
+}
+
+/** After a sweep, return to the screen the user started from: drop the withdraw screen and the scanner that opened it. */
+private fun backToOrigin(nav: androidx.navigation.NavHostController) {
+    if (nav.previousBackStackEntry == null) return nav.goHome()
+    nav.popBackStack(R0.WITHDRAW, inclusive = true)
+    if (nav.currentDestination?.route == R0.SCAN && nav.previousBackStackEntry != null) nav.popBackStack()
 }
