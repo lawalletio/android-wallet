@@ -85,6 +85,7 @@ import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import com.composables.icons.lucide.R as L
@@ -145,13 +146,15 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
             var bal = step(Step.Balance) { s.getBalanceMsat() / 1000 }
             initial = bal; left = bal
             var n = 0
-            while (!stopping && n < MAX_ROUNDS) {
-                var amt = bal - reserveFor(bal)
-                if (amt < MIN_SATS) break
+            while (!stopping && n < MAX_ROUNDS && bal >= 1) {
+                // Big balances start 1% short (most wallets keep that as a fee reserve, so a full-balance try is a
+                // wasted round trip); small remainders start at every last sat. Failures step down from there.
+                var amt = if (bal > FULL_TRY_BELOW) bal - reserveFor(bal) else bal
                 n++
                 var paid = false
                 var tries = 0
-                while (!paid && tries < 3 && amt >= MIN_SATS) {
+                var stepDown = 1L
+                while (!paid && tries < MAX_TRIES && amt >= 1) {
                     val invoice = step(Step.Invoice(n, amt)) { d.makeInvoice(amt * 1000, "Sweep from ${from.name}").invoice ?: error("No invoice from ${to.name}") }
                     try {
                         step(Step.Pay(n)) { s.payInvoice(invoice) }
@@ -162,9 +165,13 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
                         val now = runCatching { s.getBalanceMsat() / 1000 }.getOrDefault(bal)
                         if (now <= bal - amt) { paid = true; break }
                         tries++
-                        if (e !is NwcException && tries >= 3) throw e
+                        if (e !is NwcException && tries >= MAX_TRIES) throw e
+                        if (tries >= MAX_TRIES) break
                         step(Step.Retry) {}
-                        amt = (amt * 0.97).toLong() - 1
+                        // Trial and error: shave a little more each time (1, 2, 4… sats, or 0.5%, 1%, 2%… of
+                        // the amount, whichever is bigger), so the sweep settles on the most the wallet will release.
+                        amt = smaller(amt, stepDown)
+                        stepDown *= 2
                     }
                 }
                 if (!paid) { if (moved == 0L) error("Payment failed"); break }
@@ -188,10 +195,14 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
     }
 
     companion object {
-        private const val MAX_ROUNDS = 6
-        private const val MIN_SATS = 3L
+        private const val MAX_ROUNDS = 8
+        private const val MAX_TRIES = 6
+        /** Below this the first try is the whole balance: fees and reserves are a few sats at most. */
+        private const val FULL_TRY_BELOW = 1_000L
         /** 1% fee reserve, at least 1 sat. */
         fun reserveFor(bal: Long) = maxOf(1L, ceil(bal * 0.01).toLong())
+        /** The next, smaller try after a bounced payment of [amt]: [stepDown] sats or stepDown × 0.5%, whichever is more. */
+        fun smaller(amt: Long, stepDown: Long) = amt - maxOf(stepDown, ceil(amt * 0.005 * stepDown).toLong())
     }
 }
 
@@ -212,8 +223,18 @@ fun SweepScreen(fromId: String, toId: String) {
         val r = SweepRun(from, to).also { Sweeps.current = it; run = it }
         r.available = runCatching { api.remoteWalletBalance(fromId) }.getOrNull()
     }
-    val back = { if (run?.phase != SweepRun.Phase.Running) Sweeps.current = null; nav.popBackStack(); Unit }
+    // Sweeps start from Home's wallet list: going back reopens it there.
+    val back = {
+        if (run?.phase != SweepRun.Phase.Running) Sweeps.current = null
+        c.flow.revealWallets = true
+        nav.popBackStack(); Unit
+    }
     BackHandler { back() }
+    // Once the funds are across, let the outcome land for a beat, then return to where the sweep started.
+    LaunchedEffect(run?.phase) {
+        val r = run ?: return@LaunchedEffect
+        if (r.phase == SweepRun.Phase.Done && r.moved > 0) { delay(1800); back() }
+    }
     Column(Modifier.fillMaxSize().testTag("sweep")) {
         SettingsHeader(stringResource(R.string.sweep_title), back, stringResource(R.string.common_back))
         val r = run
@@ -235,7 +256,7 @@ fun SweepScreen(fromId: String, toId: String) {
             when (r.phase) {
                 SweepRun.Phase.Ready -> LwButton(
                     stringResource(R.string.sweep_start), { r.start(c) }, Modifier.fillMaxWidth().testTag("sweep-start"), BtnVariant.Theme,
-                    enabled = (r.available ?: 0L) > SweepRun.reserveFor(r.available ?: 0L), icon = L.drawable.lucide_ic_arrow_right_left,
+                    enabled = (r.available ?: 0L) > 0L, icon = L.drawable.lucide_ic_arrow_right_left,
                 )
                 SweepRun.Phase.Running -> LwButton(
                     stringResource(if (r.stopping) R.string.sweep_stopping else R.string.sweep_stop), { r.stopping = true },
