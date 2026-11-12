@@ -1,6 +1,7 @@
 package io.lawallet.wallet.core.nostr
 
 import io.lawallet.wallet.core.nwc.Relay
+import io.lawallet.wallet.core.nwc.RelayPool
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -53,7 +54,8 @@ object Profiles {
      * null when no relay answered at all — then a save must not go ahead, or it would wipe the real profile.
      */
     suspend fun fetch(http: OkHttpClient, pubkey: String, relays: List<String> = RELAYS, timeoutMs: Long = 6_000, graceMs: Long = 1_500): Kind0? = coroutineScope {
-        val conns = relays.map { Relay(it, http, this) }
+        val conns = relays.map { RelayPool.get(it, http) }
+        val subId = "p0-" + pubkey.take(8) + "-" + randomBytes(3).toHex()
         try {
             val filter = buildJsonObject { putJsonArray("kinds") { add(JsonPrimitive(0)) }; putJsonArray("authors") { add(JsonPrimitive(pubkey)) }; put("limit", 1) }
             var best: NostrEvent? = null
@@ -67,13 +69,13 @@ object Profiles {
                     }
                 }
             }
-            conns.forEach { it.subscribe("p0", filter) }
+            conns.forEach { it.subscribe(subId, filter) }
             // Wait for the first answer, then give the rest a short grace: a dead relay mustn't hold the screen.
             if (withTimeoutOrNull(timeoutMs) { answered.first { it > 0 } } != null) withTimeoutOrNull(graceMs) { answered.first { it == conns.size } }
             collector.cancel()
             best?.let(Kind0::of) ?: if (answered.value > 0) Kind0() else null
         } finally {
-            conns.forEach { it.close() }
+            conns.forEach { it.unsubscribe(subId) }
         }
     }
 
@@ -81,13 +83,9 @@ object Profiles {
     suspend fun publish(http: OkHttpClient, signer: Signer, content: JsonObject, relays: List<String> = RELAYS): NostrEvent {
         val event = signer.sign(0, content.toString(), emptyList())
         coroutineScope {
-            val conns = relays.map { Relay(it, http, this) }
-            try {
-                val results = conns.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
-                if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
-            } finally {
-                conns.forEach { it.close() }
-            }
+            val conns = relays.map { RelayPool.get(it, http) }
+            val results = conns.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
+            if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
         }
         return event
     }
