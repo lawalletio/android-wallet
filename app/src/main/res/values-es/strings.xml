@@ -220,4 +220,14 @@
     <string name="sweep_stopped">Barrido detenido</string>
     <string name="sweep_failed">El barrido falló</string>
     <string name="sweep_nothing">No hay nada para barrer</string>
+    <string name="activity_search_hint">Buscar actividad</string>
+    <string name="activity_search_clear">Borrar búsqueda</string>
+    <string name="activity_search_noMatch">No hay actividad que coincida.</string>
+    <string name="activity_filters">Filtros</string>
+    <string name="activity_filter_clear">Limpiar</string>
+    <string name="activity_filter_sent">Enviados</string>
+    <string name="activity_filter_received">Recibidos</string>
+    <string name="activity_filter_amount">Monto</string>
+    <string name="activity_filter_anyAmount">Cualquier monto</string>
+    <string name="activity_filter_range">%1$s – %2$s sats</string>
 </resources>

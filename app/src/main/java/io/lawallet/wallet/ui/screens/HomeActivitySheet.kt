@@ -24,6 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
@@ -185,6 +190,13 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
     BackHandler(sheet.progress > 0f) { scope.launch { launch { list.animateScrollToItem(0) }; sheet.collapse() } }
+    // The bottom bar (AppNav) swaps to search + filters with this; docking clears them.
+    LaunchedEffect(sheet) { snapshotFlow { sheet.progress }.collect { ActivitySearch.sheet = it; if (it == 0f) ActivitySearch.reset() } }
+    DisposableEffect(Unit) { onDispose { ActivitySearch.sheet = 0f } }
+    LaunchedEffect(recent) { ActivitySearch.maxSats = recent.maxOfOrNull { it.amountSats }?.coerceAtLeast(1L) ?: 1L }
+    val s = ActivitySearch
+    val filtered by remember(recent) { derivedStateOf { if (s.active) recent.filter(s::matches) else recent } }
+    LaunchedEffect(s.query, s.sent, s.received, s.sizeOn, s.size) { if (s.active) list.scrollToItem(0) }
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         // Grabber: says "this moves", firmer as the sheet takes over.
         Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
@@ -205,11 +217,16 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
         else {
             val labels = rememberDayLabels()
             // Bottom padding lets the last rows scroll clear of the faded tail and the tab bar.
-            val rows = remember(recent) { activityRows(recent, months = true) }
+            val rows = remember(filtered) { activityRows(filtered, months = true) }
             val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
             Box(Modifier.weight(1f)) {
                 LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {
-                    activityList(rows, recent, labels, paging, onOpen)
+                    activityList(rows, filtered, labels, paging, onOpen)
+                }
+                androidx.compose.animation.AnimatedVisibility(filtered.isEmpty(), enter = fadeIn(tween(200)), exit = fadeOut(tween(120))) {
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                        MutedText(stringResource(R.string.activity_search_noMatch), align = TextAlign.Center)
+                    }
                 }
                 // Clear of the floating Receive/Scan/Send bar.
                 if (expanded) TimelineScrubber(list, rows, Modifier.align(Alignment.TopEnd).padding(bottom = 120.dp))
