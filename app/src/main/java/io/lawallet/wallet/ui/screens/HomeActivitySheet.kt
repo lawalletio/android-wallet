@@ -131,14 +131,19 @@ internal fun rememberActivitySheet(enabled: Boolean): ActivitySheet {
     return sheet
 }
 
-/** Home's [top] content with the activity sheet docked beneath it. Home itself no longer scrolls: every drag drives the sheet. */
+/**
+ * Home's [header] and [top] content with the activity sheet docked beneath it. The sheet docks with its
+ * grabber at mid-screen (lower if [top] needs the room), and [top] centres in the space left above it.
+ * Home itself no longer scrolls: every drag drives the sheet.
+ */
 @Composable
-internal fun ActivitySheetLayout(sheet: ActivitySheet, top: @Composable ColumnScope.() -> Unit, sheetContent: @Composable () -> Unit) {
+internal fun ActivitySheetLayout(sheet: ActivitySheet, header: @Composable () -> Unit, top: @Composable ColumnScope.() -> Unit, sheetContent: @Composable () -> Unit) {
     var fullH by remember { mutableIntStateOf(0) }
     var topH by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     // ponytail: if Home's top content is taller than the screen minus a peek, its tail hides under the sheet; make it scroll if banners ever stack that high.
-    val docked = if (fullH == 0) topH.toFloat() else minOf(topH.toFloat(), fullH - with(density) { 200.dp.toPx() }).coerceAtLeast(0f)
+    val mid = with(density) { fullH / 2f - 18.dp.toPx() } // grabber line (16dp + half its 4dp) on the centre line
+    val docked = if (fullH == 0) topH.toFloat() else minOf(maxOf(topH.toFloat(), mid), fullH - with(density) { 200.dp.toPx() }).coerceAtLeast(0f)
     sheet.range = docked
     Box(
         Modifier.fillMaxSize().onSizeChanged { fullH = it.height }
@@ -155,16 +160,19 @@ internal fun ActivitySheetLayout(sheet: ActivitySheet, top: @Composable ColumnSc
                 scaleY = scaleX
                 transformOrigin = TransformOrigin(0.5f, 0f)
             },
-            content = top,
-        )
+        ) {
+            header()
+            // Translation, not padding, so topH stays the content's natural height (no measure loop).
+            Column(Modifier.graphicsLayer { translationY = ((docked - topH) / 2f).coerceAtLeast(0f) }, content = top)
+        }
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { translationY = docked * (1f - sheet.progress); compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
-                    // Fade out the tail: from fully visible to gone over the bottom of the screen (behind the tab bar).
+                    // Fade out the docked tail (behind the tab bar); it clears as the sheet rises, gone when fully expanded.
                     val bottom = size.height - docked * (1f - sheet.progress)
-                    drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent, startY = bottom - 260.dp.toPx(), endY = bottom - 70.dp.toPx()), blendMode = BlendMode.DstIn)
+                    drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = sheet.progress), startY = bottom - 260.dp.toPx(), endY = bottom - 70.dp.toPx()), blendMode = BlendMode.DstIn)
                 },
         ) { sheetContent() }
     }

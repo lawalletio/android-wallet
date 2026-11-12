@@ -130,13 +130,13 @@ class WalletComponentsTest {
         val taps = mutableListOf<String>()
         rule.setContent {
             LaWalletTheme {
-                io.lawallet.wallet.ui.components.NavTabBar("home", { taps += "home" }, { taps += "settings" }, { taps += "scan" }, haze = null)
+                io.lawallet.wallet.ui.components.NavTabBar({ taps += "receive" }, { taps += "send" }, { taps += "scan" }, haze = null)
             }
         }
         rule.onNodeWithTag("nav-scan").performClick()
-        rule.onNodeWithTag("nav-Settings").performClick()
-        rule.onNodeWithTag("nav-Home").performClick()
-        assertEquals(listOf("scan", "settings", "home"), taps)
+        rule.onNodeWithTag("nav-send").performClick()
+        rule.onNodeWithTag("nav-receive").performClick()
+        assertEquals(listOf("scan", "send", "receive"), taps)
     }
 
     @Test fun iconButtonsKeepA48dpTouchTarget() {

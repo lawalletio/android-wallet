@@ -375,6 +375,7 @@
     <string name="withdraw_celebration_claimed">Reclamado +%1$s</string>
     <string name="withdraw_celebration_chest">Cofre del tesoro abriéndose</string>
     <string name="receive_title">Recibir</string>
+    <string name="receive_yourAddress">Tu dirección Lightning</string>
     <string name="receive_invoiceTitle">Factura</string>
     <string name="receive_noAddress">Todavía no tienes una dirección Lightning. Reclama una para recibir pagos.</string>
     <string name="receive_claimUsername">Reclamar un nombre de usuario</string>

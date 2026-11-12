@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import io.lawallet.wallet.ui.components.copyToClipboard
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,8 +96,11 @@ fun ReceiveAddressScreen() {
             Spacer(Modifier.height(24.dp))
             val address = me?.lightningAddress
             if (address != null) {
+                AddressHero(address)
+                Spacer(Modifier.height(20.dp))
                 Box(contentAlignment = Alignment.TopCenter) {
-                    QrDisplay("lightning:$address".uppercase(), address, copyValue = address)
+                    // Lowercase: an address gains nothing from QR alphanumeric mode ("@" is outside it), and some wallets reject an uppercased one.
+                    QrDisplay("lightning:$address", null, copyValue = address)
                     androidx.compose.animation.AnimatedVisibility(credit != null, enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
                         Txt("+" + Currencies.formatSats(credit ?: 0), Modifier.clip(RoundedCornerShape(50)).background(Lw.Green.copy(alpha = 0.15f)).padding(horizontal = 14.dp, vertical = 6.dp), size = 20.sp, weight = FontWeight.SemiBold, color = Lw.Green)
                     }
@@ -107,6 +112,32 @@ fun ReceiveAddressScreen() {
             } else Spinner()
         }
         LwButton(stringResource(R.string.receive_requestAmount), { c.flow.resetReceive(); nav.navigate(R0.RECEIVE_AMOUNT) }, Modifier.fillMaxWidth().padding(16.dp).testTag("request-amount"), BtnVariant.Theme)
+    }
+}
+
+/** The address as the headline: big username, brand-tinted @domain, on a glowing glass pill. Tap copies. */
+@Composable
+private fun AddressHero(address: String) {
+    val context = LocalContext.current
+    val brand = io.lawallet.wallet.ui.theme.LocalBrand.current
+    val copied = stringResource(R.string.common_copied)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LwIcon(com.composables.icons.lucide.R.drawable.lucide_ic_zap, size = 14.dp, tint = brand.t400)
+            Spacer(Modifier.width(6.dp))
+            Txt(stringResource(R.string.receive_yourAddress), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.glass(RoundedCornerShape(24.dp), tint = brand.t400.copy(alpha = 0.14f))
+                .clickable(onClickLabel = stringResource(R.string.common_copy)) { context.copyToClipboard(address, copied) }
+                .padding(horizontal = 22.dp, vertical = 14.dp).testTag("receive-address"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Username leads and may ellipsize; the domain never truncates.
+            Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 26.sp, weight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.4).sp)
+            Txt("@" + address.substringAfter('@'), size = 26.sp, weight = FontWeight.Medium, color = brand.t300, maxLines = 1, letterSpacing = (-0.4).sp)
+        }
     }
 }
 

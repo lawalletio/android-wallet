@@ -77,11 +77,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.pluralStringResource
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -103,22 +112,21 @@ import java.util.Date
 import kotlin.math.roundToInt
 import com.composables.icons.lucide.R as L
 
-/** Floating frosted pill (real backdrop blur over the scrolling screen) + the brand scan button. */
+/** Floating frosted pill (real backdrop blur over the scrolling screen): Receive · brand scan button · Send. */
 @Composable
-fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onScan: () -> Unit, haze: HazeState?, modifier: Modifier = Modifier) {
+fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haze: HazeState?, modifier: Modifier = Modifier, canReceive: Boolean = true, canSend: Boolean = true) {
     val brand = LocalBrand.current
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 16.dp, top = 12.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
-            Modifier.widthIn(max = 286.dp).fillMaxWidth().height(64.dp)
+            Modifier.widthIn(max = 320.dp).fillMaxWidth().height(64.dp)
                 .shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                 .frosted(haze, CircleShape)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            TabItem(L.drawable.lucide_ic_house, current == "home", stringResource(R.string.shared_nav_home), onHome)
-            Spacer(Modifier.size(54.dp))
-            TabItem(L.drawable.lucide_ic_settings, current == "settings", stringResource(R.string.shared_nav_settings), onSettings)
+            ActionItem(L.drawable.lucide_ic_arrow_down_right, stringResource(R.string.home_receive), "nav-receive", canReceive, onReceive, Modifier.weight(1f))
+            Spacer(Modifier.width(96.dp)) // the scan button sits here
+            ActionItem(L.drawable.lucide_ic_arrow_up_right, stringResource(R.string.home_send), "nav-send", canSend, onSend, Modifier.weight(1f))
         }
         // Bottom-aligned with the pill; lit from above with a brand glow below.
         Box(
@@ -134,14 +142,17 @@ fun NavTabBar(current: String, onHome: () -> Unit, onSettings: () -> Unit, onSca
     }
 }
 
+/** Icon over a small label; the whole half-pill is the touch target. Dimmed (not hidden) when unavailable. */
 @Composable
-private fun TabItem(icon: Int, active: Boolean, label: String, onClick: () -> Unit) {
-    Box(
-        Modifier.size(54.dp).clip(CircleShape).then(if (active) Modifier.background(Color.White.copy(alpha = 0.08f)) else Modifier)
-            .clickable(onClick = onClick).testTag("nav-$label"),
-        contentAlignment = Alignment.Center,
+private fun ActionItem(icon: Int, label: String, tag: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val tint = if (enabled) Lw.Foreground else Lw.MutedFg.copy(alpha = 0.5f)
+    Column(
+        modifier.fillMaxHeight().clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick).testTag(tag),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        LwIcon(icon, size = 26.dp, tint = if (active) Lw.Foreground else Lw.MutedFg, contentDescription = label)
+        LwIcon(icon, size = 22.dp, tint = tint)
+        Spacer(Modifier.height(2.dp))
+        Txt(label, size = 12.sp, weight = FontWeight.Medium, color = tint, maxLines = 1)
     }
 }
 
@@ -249,6 +260,58 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
             Txt((if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amountSats), size = 14.sp, weight = FontWeight.SemiBold, color = if (tx.incoming) Lw.Green else Lw.Foreground)
             Spacer(Modifier.width(4.dp))
             Txt("sats", size = 12.sp, color = Lw.MutedFg)
+        }
+    }
+}
+
+/**
+ * A run of same-titled payments (e.g. hosting fees) as one row: summed amount, count badge, and a
+ * chevron that unfolds the individual rows in a soft glass well.
+ */
+@Composable
+fun TransactionGroup(txs: List<Tx>, onOpen: (Tx) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    val first = txs.first()
+    val color = if (first.incoming) Lw.Green else Lw.Orange
+    val icon = if (first.incoming) L.drawable.lucide_ic_arrow_down_left else L.drawable.lucide_ic_arrow_up_right
+    val label = splitPaymentDescription(first.description).first.ifEmpty { stringResource(if (first.incoming) R.string.shared_tx_received else R.string.shared_tx_sent) }
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(stiffness = Spring.StiffnessMediumLow), label = "chevron")
+    val well by animateFloatAsState(if (open) 0.05f else 0f, tween(220), label = "well")
+    val shape = RoundedCornerShape(24.dp)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(shape).background(Color.White.copy(alpha = well))) {
+        Row(
+            Modifier.fillMaxWidth().clip(shape)
+                .clickable(onClickLabel = stringResource(if (open) R.string.activity_group_collapse else R.string.activity_group_expand)) { open = !open }
+                .padding(horizontal = 8.dp, vertical = 12.dp).testTag("tx-group"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                    LwIcon(icon, size = 20.dp, tint = color)
+                }
+                // Count badge: says "several of these" before the user reads a word.
+                Box(Modifier.align(Alignment.BottomEnd).offset(5.dp, 4.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color).padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                    Txt("${txs.size}", size = 10.sp, weight = FontWeight.Bold, color = Lw.Background)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(label, size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+                Txt(pluralStringResource(R.plurals.activity_group_count, txs.size, txs.size) + " · " + relativeTime(first.settledAt ?: first.createdAt), size = 12.sp, color = Lw.MutedFg, maxLines = 1)
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                Txt((if (first.incoming) "+" else "−") + Currencies.formatSats(txs.sumOf { it.amountSats }), size = 14.sp, weight = FontWeight.SemiBold, color = if (first.incoming) Lw.Green else Lw.Foreground)
+                Spacer(Modifier.width(4.dp))
+                Txt("sats", size = 12.sp, color = Lw.MutedFg)
+            }
+            Spacer(Modifier.width(6.dp))
+            LwIcon(L.drawable.lucide_ic_chevron_down, Modifier.graphicsLayer { rotationZ = turn }, size = 18.dp, tint = Lw.MutedFg)
+        }
+        AnimatedVisibility(open, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(tween(220)), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(tween(150))) {
+            Column(Modifier.padding(bottom = 4.dp)) {
+                Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.06f)))
+                txs.forEach { tx -> TransactionRow(tx) { onOpen(tx) } }
+            }
         }
     }
 }

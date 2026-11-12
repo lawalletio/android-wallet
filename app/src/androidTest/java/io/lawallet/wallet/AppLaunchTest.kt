@@ -19,7 +19,7 @@ class AppLaunchTest {
     @Test fun launchesIntoLandingOrHome() {
         rule.waitUntil(60_000) {
             rule.onAllNodesWithTag("landing-create").fetchSemanticsNodes().isNotEmpty() ||
-                rule.onAllNodesWithTag("home-receive").fetchSemanticsNodes().isNotEmpty()
+                rule.onAllNodesWithTag("nav-receive").fetchSemanticsNodes().isNotEmpty()
         }
     }
 }

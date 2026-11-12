@@ -62,6 +62,7 @@ import io.lawallet.wallet.ui.components.ReceiptFooter
 import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.TransactionRow
+import io.lawallet.wallet.ui.components.TransactionGroup
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
@@ -127,7 +128,11 @@ internal fun rememberDayLabels() = DayLabels(stringResource(R.string.activity_to
 internal fun LazyListScope.activityList(items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
     items.groupBy { dayLabel(it.createdAt) }.forEach { (day, txs) ->
         item(day.first) { Txt(labels.of(day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
-        items(txs, key = { it.paymentHash + it.createdAt }) { tx -> TransactionRow(tx) { onOpen(tx) } }
+        groupRuns(txs).forEach { run ->
+            val first = run.first()
+            if (run.size == 1) item(first.paymentHash + first.createdAt) { TransactionRow(first) { onOpen(first) } }
+            else item("group-" + first.paymentHash + first.createdAt) { TransactionGroup(run, onOpen) }
+        }
     }
     item("footer") {
         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -139,6 +144,20 @@ internal fun LazyListScope.activityList(items: List<Tx>, labels: DayLabels, pagi
             }
         }
     }
+}
+
+/**
+ * Consecutive settled payments with the same direction and description (e.g. a stream of
+ * "LNCurl hosting fee") collapse into one run; everything else stays a run of one.
+ */
+internal fun groupRuns(txs: List<Tx>): List<List<Tx>> {
+    fun key(tx: Tx) = tx.description?.takeIf { it.isNotBlank() && tx.state != "pending" && tx.state != "failed" }?.let { tx.incoming to it }
+    val out = mutableListOf<MutableList<Tx>>()
+    for (tx in txs) {
+        val prev = out.lastOrNull()?.last()
+        if (prev != null && key(tx) != null && key(prev) == key(tx)) out.last() += tx else out += mutableListOf(tx)
+    }
+    return out
 }
 
 internal data class DayLabels(val today: String, val yesterday: String) {
