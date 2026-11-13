@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,6 +132,7 @@ fun SignupChoiceScreen() {
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 LwButton(stringResource(R.string.onboarding_signup_passkey), { nav.navigate(R0.CREATE_PASSKEY) }, Modifier.fillMaxWidth(), BtnVariant.Theme, icon = L.drawable.lucide_ic_fingerprint_pattern)
+                EmailButton()
                 LwButton(stringResource(R.string.onboarding_signup_randomKey), { nav.navigate(R0.CREATE_ACCOUNT) }, Modifier.fillMaxWidth().testTag("signup-random"), BtnVariant.Secondary)
                 LwButton(stringResource(R.string.onboarding_signup_haveKey), { nav.navigate(R0.LOGIN) }, Modifier.fillMaxWidth(), BtnVariant.Secondary)
             }
@@ -292,6 +294,7 @@ fun LoginScreen() {
                     )
                     ErrorText(error, Modifier.fillMaxWidth())
                     OrDivider(stringResource(R.string.onboarding_login_or))
+                    EmailButton()
                     LwButton(stringResource(R.string.onboarding_login_continueWithNostr), { nav.navigate(R0.LOGIN_NOSTR) }, Modifier.fillMaxWidth().testTag("login-nostr"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_key_round)
                 }
             }
@@ -413,6 +416,14 @@ fun WelcomeScreen() {
         }
         LwButton(stringResource(R.string.onboarding_welcome_enter), { nav.navigate(R0.HOME) { popUpTo(0) { inclusive = true } } }, Modifier.fillMaxWidth().padding(bottom = 24.dp).testTag("welcome-enter"), BtnVariant.Theme)
     }
+}
+
+/** Shown when the instance has email login on: one magic-link flow signs in and signs up. */
+@Composable
+private fun EmailButton() {
+    val nav = LocalNav.current
+    val settings by LocalContainer.current.session.settings.collectAsState()
+    if (settings?.emailLoginEnabled == true) LwButton(stringResource(R.string.email_continue), { nav.navigate(R0.LOGIN_EMAIL) }, Modifier.fillMaxWidth().testTag("login-email"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_mail)
 }
 
 /** "or" between two hairlines — no opaque patch over the glass background. */

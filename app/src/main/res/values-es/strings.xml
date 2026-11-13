@@ -334,6 +334,43 @@
         <item quantity="one">%1$d palabra</item>
         <item quantity="other">%1$d palabras</item>
     </plurals>
+    <!-- Email magic-link login -->
+    <string name="email_continue">Continuar con email</string>
+    <string name="email_title">Continúa con tu email</string>
+    <string name="email_subtitle">Te enviaremos un enlace mágico, sin contraseñas. ¿Eres nuevo? El mismo enlace crea tu billetera.</string>
+    <string name="email_placeholder">tu@ejemplo.com</string>
+    <string name="email_invalid">Ingresa un email válido</string>
+    <string name="email_send">Enviar enlace mágico</string>
+    <string name="email_sending">Enviando…</string>
+    <string name="email_send_failed">No pudimos enviar el enlace. Inténtalo de nuevo.</string>
+    <string name="email_sent_title">Revisa tu bandeja de entrada</string>
+    <string name="email_sent_body">Enviamos un enlace de acceso a</string>
+    <string name="email_sent_hint">Ábrelo en este teléfono y entrarás directo a tu billetera. El enlace vence en 15 minutos.</string>
+    <string name="email_open_app">Abrir app de email</string>
+    <string name="email_no_app">No hay una app de email</string>
+    <string name="email_resend">Reenviar enlace</string>
+    <string name="email_resend_in">Reenviar en %1$d s</string>
+    <string name="email_resent">Enlace reenviado</string>
+    <string name="email_change">Usar otro email</string>
+    <string name="email_auth_checking">Verificando tu enlace…</string>
+    <string name="email_auth_welcome_back">Hola de nuevo</string>
+    <string name="email_auth_signin_as">Entrar como %1$s</string>
+    <string name="email_auth_signin">Entrar</string>
+    <string name="email_auth_signing_in">Entrando…</string>
+    <string name="email_auth_new_eyebrow">Ya casi</string>
+    <string name="email_auth_new_title">Crea tu billetera</string>
+    <string name="email_auth_new_body">Se creará una billetera nueva para %1$s.</string>
+    <string name="email_auth_create">Crear billetera</string>
+    <string name="email_auth_creating">Creando tu billetera…</string>
+    <string name="email_auth_switch_note">Se cerrará la sesión de la cuenta actual en este teléfono.</string>
+    <string name="email_auth_invalid_title">Este enlace venció</string>
+    <string name="email_auth_invalid_body">Los enlaces de acceso funcionan una sola vez y duran 15 minutos. Pide uno nuevo y ábrelo enseguida.</string>
+    <string name="email_auth_new_link">Enviar un enlace nuevo</string>
+    <string name="email_auth_other_title">Otra comunidad</string>
+    <string name="email_auth_other_body">Este enlace es de %1$s, pero la app está conectada a %2$s.</string>
+    <string name="email_auth_switch">Cambiar a %1$s</string>
+    <string name="email_auth_offline_title">No hay conexión con el servidor</string>
+    <string name="email_auth_offline_body">Revisa tu conexión e inténtalo de nuevo. Tu enlace sigue siendo válido.</string>
 
     <!-- USDT (UI, coming soon) -->
     <string name="home_usdtBalance">Saldo USDT</string>

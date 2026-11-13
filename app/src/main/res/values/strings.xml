@@ -334,6 +334,43 @@
         <item quantity="one">%1$d word</item>
         <item quantity="other">%1$d words</item>
     </plurals>
+    <!-- Email magic-link login (one flow signs in a known address and signs up a new one) -->
+    <string name="email_continue">Continue with email</string>
+    <string name="email_title">Continue with email</string>
+    <string name="email_subtitle">We\'ll send you a magic link — no password needed. New here? The same link creates your wallet.</string>
+    <string name="email_placeholder">you@example.com</string>
+    <string name="email_invalid">Enter a valid email address</string>
+    <string name="email_send">Send magic link</string>
+    <string name="email_sending">Sending…</string>
+    <string name="email_send_failed">Couldn\'t send the link. Try again.</string>
+    <string name="email_sent_title">Check your inbox</string>
+    <string name="email_sent_body">We sent a sign-in link to</string>
+    <string name="email_sent_hint">Open it on this phone and you\'ll land right in your wallet. The link expires in 15 minutes.</string>
+    <string name="email_open_app">Open email app</string>
+    <string name="email_no_app">No email app found</string>
+    <string name="email_resend">Resend link</string>
+    <string name="email_resend_in">Resend in %1$d s</string>
+    <string name="email_resent">Link sent again</string>
+    <string name="email_change">Use a different email</string>
+    <string name="email_auth_checking">Checking your link…</string>
+    <string name="email_auth_welcome_back">Welcome back</string>
+    <string name="email_auth_signin_as">Sign in as %1$s</string>
+    <string name="email_auth_signin">Sign in</string>
+    <string name="email_auth_signing_in">Signing in…</string>
+    <string name="email_auth_new_eyebrow">Almost there</string>
+    <string name="email_auth_new_title">Create your wallet</string>
+    <string name="email_auth_new_body">A new wallet will be created for %1$s.</string>
+    <string name="email_auth_create">Create wallet</string>
+    <string name="email_auth_creating">Creating your wallet…</string>
+    <string name="email_auth_switch_note">You\'ll be signed out of the account on this phone.</string>
+    <string name="email_auth_invalid_title">This link has expired</string>
+    <string name="email_auth_invalid_body">Sign-in links work once and last 15 minutes. Request a new one and open it right away.</string>
+    <string name="email_auth_new_link">Send a new link</string>
+    <string name="email_auth_other_title">Different community</string>
+    <string name="email_auth_other_body">This link is for %1$s, but the app is connected to %2$s.</string>
+    <string name="email_auth_switch">Switch to %1$s</string>
+    <string name="email_auth_offline_title">Can\'t reach the server</string>
+    <string name="email_auth_offline_body">Check your connection and try again. Your link is still valid.</string>
 
     <!-- USDT (UI, coming soon) -->
     <string name="home_usdtBalance">USDT balance</string>

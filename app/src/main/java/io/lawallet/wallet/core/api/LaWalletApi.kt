@@ -64,6 +64,15 @@ class LaWalletApi(
     suspend fun checkUsername(username: String) =
         get("/api/lightning-addresses/check?username=${enc(username)}", UsernameAvailability.serializer(), auth = false)
     suspend fun activationPreview(id: String) = get("/api/activation-tokens/${enc(id)}", ActivationPreview.serializer(), auth = false)
+    /** Emails a magic link (`/wallet/auth/email#token=…`). Known address → sign in, unknown → sign up; same answer either way. */
+    suspend fun requestEmailLogin(email: String, locale: String) =
+        send("POST", "/api/auth/email/request", buildJsonObject { put("email", email); put("locale", locale); put("context", "wallet") }, JsonElement.serializer(), auth = false)
+    /** Who the link signs in as, without consuming it. */
+    suspend fun emailLoginPreview(token: String) =
+        send("POST", "/api/auth/email/preview", buildJsonObject { put("token", token) }, EmailLoginPreview.serializer(), auth = false)
+    /** Consumes the link: the account's hosted secret key (the account is created first for a new email). */
+    suspend fun emailLoginVerify(token: String) =
+        send("POST", "/api/auth/email/verify", buildJsonObject { put("token", token) }, EmailLoginVerify.serializer(), auth = false)
     suspend fun passkeyRegistrationOptions(label: String?) =
         send("POST", "/api/auth/passkey/registration/options", buildJsonObject { if (label != null) put("label", label) }, PasskeyOptions.serializer(), auth = false)
 
@@ -263,7 +272,7 @@ class LaWalletApi(
         /** The API's own path words; any other segment (ids, usernames, keys) is logged as `:id`. */
         private val PATH_WORDS = setOf(
             "account", "account-transfer", "activation-tokens", "addresses", "api", "auth", "balance", "card-recovery", "cards",
-            "check", "claim", "connection-string", "credentials", "currency-prefs", "dismiss", "grants", "invoices", "jwt",
+            "check", "claim", "connection-string", "credentials", "currency-prefs", "dismiss", "email", "preview", "request", "grants", "invoices", "jwt",
             "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "passkey", "primary", "profiles",
             "receive-action", "recovery-check", "registration", "remote-wallets", "settings", "users", "verify", "version", "wallet",
         )

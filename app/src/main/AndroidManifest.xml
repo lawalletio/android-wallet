@@ -65,6 +65,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="beta.lawallet.io" android:pathPrefix="/wallet/activate/" />
+                <!-- Email magic links (token in the fragment): /wallet/auth/email#token=… -->
+                <data android:path="/wallet/auth/email" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
