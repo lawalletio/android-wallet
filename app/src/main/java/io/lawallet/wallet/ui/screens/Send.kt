@@ -301,10 +301,16 @@ fun SendPreviewScreen() {
     // Unknown balance (still loading / offline) doesn't block; fees aren't quoted, so this only catches the obvious case.
     val balance by c.wallet.balance.collectAsState()
     val short = balance?.let { amount > it } == true && !paying && !done
+    val paymentGate = rememberPaymentGate()
+    val locked by c.lock.locked.collectAsState()
+    val nfcPaying by c.lock.nfcPaying.collectAsState()
+    val autoPay by c.prefs.nfcAutoPay.collectAsState()
+    var autoTried by rememberSaveable { mutableStateOf(false) }
 
     fun pay() {
         paying = true; error = null
         scope.launch {
+            if (!paymentGate(amount)) { paying = false; return@launch }
             runCatching {
                 val nwc = c.wallet.freshClient() ?: throw IllegalStateException(noWallet)
                 var sentComment = s.comment
@@ -331,6 +337,12 @@ fun SendPreviewScreen() {
                 nav.navigate(R0.SEND_SUMMARY) { popUpTo(R0.HOME) }
             }.onFailure { error = it.message ?: failed; paying = false }
         }
+    }
+
+    // An NFC-tapped invoice under the auto-pay limit pays on its own: once, and not under the lock screen
+    // (unless this payment stands in for it). The payment lock still asks.
+    LaunchedEffect(locked, nfcPaying) {
+        if (!autoTried && s.viaNfc && invoice?.amountSats != null && autoPay.enabled && amount < autoPay.maxSats && !expired && !short && (!locked || nfcPaying)) { autoTried = true; pay() }
     }
 
     Column(Modifier.fillMaxSize()) {

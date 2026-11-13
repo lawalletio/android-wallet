@@ -38,6 +38,7 @@ class AppContainer(context: Context) {
     val boltcardPay = BoltcardPay(lnurl)
     val passkeys = Passkeys({ session.api.value }, { session.instanceHost.substringBefore(':') })
     val flow = FlowStore()
+    val lock = AppLock(prefs, activityBridge)
     val onchain = OnchainStore(context.applicationContext)
     val bip39 by lazy { io.lawallet.wallet.core.btc.Bip39(context.resources.openRawResource(io.lawallet.wallet.R.raw.bip39_english).bufferedReader().readLines()) }
     val updater = Updater(context.applicationContext, http)

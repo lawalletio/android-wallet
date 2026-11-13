@@ -329,6 +329,7 @@ fun RemoteWalletDetailScreen(id: String) {
     var balance by remember { mutableStateOf<Long?>(null) }
     var connection by remember { mutableStateOf<String?>(null) }
     var showConn by remember { mutableStateOf(false) }
+    val sensitiveGate = rememberSensitiveGate()
     var toggling by remember { mutableStateOf(false) }
     var action by remember { mutableStateOf<ReceiveAction?>(null) }
     var notifications by remember { mutableStateOf<List<WalletNotification>>(emptyList()) }
@@ -383,8 +384,8 @@ fun RemoteWalletDetailScreen(id: String) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Txt(if (showConn) cs else cs.take(36) + "••••••••••••", size = 11.sp, mono = true)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LwButton(stringResource(R.string.remote_wallet_reveal), { showConn = !showConn }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_eye)
-                            LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(cs, copied) }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_copy)
+                            LwButton(stringResource(R.string.remote_wallet_reveal), { if (showConn) showConn = false else sensitiveGate { showConn = true } }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_eye)
+                            LwButton(stringResource(R.string.common_copy), { sensitiveGate { context.copyToClipboard(cs, copied) } }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_copy)
                         }
                     }
                 }

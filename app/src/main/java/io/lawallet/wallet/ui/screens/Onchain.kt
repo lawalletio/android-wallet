@@ -304,6 +304,7 @@ fun OnchainBackupScreen(id: String) {
 @Composable
 private fun PhraseStep(words: List<String>, passphrase: Boolean, fresh: Boolean, onWritten: () -> Unit, onLater: () -> Unit, onDone: () -> Unit) {
     var revealed by rememberSaveable { mutableStateOf(false) }
+    val sensitiveGate = rememberSensitiveGate()
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin, tint = Lw.Bitcoin.copy(alpha = 0.08f)).padding(14.dp)) {
@@ -328,7 +329,7 @@ private fun PhraseStep(words: List<String>, passphrase: Boolean, fresh: Boolean,
                     }
                 }
                 if (!revealed) Box(
-                    Modifier.matchParentSize().clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.25f)).clickable { revealed = true }.testTag("onchain-reveal"),
+                    Modifier.matchParentSize().clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.25f)).clickable { sensitiveGate { revealed = true } }.testTag("onchain-reveal"),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

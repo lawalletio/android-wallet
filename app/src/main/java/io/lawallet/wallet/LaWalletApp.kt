@@ -55,6 +55,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
         Notifications.createChannels(this)
         val c = container
         Diagnostics.start(this, c)
+        c.lock.install()
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {

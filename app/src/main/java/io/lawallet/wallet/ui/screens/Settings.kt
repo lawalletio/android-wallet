@@ -3,8 +3,6 @@ package io.lawallet.wallet.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -59,11 +57,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.fragment.app.FragmentActivity
 import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.R
+import io.lawallet.wallet.app.AppLock
 import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.app.Updater
 import io.lawallet.wallet.core.api.OAuthGrant
@@ -112,7 +110,7 @@ import kotlin.math.roundToInt
 import com.composables.icons.lucide.R as L
 
 @Composable
-private fun SettingsPage(title: String, content: @Composable () -> Unit) {
+internal fun SettingsPage(title: String, content: @Composable () -> Unit) {
     val nav = LocalNav.current
     Column(Modifier.fillMaxSize()) {
         SettingsHeader(title, { nav.popBackStack() }, stringResource(R.string.common_back))
@@ -139,6 +137,8 @@ fun SettingsScreen() {
                 SettingsRow(stringResource(R.string.settings_myCards), { nav.navigate(R0.CARDS) }, Modifier.testTag("settings-cards"), icon = L.drawable.lucide_ic_credit_card)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.settings_security), { nav.navigate(R0.SECURITY) }, Modifier.testTag("settings-security"), icon = L.drawable.lucide_ic_shield)
+                GroupDivider()
+                SettingsRow(stringResource(R.string.lock_title), { nav.navigate(R0.LOCKING) }, Modifier.testTag("settings-locking"), icon = L.drawable.lucide_ic_fingerprint_pattern)
             }
             SettingsGroup(stringResource(R.string.settings_preferences)) {
                 SettingsRow(stringResource(R.string.payments_title), { nav.navigate(R0.PAYMENTS) }, Modifier.testTag("settings-payments"), icon = L.drawable.lucide_ic_zap)
@@ -236,15 +236,6 @@ fun CardsScreen() {
     }
 }
 
-/** Gate the nsec reveal behind the device lock (biometric or PIN) when one is set up. */
-private fun unlock(activity: FragmentActivity, title: String, onOk: () -> Unit) {
-    val auth = BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
-    if (BiometricManager.from(activity).canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) { onOk(); return }
-    BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), object : BiometricPrompt.AuthenticationCallback() {
-        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onOk()
-    }).authenticate(BiometricPrompt.PromptInfo.Builder().setTitle(title).setAllowedAuthenticators(auth).build())
-}
-
 @Composable
 fun SecurityScreen() {
     val c = LocalContainer.current
@@ -306,7 +297,7 @@ fun SecurityScreen() {
                 MutedText(stringResource(if (method == "passkey") R.string.settings_securityScreen_passkeyKeyHint else R.string.settings_securityScreen_nsecKeyHint), size = 13.sp)
                 val secret = revealed
                 if (secret == null) LwButton(stringResource(R.string.settings_securityScreen_revealSecret), {
-                    unlock(activity, unlockTitle) { revealed = c.session.secretHex()?.let { Nip19.nsec(it) } }
+                    scope.launch { if (AppLock.authenticate(activity, unlockTitle)) revealed = c.session.secretHex()?.let { Nip19.nsec(it) } }
                 }, Modifier.fillMaxWidth().testTag("reveal-secret"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_key_round)
                 else SecretKeyReveal(secret, null, null)
             }
@@ -656,6 +647,8 @@ fun FeedbackScreen() {
 fun PaymentsScreen() {
     val c = LocalContainer.current
     val slide by c.prefs.slideToPay.collectAsState()
+    val auto by c.prefs.nfcAutoPay.collectAsState()
+    var maxText by remember { mutableStateOf(auto.maxSats.toString()) }
     SettingsPage(stringResource(R.string.payments_title)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup {
@@ -664,6 +657,18 @@ fun PaymentsScreen() {
                 }
             }
             MutedText(stringResource(R.string.slide_to_pay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+            Spacer(Modifier.height(16.dp))
+            SettingsGroup {
+                SettingsRow(stringResource(R.string.nfc_autopay_title), { c.prefs.setNfcAutoPay(auto.copy(enabled = !auto.enabled)) }, icon = L.drawable.lucide_ic_nfc) {
+                    Switch(auto.enabled, { c.prefs.setNfcAutoPay(auto.copy(enabled = it)) }, Modifier.testTag("nfc-autopay"), colors = lwSwitchColors())
+                }
+                if (auto.enabled) OutlinedTextField(maxText, { v ->
+                    maxText = v.filter(Char::isDigit).take(10)
+                    c.prefs.setNfcAutoPay(auto.copy(maxSats = maxText.toLongOrNull() ?: 0))
+                }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp).testTag("nfc-autopay-max"), label = { Txt(stringResource(R.string.nfc_autopay_max)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = lwFieldColors())
+            }
+            MutedText(stringResource(R.string.nfc_autopay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
             Spacer(Modifier.height(16.dp))
             PaymentSoundGroup()
         }
