@@ -1,0 +1,45 @@
+name: Zapstore
+# Publishes each GitHub release to Zapstore with zsp (zapstore.yaml + fastlane/metadata), signed by the
+# maintainer's NIP-46 remote signer. Needs the ZAPSTORE_BUNKER secret: the signer's bunker:// string.
+on:
+  # The Release workflow creates its release with GITHUB_TOKEN, and events made with that token start no
+  # workflows, so `release` alone would never fire for tagged releases: follow the workflow instead.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  # Releases published by hand.
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# One publish at a time; zsp exits 0 when the release is already on Zapstore.
+concurrency:
+  group: zapstore
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    # The signer may wait for approval (nsec.app asks on a new connection): don't hang for hours.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: Install zsp
+        run: go install github.com/zapstore/zsp@v0.4.14
+      - name: Publish
+        env:
+          SIGN_WITH: ${{ secrets.ZAPSTORE_BUNKER }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$SIGN_WITH" ]; then echo "::error::Add the ZAPSTORE_BUNKER secret (the signer's bunker:// string)"; exit 1; fi
+          "$(go env GOPATH)/bin/zsp" publish --quiet zapstore.yaml
