@@ -53,6 +53,8 @@ import io.lawallet.wallet.core.ln.Bolt11
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.core.ln.DestinationException
 import io.lawallet.wallet.core.ln.DestinationParser
+import io.lawallet.wallet.core.nwc.NwcClient
+import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.core.store.Contact
 import io.lawallet.wallet.core.store.PaymentDestination
 import io.lawallet.wallet.ui.LocalContainer
@@ -116,6 +118,10 @@ suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination,
                 R0.SEND_PREVIEW
             } else R0.SEND_AMOUNT
         }
+        is Destination.Wallet -> {
+            c.flow.send = c.flow.send.copy(recipientLabel = dest.name)
+            R0.SEND_AMOUNT
+        }
         is Destination.Npub -> throw DestinationException("unsupported", "Paying a Nostr profile is not supported yet")
     }
 }
@@ -132,6 +138,7 @@ fun SendRecipientScreen() {
     val contacts = remember { c.prefs.contacts }
     val invalid = stringResource(R.string.send_invalidRecipient)
     fun submit(value: String = input) {
+        if (loading) return
         loading = true; error = null
         scope.launch {
             runCatching { startSend(c, DestinationParser.parse(value)) }
@@ -149,24 +156,24 @@ fun SendRecipientScreen() {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Txt(stringResource(R.string.send_to), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
             OutlinedTextField(
-                input, { input = it; error = null }, Modifier.fillMaxWidth().testTag("recipient-input"),
+                input, { input = it; error = null }, Modifier.fillMaxWidth().testTag("recipient-input"), enabled = !loading,
                 placeholder = { Txt("satoshi@lawallet.io", color = Lw.MutedFg) },
                 singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { if (input.isNotBlank()) submit() }),
                 trailingIcon = {
                     Row {
-                        Box(Modifier.size(40.dp).testTag("recipient-paste").clickable {
+                        Box(Modifier.size(40.dp).testTag("recipient-paste").clickable(enabled = !loading) {
                             val clip = context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
                             if (!clip.isNullOrBlank()) { input = clip; submit(clip) }
                         }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 20.dp, tint = Lw.MutedFg) }
-                        Box(Modifier.size(40.dp).clickable { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                        Box(Modifier.size(40.dp).clickable(enabled = !loading) { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
                     }
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
-            if (suggestions.isNotEmpty()) AddressGroup(stringResource(R.string.shared_addressInput_suggestions), suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }) { input = it; submit(it) }
-            if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { input = it; submit(it) }
+            if (suggestions.isNotEmpty()) AddressGroup(stringResource(R.string.shared_addressInput_suggestions), suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }) { if (!loading) { input = it; submit(it) } }
+            if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { if (!loading) { input = it; submit(it) } }
         }
         LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
     }
@@ -188,6 +195,12 @@ private fun AddressGroup(title: String, items: List<Pair<String, String>>, onPic
     }
 }
 
+private fun kindLabel(d: Destination?) = when (d) {
+    is Destination.Invoice -> R.string.send_kind_invoice
+    is Destination.Wallet -> R.string.send_kind_wallet
+    else -> R.string.send_kind_address
+}
+
 /** Recipient card used by amount + preview steps. */
 @Composable
 private fun RecipientCard(s: FlowStore.Send) {
@@ -195,11 +208,11 @@ private fun RecipientCard(s: FlowStore.Send) {
         Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
             val img = s.meta?.imageDataUri
             if (img != null) AsyncImage(img, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-            else LwIcon(if (s.destination is Destination.Invoice) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_at_sign, size = 18.dp, tint = Lw.MutedFg)
+            else LwIcon(when (s.destination) { is Destination.Invoice -> L.drawable.lucide_ic_zap; is Destination.Wallet -> L.drawable.lucide_ic_wallet; else -> L.drawable.lucide_ic_at_sign }, size = 18.dp, tint = Lw.MutedFg)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Txt(stringResource(if (s.destination is Destination.Invoice) R.string.send_kind_invoice else R.string.send_kind_address), size = 12.sp, color = Lw.MutedFg)
+            Txt(stringResource(kindLabel(s.destination)), size = 12.sp, color = Lw.MutedFg)
             Txt(s.recipientLabel ?: (s.bolt11?.take(18)?.plus("…") ?: ""), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
         }
     }
@@ -273,6 +286,8 @@ fun SendPreviewScreen() {
     var error by remember { mutableStateOf<String?>(null) }
     val noWallet = stringResource(R.string.send_preview_noWallet)
     val failed = stringResource(R.string.send_preview_paymentFailed)
+    // The invoice description is what both wallets' activity shows.
+    val transferTo = stringResource(R.string.transfer_to, s.recipientLabel ?: "")
     val amount = s.amountSats
     if (s.destination == null || amount == null) { LaunchedEffect(Unit) { nav.navigate(R0.SEND) { popUpTo(R0.SEND) { inclusive = true } } }; return }
     val invoice = s.destination as? Destination.Invoice
@@ -295,6 +310,9 @@ fun SendPreviewScreen() {
                 val (invoice, amountMsat) = when (val d = s.destination) {
                     is Destination.Invoice -> d.bolt11 to (if (d.amountSats == null) amount * 1000 else null)
                     is Destination.LnurlPay -> c.lnurl.requestInvoice(d.lnurlpUrl, amount, s.comment).also { sentComment = it.comment }.paymentRequest to null
+                    is Destination.Wallet -> c.session.api.value.remoteWalletConnectionString(d.id).let { uri ->
+                        NwcClient(NwcUri.parse(uri), c.http).makeInvoice(amount * 1000, transferTo).invoice ?: throw IllegalStateException(failed)
+                    } to null
                     else -> throw IllegalStateException(failed)
                 }
                 val res = nwc.payInvoice(invoice, amountMsat)
@@ -344,7 +362,7 @@ fun SendPreviewScreen() {
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (invoice?.description.isNullOrBlank()) PreviewRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
                 else PreviewRow(stringResource(R.string.send_preview_description), invoice!!.description!!)
-                PreviewRow(stringResource(R.string.send_preview_type), stringResource(if (s.destination is Destination.Invoice) R.string.send_kind_invoice else R.string.send_kind_address))
+                PreviewRow(stringResource(R.string.send_preview_type), stringResource(kindLabel(s.destination)))
                 s.comment?.let { PreviewRow(stringResource(R.string.send_note), it) }
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

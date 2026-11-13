@@ -30,6 +30,8 @@ import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
 import io.lawallet.wallet.ui.components.autoFocus
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
@@ -130,24 +132,16 @@ fun SettingsScreen() {
     var confirm by remember { mutableStateOf(false) }
     val bg by c.prefs.backgroundListener.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(stringResource(R.string.settings_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.settings_title), { nav.popBackStack() }, stringResource(R.string.common_back)) { LanguageMenu() }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             SettingsGroup(stringResource(R.string.settings_account)) {
                 SettingsRow(stringResource(R.string.settings_myCards), { nav.navigate(R0.CARDS) }, Modifier.testTag("settings-cards"), icon = L.drawable.lucide_ic_credit_card)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.settings_security), { nav.navigate(R0.SECURITY) }, Modifier.testTag("settings-security"), icon = L.drawable.lucide_ic_shield)
-                GroupDivider()
-                SettingsRow(stringResource(R.string.settings_remoteWallets), { nav.navigate(R0.REMOTE_WALLETS) }, Modifier.testTag("settings-wallets"), icon = L.drawable.lucide_ic_wallet)
             }
             SettingsGroup(stringResource(R.string.settings_preferences)) {
-                SettingsRow(stringResource(R.string.settings_language), { nav.navigate(R0.LANGUAGE) }, icon = L.drawable.lucide_ic_languages)
-                GroupDivider()
-                SettingsRow(stringResource(R.string.settings_currencies), { nav.navigate(R0.CURRENCIES) }, Modifier.testTag("settings-currencies"), icon = L.drawable.lucide_ic_globe)
-                GroupDivider()
                 SettingsRow(stringResource(R.string.payments_title), { nav.navigate(R0.PAYMENTS) }, Modifier.testTag("settings-payments"), icon = L.drawable.lucide_ic_zap)
-                GroupDivider()
-                SettingsRow(stringResource(R.string.settings_paymentSound), { nav.navigate(R0.SOUND) }, icon = L.drawable.lucide_ic_volume_2)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.bg_listener_title), { c.prefs.setBackgroundListener(!bg) }, icon = L.drawable.lucide_ic_bell) {
                     Switch(bg, { c.prefs.setBackgroundListener(it) }, colors = lwSwitchColors())
@@ -156,10 +150,6 @@ fun SettingsScreen() {
                 SettingsRow(stringResource(R.string.instance_title), { nav.navigate(R0.INSTANCE) }, Modifier.testTag("settings-instance"), icon = L.drawable.lucide_ic_server, value = c.session.instanceHost)
             }
             SettingsGroup(stringResource(R.string.settings_support)) {
-                SettingsRow(stringResource(R.string.settings_helpCenter), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.lawallet.io"))) }, icon = L.drawable.lucide_ic_info, external = true)
-                GroupDivider()
-                SettingsRow(stringResource(R.string.settings_reportBug), { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/issues"))) }, icon = L.drawable.lucide_ic_circle_alert, external = true)
-                GroupDivider()
                 // NIP-04 needs the raw key: Amber logins don't get the row.
                 if (c.session.secretHex() != null) {
                     SettingsRow(stringResource(R.string.feedback_title), { nav.navigate(R0.FEEDBACK) }, Modifier.testTag("settings-feedback"), icon = L.drawable.lucide_ic_message_square)
@@ -429,19 +419,26 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf(pk.label ?: "") }
     var deleting by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    // Runs [call]; the field and actions stay locked until it answers.
+    fun submit(call: suspend () -> Unit) {
+        if (saving) return
+        saving = true
+        scope.launch { runCatching { call() }.onSuccess { onDone(true) }.onFailure { saving = false; context.toast(it.message ?: "") } }
+    }
     LwAlertDialog(
-        onDismissRequest = { onDone(false) },
+        onDismissRequest = { if (!saving) onDone(false) },
         title = { Txt(stringResource(if (deleting) (if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyTitle else R.string.settings_passkeysScreen_deleteTitle) else R.string.settings_passkeysScreen_manage), size = 16.sp, weight = FontWeight.SemiBold) },
         text = {
             if (deleting) Txt(stringResource(if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyBody else R.string.settings_passkeysScreen_deleteBody), color = Lw.MutedFg)
-            else OutlinedTextField(label, { label = it.take(64) }, Modifier.autoFocus(), label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
+            else OutlinedTextField(label, { label = it.take(64) }, Modifier.autoFocus(), enabled = !saving, label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
         },
         confirmButton = {
-            if (deleting) ModalAction(stringResource(R.string.settings_passkeysScreen_deleteConfirm), { scope.launch { runCatching { c.session.api.value.deletePasskey(pk.id) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }, destructive = true)
+            if (deleting) ModalAction(stringResource(R.string.settings_passkeysScreen_deleteConfirm), { submit { c.session.api.value.deletePasskey(pk.id) } }, loading = saving, destructive = true)
             else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                ModalAction(stringResource(R.string.settings_passkeysScreen_saveName), { scope.launch { runCatching { c.session.api.value.renamePasskey(pk.id, label) }.onSuccess { onDone(true) }.onFailure { context.toast(it.message ?: "") } } }, enabled = label.isNotBlank())
+                ModalAction(stringResource(R.string.settings_passkeysScreen_saveName), { submit { c.session.api.value.renamePasskey(pk.id, label) } }, enabled = label.isNotBlank(), loading = saving)
                 // Deleting is a second step (confirmed above), so it stays a quiet link under the main action.
-                TextButton({ deleting = true }, Modifier.padding(top = 4.dp)) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
+                TextButton({ deleting = true }, Modifier.padding(top = 4.dp), enabled = !saving) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
             }
         },
         containerColor = Glass.Dialog,
@@ -510,33 +507,54 @@ fun CurrenciesScreen() {
     }
 }
 
+/** Settings' top-right language picker: a glass pill with the current language, its options in a dropdown. */
 @Composable
-fun LanguageScreen() {
+private fun LanguageMenu() {
     val current = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" }
     var selected by remember { mutableStateOf(current) }
+    var open by remember { mutableStateOf(false) }
     val deviceLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    SettingsPage(stringResource(R.string.settings_language)) {
-        SettingsGroup {
-            listOf("auto" to stringResource(R.string.settings_languageScreen_automatic), "en" to "English", "es" to "Español").forEachIndexed { i, (tag, label) ->
-                if (i > 0) GroupDivider()
-                SettingsRow(label, {
-                    selected = tag
-                    AppCompatDelegate.setApplicationLocales(if (tag == "auto") LocaleListCompat.getEmptyLocaleList() else LocaleListCompat.forLanguageTags(tag))
-                }, value = if (tag == "auto") deviceLocale.displayLanguage else null) {
-                    RadioButton(selected == tag, null, colors = RadioButtonDefaults.colors(selectedColor = LocalBrand.current.t400))
-                }
+    val options = listOf("auto" to stringResource(R.string.settings_languageScreen_automatic), "en" to "English", "es" to "Español")
+    Box {
+        Row(
+            Modifier.height(40.dp).glass(CircleShape).clickable { open = true }.padding(start = 12.dp, end = 10.dp).testTag("settings-language"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LwIcon(L.drawable.lucide_ic_languages, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Txt(if (selected == "auto") stringResource(R.string.settings_languageScreen_automatic) else selected.uppercase(), size = 14.sp, weight = FontWeight.SemiBold)
+            Spacer(Modifier.width(4.dp))
+            LwIcon(L.drawable.lucide_ic_chevron_down, size = 16.dp, tint = Lw.MutedFg)
+        }
+        DropdownMenu(open, { open = false }, containerColor = Glass.Dialog, shape = RoundedCornerShape(16.dp)) {
+            options.forEach { (tag, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Txt(label, size = 15.sp, weight = if (tag == selected) FontWeight.SemiBold else FontWeight.Normal)
+                            if (tag == "auto") Txt(deviceLocale.displayLanguage, size = 12.sp, color = Lw.MutedFg)
+                        }
+                    },
+                    onClick = {
+                        open = false; selected = tag
+                        AppCompatDelegate.setApplicationLocales(if (tag == "auto") LocaleListCompat.getEmptyLocaleList() else LocaleListCompat.forLanguageTags(tag))
+                    },
+                    trailingIcon = { if (tag == selected) LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = LocalBrand.current.t400) },
+                    modifier = Modifier.testTag("language-$tag"),
+                )
             }
         }
     }
 }
 
+/** The payment sound choice (tapping one also previews it); lives on the Payments page. */
 @Composable
-fun PaymentSoundScreen() {
+private fun PaymentSoundGroup() {
     val c = LocalContainer.current
     val context = LocalContext.current
     val sound by c.prefs.paymentSound.collectAsState()
-    SettingsPage(stringResource(R.string.settings_paymentSound)) {
-        SettingsGroup(stringResource(R.string.settings_paymentSoundScreen_successful)) {
+    run {
+        SettingsGroup(stringResource(R.string.settings_paymentSound)) {
             listOf(
                 "chime" to (R.string.settings_paymentSoundScreen_sounds_chime_label to R.string.settings_paymentSoundScreen_sounds_chime_description),
                 "bananero" to (R.string.settings_paymentSoundScreen_sounds_bananero_label to R.string.settings_paymentSoundScreen_sounds_bananero_description),
@@ -580,7 +598,7 @@ fun InstanceScreen() {
         Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             MutedText(stringResource(R.string.instance_description))
             SettingsGroup { SettingsRow(stringResource(R.string.instance_current), null, value = c.session.instanceUrl) }
-            OutlinedTextField(url, { url = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("instance-input"), label = { Txt(stringResource(R.string.instance_url)) }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
+            OutlinedTextField(url, { url = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("instance-input"), enabled = !loading, label = { Txt(stringResource(R.string.instance_url)) }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             ErrorText(error, Modifier.fillMaxWidth())
             if (c.session.instanceUrl != BuildConfig.DEFAULT_INSTANCE) LwButton(stringResource(R.string.instance_reset, BuildConfig.DEFAULT_INSTANCE.removePrefix("https://")), { url = BuildConfig.DEFAULT_INSTANCE; switch(BuildConfig.DEFAULT_INSTANCE) }, Modifier.fillMaxWidth(), BtnVariant.Ghost)
@@ -619,7 +637,7 @@ fun FeedbackScreen() {
         SettingsHeader(stringResource(R.string.feedback_title), { nav.popBackStack() }, stringResource(R.string.common_back))
         Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             MutedText(stringResource(R.string.feedback_description))
-            OutlinedTextField(text, { text = it; error = null }, Modifier.fillMaxWidth().weight(1f).testTag("feedback-input"), placeholder = { Txt(stringResource(R.string.feedback_placeholder), color = Lw.MutedFg) }, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
+            OutlinedTextField(text, { text = it; error = null }, Modifier.fillMaxWidth().weight(1f).testTag("feedback-input"), enabled = !loading, placeholder = { Txt(stringResource(R.string.feedback_placeholder), color = Lw.MutedFg) }, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
             ErrorText(error, Modifier.fillMaxWidth())
         }
         LwButton(stringResource(R.string.feedback_send), {
@@ -646,6 +664,8 @@ fun PaymentsScreen() {
                 }
             }
             MutedText(stringResource(R.string.slide_to_pay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+            Spacer(Modifier.height(16.dp))
+            PaymentSoundGroup()
         }
     }
 }

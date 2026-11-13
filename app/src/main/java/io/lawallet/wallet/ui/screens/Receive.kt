@@ -163,7 +163,7 @@ fun ReceiveAmountScreen() {
                 if (code != "SAT") MutedText(stringResource(R.string.common_sats, Currencies.formatSats(sats ?: 0)))
                 CurrencyToggle(currencies.active, code, { next -> raw = Currencies.inputFromSats(sats, next, rates); code = next })
             }
-            OutlinedTextField(note, { note = it.take(140) }, Modifier.fillMaxWidth(), placeholder = { Txt(stringResource(R.string.receive_notePlaceholder), color = Lw.MutedFg) }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
+            OutlinedTextField(note, { note = it.take(140) }, Modifier.fillMaxWidth(), enabled = !loading, placeholder = { Txt(stringResource(R.string.receive_notePlaceholder), color = Lw.MutedFg) }, singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
             AmountKeypad(raw, { raw = it }, Currencies.keypadMode(code), Modifier.weight(1f).fillMaxWidth(), enabled = !loading)
             ErrorText(error, Modifier.fillMaxWidth())
         }

@@ -223,7 +223,7 @@ fun ProfileScreen() {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val bannerH = (maxWidth - 24.dp) / 3f
                 Cover(
-                    url = profile?.banner, slot = banner, editing = editing,
+                    url = profile?.banner, slot = banner, editing = editing && !saving, // pickers lock while saving
                     onPick = { if (banner.failed) upload(banner) else pick(CropShape.Banner) },
                     modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(bannerH),
                 )
@@ -236,7 +236,7 @@ fun ProfileScreen() {
                     )
                 }
                 Avatar(
-                    url = avatarUrl, slot = avatar, editing = editing,
+                    url = avatarUrl, slot = avatar, editing = editing && !saving, // pickers lock while saving
                     onPick = { if (avatar.failed) upload(avatar) else pick(CropShape.Avatar) },
                     modifier = Modifier.padding(start = 28.dp, top = bannerH - AvatarSize / 2),
                 )
@@ -264,7 +264,7 @@ fun ProfileScreen() {
                     },
                     label = "profile-body",
                 ) { e ->
-                    if (e) EditForm(displayName, { displayName = it }, name, { name = it }, about, { about = it }, saveError)
+                    if (e) EditForm(displayName, { displayName = it }, name, { name = it }, about, { about = it }, saveError, enabled = !saving)
                     else Column {
                         RiseIn(0) {
                             Details(
@@ -433,13 +433,13 @@ private fun Details(displayName: String?, handle: String?, nip05: String?, about
 }
 
 @Composable
-private fun EditForm(displayName: String, onDisplayName: (String) -> Unit, name: String, onName: (String) -> Unit, about: String, onAbout: (String) -> Unit, error: String?) {
+private fun EditForm(displayName: String, onDisplayName: (String) -> Unit, name: String, onName: (String) -> Unit, about: String, onAbout: (String) -> Unit, error: String?, enabled: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         val shape = RoundedCornerShape(14.dp)
-        OutlinedTextField(displayName, { onDisplayName(it.take(64)) }, Modifier.fillMaxWidth().testTag("profile-displayName"), label = { Txt(stringResource(R.string.profile_displayName)) }, singleLine = true, shape = shape, colors = lwFieldColors())
-        OutlinedTextField(name, { onName(it.take(32).replace(" ", "")) }, Modifier.fillMaxWidth().testTag("profile-username"), label = { Txt(stringResource(R.string.profile_username)) }, prefix = { Txt("@", color = Lw.MutedFg) }, singleLine = true, shape = shape, colors = lwFieldColors())
+        OutlinedTextField(displayName, { onDisplayName(it.take(64)) }, Modifier.fillMaxWidth().testTag("profile-displayName"), enabled = enabled, label = { Txt(stringResource(R.string.profile_displayName)) }, singleLine = true, shape = shape, colors = lwFieldColors())
+        OutlinedTextField(name, { onName(it.take(32).replace(" ", "")) }, Modifier.fillMaxWidth().testTag("profile-username"), enabled = enabled, label = { Txt(stringResource(R.string.profile_username)) }, prefix = { Txt("@", color = Lw.MutedFg) }, singleLine = true, shape = shape, colors = lwFieldColors())
         OutlinedTextField(
-            about, { onAbout(it.take(500)) }, Modifier.fillMaxWidth().testTag("profile-aboutField"), label = { Txt(stringResource(R.string.profile_about)) },
+            about, { onAbout(it.take(500)) }, Modifier.fillMaxWidth().testTag("profile-aboutField"), enabled = enabled, label = { Txt(stringResource(R.string.profile_about)) },
             placeholder = { Txt(stringResource(R.string.profile_aboutHint), color = Lw.MutedFg) }, minLines = 3, maxLines = 8, shape = shape, colors = lwFieldColors(),
             supportingText = { Txt("${about.length}/500", Modifier.fillMaxWidth(), size = 11.sp, color = Lw.MutedFg, align = androidx.compose.ui.text.style.TextAlign.End) },
         )

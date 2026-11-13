@@ -1,6 +1,12 @@
 package io.lawallet.wallet.ui.screens
 
 import android.os.Build
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.rememberCoroutineScope
@@ -90,6 +96,7 @@ import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.fx.Rates
 import io.lawallet.wallet.ui.components.LwIcon
+import io.lawallet.wallet.ui.components.WalletMark
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
@@ -180,6 +187,9 @@ internal class HomeReveal {
      * carries on into lifting the activity, and lowering the activity never carries on into the wallets.
      * From the middle, the first direction picks the layer (down = wallets, up = activity).
      */
+    /** A finger is down on the wallet list: it scrolls first, and only its leftover moves the reveal. */
+    var inList = false
+
     private fun ownerFor(dy: Float) = owner ?: when {
         progress > 0f -> Owner.Reveal
         sheetProgress() > 0f -> Owner.Other
@@ -190,7 +200,7 @@ internal class HomeReveal {
     /** On Home's root. */
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            if (source != NestedScrollSource.UserInput || available.y == 0f || ownerFor(available.y) != Owner.Reveal) return Offset.Zero
+            if (source != NestedScrollSource.UserInput || available.y == 0f || ownerFor(available.y) != Owner.Reveal || inList) return Offset.Zero
             // While the swipe is ours, up-drags close the wallets and the rest is swallowed: the sheet never lifts.
             if (available.y < 0f) { dragBy(available.y); return Offset(0f, available.y) }
             return Offset.Zero
@@ -241,6 +251,8 @@ internal fun WalletsReveal(
     onSweepTo: (RemoteWallet) -> Unit = {},
     onSweepCancel: () -> Unit = {},
     onRename: (RemoteWallet, String) -> Unit = { _, _ -> },
+    onTransfer: (RemoteWallet) -> Unit = {},
+    onDelete: (RemoteWallet, Long?) -> Unit = { _, _ -> },
 ) {
     val top = reveal.headerBottom - reveal.rootTop
     val bottom = reveal.maxLanding - reveal.rootTop
@@ -296,33 +308,66 @@ internal fun WalletsReveal(
             }
             else -> {
                 val sorted = wallets.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
+                // Opens scrolled to the end, where the primary sits right above the balance.
+                val listState = rememberLazyListState(sorted.lastIndex)
                 LazyColumn(
-                    Modifier.fillMaxWidth().nestedScroll(reveal.listConnection),
+                    // Shrinks (and scrolls) before it pushes the total out of the room.
+                    Modifier.weight(1f, fill = false).fillMaxWidth().nestedScroll(reveal.listConnection).pointerInput(reveal) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            reveal.inList = true
+                            try { do { val e = awaitPointerEvent(PointerEventPass.Initial) } while (e.changes.any { it.pressed }) }
+                            finally { reveal.inList = false }
+                        }
+                    },
+                    state = listState,
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     itemsIndexed(sorted, key = { _, w -> w.id }) { i, w ->
                         Box(
                             Modifier.animateItem(placementSpec = spring(0.8f, Spring.StiffnessMediumLow)).graphicsLayer {
-                                // The deck fans out from under the header, one card a beat after the other.
+                                // The deck rides down on top of the balance: shifted up by the travel the balance has
+                                // left, so the primary sits right above the moving figure from its first frame and
+                                // the cards slide out from under the header. At rest (open) the shift is zero.
                                 val d = sorted.size - 1 - i // the primary (nearest the balance) leads
                                 val t = smooth(0.12f + d * 0.06f, 0.7f + d * 0.06f, reveal.progress)
                                 alpha = t
-                                translationY = (1f - t) * -(18.dp.toPx() * (d + 1))
+                                translationY = -(1f - reveal.progress) * reveal.range - (1f - t) * 12.dp.toPx() * d
                                 val s = 0.92f + 0.08f * t
                                 scaleX = s; scaleY = s
+                                transformOrigin = TransformOrigin(0.5f, 1f) // grow from the bottom edge: it stays on the balance
                             },
                         ) {
                             WalletRevealCard(
                                 w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
                                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
-                                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) },
+                                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
                             )
                         }
                     }
                 }
+                if (sorted.size > 1) WalletsTotal(sorted.filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal)
             }
         }
+    }
+}
+
+/** Bottom right of the list: every active wallet's balance summed, rolling like the cards as figures arrive. */
+@Composable
+private fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boolean, reveal: HomeReveal) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp)
+            .graphicsLayer {
+                alpha = smooth(0.5f, 1f, reveal.progress)
+                translationY = -(1f - reveal.progress) * reveal.range // moves with the deck
+            }.testTag("home-wallets-total"),
+        horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.Bottom,
+    ) {
+        Txt(stringResource(R.string.send_preview_total), Modifier.padding(end = 8.dp, bottom = 2.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        if (hidden) Txt("•••••", size = CARD_FIGURE, weight = FontWeight.SemiBold)
+        else Odometer(Currencies.formatBalance(sats, code, rates), Modifier, CARD_FIGURE, 0.sp, Lw.Foreground, fromZero = false, lineHeight = 24.sp)
+        Txt(Currencies.unitLabel(code), Modifier.padding(start = 4.dp, bottom = 2.dp), size = 13.sp, color = Lw.MutedFg)
     }
 }
 
@@ -335,7 +380,7 @@ internal fun WalletsReveal(
 private fun WalletRevealCard(
     w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
     reveal: HomeReveal, onOpen: () -> Unit, onSetPrimary: () -> Unit,
-    sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit, onRename: (String) -> Unit,
+    sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit, onRename: (String) -> Unit, onTransfer: () -> Unit, onDelete: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -349,9 +394,9 @@ private fun WalletRevealCard(
     val target = picking && !isSource && w.status == "ACTIVE"
     val sel by animateFloatAsState(if (if (picking) target else w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
     val pulse = if (target) rememberInfiniteTransition(label = "pick").animateFloat(0.35f, 0.85f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "ring").value else 0.6f
-    val accent = lerp(Lw.MutedFg, if (lncurl) Lw.Gold else Lw.NwcPurple, sel)
+    val accent = lerp(Lw.MutedFg, if (lncurl) Lw.LncurlGreen else Lw.NwcPurple, sel)
     val shape = RoundedCornerShape(24.dp)
-    val rest = if (isSource) 0.35f else if (active) 0.55f else 0.35f
+    val rest = if (isSource) 0.35f else if (active) 0.7f else 0.35f
     Box {
     Row(
         Modifier.fillMaxWidth()
@@ -379,7 +424,7 @@ private fun WalletRevealCard(
                 .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel)))),
             contentAlignment = Alignment.Center,
         ) {
-            LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 20.dp, tint = accent)
+            WalletMark(lncurl, 20.dp)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -402,7 +447,7 @@ private fun WalletRevealCard(
                 loading -> Spinner(16.dp, Lw.MutedFg)
                 balance != null -> {
                     val m = Modifier
-                        // The primary's figure is where the ghost lands: measured at rest, revealed as it arrives.
+                        // The primary's figure is where the ghost lands: tracked live as the card rides down, revealed as it arrives.
                         .then(if (w.isDefault) Modifier.onGloballyPositioned { reveal.target = it.rootRect() } else Modifier)
                         .graphicsLayer { if (w.isDefault) alpha = 0.15f + 0.85f * smooth(0.78f, 1f, reveal.progress) }
                         .testTag("home-wallet-balance-${w.name}")
@@ -418,8 +463,10 @@ private fun WalletRevealCard(
         w, if (hidden || balance == null) null else Currencies.formatBalance(balance, code, rates),
         canSweep = active && (balance ?: 0L) > 0L,
         onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep,
-        onSetPrimary = if (active && !w.isDefault) onSetPrimary else null,
         onRename = { renaming = true },
+        // Paid from the primary, so the primary can't be its own destination.
+        onTransfer = if (active && !w.isDefault) onTransfer else null,
+        onDelete = onDelete,
     )
     if (renaming) TextPrompt(stringResource(R.string.rw_rename), w.name, onDismiss = { renaming = false }) { v ->
         renaming = false
@@ -467,6 +514,21 @@ internal fun BalanceGhost(reveal: HomeReveal, text: String, size: TextUnit) {
     ) {
         Txt(text, size = size, weight = FontWeight.SemiBold, color = Lw.Foreground, lineHeight = 60.sp, letterSpacing = (-1.5).sp, maxLines = 1)
     }
+}
+
+/** Two soft chevrons nudging down above the balance: says the wallet list is a swipe away; gone as soon as it opens. */
+@Composable
+internal fun SwipeHint(reveal: HomeReveal, modifier: Modifier = Modifier) {
+    val bob by rememberInfiniteTransition(label = "hint").animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bob")
+    LwIcon(
+        L.drawable.lucide_ic_chevrons_down,
+        modifier.graphicsLayer {
+            translationY = bob * 9.dp.toPx()
+            scaleX = 1.8f // wide and flat: a soft "pull" cue rather than a button
+            alpha = (0.45f + 0.2f * bob) * (1f - smooth(0f, 0.15f, reveal.progress))
+        }.testTag("home-swipe-hint"),
+        size = 36.dp, tint = Lw.MutedFg,
+    )
 }
 
 /** Measures [this] node at rest in root space (before any reveal translation applied after it). */
@@ -538,12 +600,12 @@ private fun SweepPickBanner(onCancel: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onSetPrimary: (() -> Unit)?, onRename: () -> Unit) {
+private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onRename: () -> Unit, onTransfer: (() -> Unit)?, onDelete: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
     val lncurl = w.provider == "lncurl"
-    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
+    val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
     ModalBottomSheet(
         onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
@@ -555,7 +617,7 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
             Box(
                 Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.36f), accent.copy(alpha = 0.10f)))),
                 contentAlignment = Alignment.Center,
-            ) { LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 24.dp, tint = accent) }
+            ) { WalletMark(lncurl, 24.dp) }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)
@@ -563,22 +625,22 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
             }
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
-        // Only for active wallets that aren't the primary already.
-        if (onSetPrimary != null) SheetAction(L.drawable.lucide_ic_circle_check, stringResource(R.string.remoteWallets_list_setPrimary), brand.t400, "home-wallet-menu-primary") { then(onSetPrimary) }
-        SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "home-wallet-menu-rename") { then(onRename) }
         SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "home-wallet-menu-details") { then(onDetails) }
+        SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "home-wallet-menu-rename") { then(onRename) }
+        if (onTransfer != null) SheetAction(L.drawable.lucide_ic_arrow_down_left, stringResource(R.string.transfer_menu), brand.t400, "home-wallet-menu-transfer") { then(onTransfer) }
         if (canSweep) SheetAction(L.drawable.lucide_ic_arrow_right_left, stringResource(R.string.sweep_menu), brand.t400, "home-wallet-menu-sweep") { then(onSweep) }
+        SheetAction(L.drawable.lucide_ic_trash_2, stringResource(R.string.rw_delete), Lw.Red, "home-wallet-menu-delete", Lw.Red) { then(onDelete) }
         Spacer(Modifier.height(16.dp).navigationBarsPadding())
     }
 }
 
 @Composable
-private fun SheetAction(icon: Int, label: String, tint: Color, tag: String, onClick: () -> Unit) =
+private fun SheetAction(icon: Int, label: String, tint: Color, tag: String, labelColor: Color = Lw.Foreground, onClick: () -> Unit) =
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 16.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LwIcon(icon, size = 22.dp, tint = tint)
         Spacer(Modifier.width(18.dp))
-        Txt(label, size = 16.sp, weight = FontWeight.Medium)
+        Txt(label, size = 16.sp, weight = FontWeight.Medium, color = labelColor)
     }

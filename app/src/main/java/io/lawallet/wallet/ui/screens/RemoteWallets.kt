@@ -30,6 +30,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.border
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -69,6 +73,8 @@ import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.GroupDivider
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
+import io.lawallet.wallet.ui.components.WalletMark
+import androidx.compose.ui.draw.alpha
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.SettingsGroup
 import io.lawallet.wallet.ui.components.SettingsHeader
@@ -93,8 +99,32 @@ internal val remoteWalletsSer = ListSerializer(RemoteWallet.serializer())
  * Refreshes the remote wallets (cached under "remote-wallets", passed to [onList]) then each ACTIVE one's
  * balance into [balances] (null = unavailable). Offline, balances load for the cached list. False if the list failed.
  */
+/**
+ * There's always a primary while any wallet is active: when it's paused or deleted, the most recently
+ * primary wallet that's still active takes over (else the first active one). Returns the list as it now stands.
+ */
+internal suspend fun ensurePrimary(c: AppContainer, list: List<RemoteWallet>): List<RemoteWallet> {
+    list.firstOrNull { it.isDefault && it.status == "ACTIVE" }?.let { c.prefs.notePrimary(it.id); return list }
+    val pick = nextPrimary(list, c.prefs.primaryHistory) ?: return list
+    runCatching { c.session.api.value.updateRemoteWallet(pick.id, isDefault = true) }.getOrElse { return list }
+    c.prefs.notePrimary(pick.id)
+    runCatching { c.session.refreshMe() } // the app's wallet connection follows the new primary
+    return list.map { it.copy(isDefault = it.id == pick.id) }
+}
+
+/** Who takes over from a primary that's gone: the latest past primary still active, else the first active wallet. */
+internal fun nextPrimary(list: List<RemoteWallet>, history: List<String>): RemoteWallet? {
+    val active = list.filter { it.status == "ACTIVE" }
+    return history.firstNotNullOfOrNull { id -> active.find { it.id == id } } ?: active.firstOrNull()
+}
+
+/** Re-reads the list and fixes the primary: after a wallet is paused or deleted outside a list screen. */
+internal suspend fun ensurePrimary(c: AppContainer) {
+    runCatching { ensurePrimary(c, c.session.api.value.remoteWallets()) }.onSuccess { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+}
+
 internal suspend fun fetchRemoteWallets(c: AppContainer, onList: (List<RemoteWallet>) -> Unit, balances: MutableMap<String, Long?>): Boolean {
-    val list = runCatching { c.session.api.value.remoteWallets() }.onSuccess { onList(it); c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }.getOrNull()
+    val list = runCatching { ensurePrimary(c, c.session.api.value.remoteWallets()) }.onSuccess { onList(it); c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }.getOrNull()
     coroutineScope {
         (list ?: c.prefs.cached("remote-wallets", remoteWalletsSer)).orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
             launch { balances[w.id] = runCatching { c.session.api.value.remoteWalletBalance(w.id) }.getOrNull() }
@@ -154,7 +184,7 @@ fun RemoteWalletsScreen() {
 private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClick: () -> Unit) {
     val brand = LocalBrand.current
     val lncurl = w.provider == "lncurl"
-    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
+    val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     val dim = w.status != "ACTIVE"
     Row(
         Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = if (w.isDefault) brand.t400.copy(alpha = 0.08f) else null)
@@ -162,7 +192,7 @@ private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClic
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-            LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 20.dp, tint = if (dim) Lw.MutedFg else accent)
+            WalletMark(lncurl, 20.dp, Modifier.alpha(if (dim) 0.45f else 1f))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -246,16 +276,18 @@ fun AddRemoteWalletScreen() {
                         scanning = false; conn = raw.trim()
                         error = if (runCatching { NwcUri.parse(conn) }.isFailure) invalid else null
                     }
-                    OutlinedTextField(conn, { conn = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("wallet-nwc"), label = { Txt(stringResource(R.string.rw_connection)) }, placeholder = { Txt(stringResource(R.string.rw_connection_hint), color = Lw.MutedFg) }, colors = lwFieldColors(),
+                    OutlinedTextField(conn, { conn = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("wallet-nwc"), enabled = !busy, label = { Txt(stringResource(R.string.rw_connection)) }, placeholder = { Txt(stringResource(R.string.rw_connection_hint), color = Lw.MutedFg) }, colors = lwFieldColors(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), maxLines = 3,
-                        trailingIcon = { Box(Modifier.size(40.dp).clickable { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
-                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name_optional)) }, placeholder = { Txt(derivedName, color = Lw.MutedFg) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
+                        trailingIcon = { Box(Modifier.size(40.dp).clickable(enabled = !busy) { scanning = !scanning; error = null }.testTag("wallet-scan"), contentAlignment = Alignment.Center) { LwIcon(if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.shared_nav_scan)) } })
+                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), enabled = !busy, label = { Txt(stringResource(R.string.rw_name_optional)) }, placeholder = { Txt(derivedName, color = Lw.MutedFg) }, singleLine = true, colors = lwFieldColors())
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { if (!busy) { primaryTouched = true; primary = !primary } }) { Switch(primary, { primaryTouched = true; primary = it }, enabled = !busy, colors = lwSwitchColors()) } }
                 }
                 "lncurl" -> {
                     MutedText(stringResource(R.string.rw_lncurl_body))
-                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().testTag("wallet-name"), label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
-                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { primaryTouched = true; primary = !primary }) { Switch(primary, { primaryTouched = true; primary = it }, colors = lwSwitchColors()) } }
+                    val focus = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { focus.requestFocus() }
+                    OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().focusRequester(focus).testTag("wallet-name"), enabled = !busy, label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
+                    SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { if (!busy) { primaryTouched = true; primary = !primary } }) { Switch(primary, { primaryTouched = true; primary = it }, enabled = !busy, colors = lwSwitchColors()) } }
                 }
             }
             ErrorText(error)
@@ -271,6 +303,21 @@ fun AddRemoteWalletScreen() {
     }
 }
 
+/** Top-right status button: green "Live" with a pause icon, or muted "Paused" with a play icon; a tap flips it. */
+@Composable
+private fun StatusToggle(live: Boolean, busy: Boolean, onClick: () -> Unit) {
+    val tint = if (live) Lw.Green else Lw.MutedFg
+    Row(
+        Modifier.height(40.dp).clip(CircleShape).background(tint.copy(alpha = 0.14f)).border(1.dp, tint.copy(alpha = 0.35f), CircleShape)
+            .clickable(enabled = !busy, role = Role.Button, onClick = onClick).padding(start = 12.dp, end = 16.dp).testTag("wallet-status-toggle"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (busy) Spinner(18.dp, tint) else LwIcon(if (live) L.drawable.lucide_ic_pause else L.drawable.lucide_ic_play, size = 18.dp, tint = tint)
+        Spacer(Modifier.width(8.dp))
+        Txt(stringResource(if (live) R.string.remoteWallets_live else R.string.remoteWallets_paused), size = 15.sp, weight = FontWeight.SemiBold, color = tint)
+    }
+}
+
 @Composable
 fun RemoteWalletDetailScreen(id: String) {
     val c = LocalContainer.current
@@ -282,7 +329,7 @@ fun RemoteWalletDetailScreen(id: String) {
     var balance by remember { mutableStateOf<Long?>(null) }
     var connection by remember { mutableStateOf<String?>(null) }
     var showConn by remember { mutableStateOf(false) }
-    var txs by remember { mutableStateOf<List<Tx>?>(null) }
+    var toggling by remember { mutableStateOf(false) }
     var action by remember { mutableStateOf<ReceiveAction?>(null) }
     var notifications by remember { mutableStateOf<List<WalletNotification>>(emptyList()) }
     var renaming by remember { mutableStateOf(false) }
@@ -299,15 +346,20 @@ fun RemoteWalletDetailScreen(id: String) {
         action = runCatching { api.receiveAction(id) }.getOrNull()
         notifications = runCatching { api.remoteWalletNotifications(id) }.getOrDefault(emptyList())
     }
-    LaunchedEffect(id) {
-        load()
-        connection?.let { cs ->
-            val client = runCatching { NwcClient(NwcUri.parse(cs), c.http) }.getOrNull()
-            txs = runCatching { client?.listTransactions(limit = 20)?.map(Tx::from) }.getOrNull() ?: emptyList()
-        }
-    }
+    LaunchedEffect(id) { load() }
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(wallet?.name ?: stringResource(R.string.remoteWallets_detail_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(wallet?.name ?: stringResource(R.string.remoteWallets_detail_title), { nav.popBackStack() }, stringResource(R.string.common_back)) {
+            // Status as a toggle: says what it is (Live / Paused), the icon says what a tap does (pause / play).
+            val w = wallet
+            if (w != null && (w.status == "ACTIVE" || w.status == "DISABLED")) StatusToggle(w.status == "ACTIVE", toggling) {
+                toggling = true
+                scope.launch {
+                    runCatching { c.session.api.value.updateRemoteWallet(id, status = if (w.status == "ACTIVE") "DISABLED" else "ACTIVE") }.onFailure { context.toast(it.message ?: "") }
+                    ensurePrimary(c); load(); runCatching { c.session.refreshMe() }
+                    toggling = false
+                }
+            }
+        }
         val w = wallet
         if (w == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { if (notFound) MutedText(stringResource(R.string.remoteWallets_detail_notFound)) else Spinner() }; return@Column }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -318,21 +370,13 @@ fun RemoteWalletDetailScreen(id: String) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (w.isDefault) Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400)
-                    Pill(w.status, if (w.status == "ACTIVE") Lw.Green else Lw.MutedFg)
+                    if (w.status != "ACTIVE" && w.status != "DISABLED") Pill(w.status, Lw.Red) // e.g. DEAD: nothing to toggle
                     w.provider?.let { Pill(if (it == "lncurl") "LNCurl" else it, Lw.NwcPurple) }
                 }
             }
             SettingsGroup {
-                if (!w.isDefault && w.status == "ACTIVE") { SettingsRow(stringResource(R.string.remoteWallets_list_setPrimary), { scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, isDefault = true) }; load(); runCatching { c.session.refreshMe() } } }, icon = L.drawable.lucide_ic_check); GroupDivider() }
+                if (!w.isDefault && w.status == "ACTIVE") { SettingsRow(stringResource(R.string.remoteWallets_list_setPrimary), { scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, isDefault = true) }.onSuccess { c.prefs.notePrimary(id) }; load(); runCatching { c.session.refreshMe() } } }, icon = L.drawable.lucide_ic_check); GroupDivider() }
                 SettingsRow(stringResource(R.string.rw_rename), { renaming = true }, icon = L.drawable.lucide_ic_pencil)
-                GroupDivider()
-                if (w.status == "ACTIVE" || w.status == "DISABLED") {
-                    SettingsRow(stringResource(if (w.status == "ACTIVE") R.string.remoteWallets_pause else R.string.remoteWallets_resume), {
-                        scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, status = if (w.status == "ACTIVE") "DISABLED" else "ACTIVE") }; load(); runCatching { c.session.refreshMe() } }
-                    }, icon = L.drawable.lucide_ic_refresh_cw)
-                    GroupDivider()
-                }
-                SettingsRow(stringResource(R.string.rw_delete), { deleting = true }, labelColor = Lw.Red, icon = L.drawable.lucide_ic_trash_2)
             }
             connection?.let { cs ->
                 SettingsGroup(stringResource(R.string.remote_wallet_connection)) {
@@ -342,6 +386,14 @@ fun RemoteWalletDetailScreen(id: String) {
                             LwButton(stringResource(R.string.remote_wallet_reveal), { showConn = !showConn }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_eye)
                             LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(cs, copied) }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_copy)
                         }
+                    }
+                }
+            }
+            connection?.let { cs -> runCatching { NwcUri.parse(cs).relays }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { relays ->
+                SettingsGroup(stringResource(R.string.bunker_relays)) {
+                    relays.forEachIndexed { i, r ->
+                        if (i > 0) GroupDivider()
+                        SettingsRow(r.removePrefix("wss://").removePrefix("ws://").trimEnd('/'), { context.copyToClipboard(r, copied) }, icon = L.drawable.lucide_ic_radio_tower)
                     }
                 }
             }
@@ -384,13 +436,7 @@ fun RemoteWalletDetailScreen(id: String) {
                 GroupDivider()
                 SettingsRow(stringResource(R.string.notifications_add_webhook), { addingHook = true }, icon = L.drawable.lucide_ic_plus)
             }
-            SettingsGroup(stringResource(R.string.rw_recent_tx)) {
-                when {
-                    txs == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { Spinner() }
-                    txs!!.isEmpty() -> MutedText(stringResource(R.string.activity_empty), Modifier.padding(16.dp))
-                    else -> txs!!.forEach { TransactionRow(it) { c.flow.activityDetail = it; nav.navigate(R0.activity(it.paymentHash)) } }
-                }
-            }
+            SettingsGroup { SettingsRow(stringResource(R.string.rw_delete), { deleting = true }, labelColor = Lw.Red, icon = L.drawable.lucide_ic_trash_2) }
         }
     }
     if (renaming) TextPrompt(stringResource(R.string.rw_rename), wallet?.name ?: "", onDismiss = { renaming = false }) { v ->
@@ -404,7 +450,7 @@ fun RemoteWalletDetailScreen(id: String) {
             deleting = false
             scope.launch {
                 runCatching { c.session.api.value.deleteRemoteWallet(id, permanent = wallet?.status != "ACTIVE") }
-                    .onSuccess { runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { context.toast(it.message ?: "") }
+                    .onSuccess { ensurePrimary(c); runCatching { c.session.refreshMe() }; nav.popBackStack() }.onFailure { context.toast(it.message ?: "") }
             }
         }, destructive = true) },
     )
@@ -478,21 +524,49 @@ private fun ForwardPlanDialog(current: ReceiveAction?, onDismiss: () -> Unit, on
 @Composable
 private fun WebhookDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("https://") }
+    var host by remember { mutableStateOf("") } // everything after the fixed https://
     var action by remember { mutableStateOf("RECEIVED") }
+    val valid = host.contains('.') && host.none(Char::isWhitespace)
+    val save = { if (valid) onSave(name.trim().ifBlank { "Webhook" }, action, "https://$host") }
+    val shape = RoundedCornerShape(16.dp)
     LwAlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Glass.Dialog,
-        title = { Txt(stringResource(R.string.notifications_add_webhook), size = 16.sp, weight = FontWeight.SemiBold) },
+        title = { Txt(stringResource(R.string.notifications_add_webhook), size = 19.sp, weight = FontWeight.SemiBold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it.take(64) }, label = { Txt(stringResource(R.string.notification_name)) }, singleLine = true, colors = lwFieldColors())
-                OutlinedTextField(url, { url = it.trim() }, label = { Txt(stringResource(R.string.webhook_url)) }, singleLine = true, colors = lwFieldColors(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                listOf("RECEIVED" to R.string.notification_received, "FORWARDED" to R.string.notification_forwarded).forEach { (k, l) ->
-                    Row(Modifier.clickable { action = k }, verticalAlignment = Alignment.CenterVertically) { RadioButton(action == k, { action = k }); Txt(stringResource(l)) }
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FieldCaption(stringResource(R.string.notification_name))
+                    OutlinedTextField(
+                        name, { name = it.take(64) }, Modifier.fillMaxWidth().autoFocus().testTag("webhook-name"),
+                        placeholder = { Txt("Webhook", color = Lw.MutedFg) }, singleLine = true, shape = shape, colors = lwFieldColors(),
+                        leadingIcon = { LwIcon(L.drawable.lucide_ic_tag, size = 18.dp, tint = Lw.MutedFg) },
+                        keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FieldCaption(stringResource(R.string.webhook_url_short))
+                    OutlinedTextField(
+                        host, { host = it.trim().removePrefix("https://").removePrefix("http://").take(512) }, Modifier.fillMaxWidth().testTag("webhook-url"),
+                        placeholder = { Txt("example.com/hook", color = Lw.MutedFg) }, singleLine = true, shape = shape, colors = lwFieldColors(),
+                        leadingIcon = { LwIcon(L.drawable.lucide_ic_link, size = 18.dp, tint = Lw.MutedFg) },
+                        prefix = { Txt("https://", color = Lw.MutedFg) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FieldCaption(stringResource(R.string.webhook_trigger))
+                    TabSwitch(listOf(stringResource(R.string.webhook_on_received), stringResource(R.string.webhook_on_forwarded)), if (action == "RECEIVED") 0 else 1) {
+                        action = if (it == 0) "RECEIVED" else "FORWARDED"
+                    }
                 }
             }
         },
-        confirmButton = { ModalAction(stringResource(R.string.common_done), { onSave(name.ifBlank { "Webhook" }, action, url) }, enabled = url.startsWith("https://") && url.length > 10) },
+        confirmButton = { ModalAction(stringResource(R.string.notifications_add_webhook), save, Modifier.testTag("webhook-save"), enabled = valid) },
     )
 }
+
+/** Small muted caption above a field, like the Add wallet form's. */
+@Composable
+private fun FieldCaption(text: String) = Txt(text, Modifier.padding(start = 4.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)

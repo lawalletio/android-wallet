@@ -66,6 +66,10 @@
     <string name="notification_name">Name</string>
     <string name="notification_received">On payment received</string>
     <string name="notification_forwarded">On payment forwarded</string>
+    <string name="webhook_trigger">Send when a payment is</string>
+    <string name="webhook_on_received">Received</string>
+    <string name="webhook_on_forwarded">Forwarded</string>
+    <string name="webhook_url_short">URL</string>
     <string name="relay_retry">Retry</string>
     <string name="open_externally">Open in browser</string>
     <string name="paste">Paste</string>
@@ -200,6 +204,10 @@
     <string name="profile_unnamed">Anonymous</string>
     <string name="sweep_menu_details">See details</string>
     <string name="sweep_menu">Sweep funds</string>
+    <string name="transfer_menu">Transfer amount</string>
+    <string name="transfer_to">Transfer to %1$s</string>
+    <string name="rw_delete_sweepFirst">This wallet still holds %1$s sats. Sweep them to another wallet first; you can delete it once the sweep finishes.</string>
+    <string name="send_kind_wallet">Remote wallet</string>
     <string name="sweep_pick">Select the wallet to send all funds to</string>
     <string name="sweep_from">From</string>
     <string name="sweep_title">Sweep funds</string>

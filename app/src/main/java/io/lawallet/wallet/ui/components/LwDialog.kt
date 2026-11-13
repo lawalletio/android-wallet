@@ -93,8 +93,8 @@ fun LwAlertDialog(
 
 /** A modal's main action: full width, brand colour (red glass when [destructive]). */
 @Composable
-fun ModalAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, destructive: Boolean = false) =
-    LwButton(text, onClick, modifier.fillMaxWidth().testTag("modal-action"), if (destructive) BtnVariant.Destructive else BtnVariant.Theme, enabled = enabled, height = 52.dp)
+fun ModalAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, destructive: Boolean = false, loading: Boolean = false) =
+    LwButton(text, onClick, modifier.fillMaxWidth().testTag("modal-action"), if (destructive) BtnVariant.Destructive else BtnVariant.Theme, enabled = enabled, loading = loading, height = 52.dp)
 
 /** Gives the hosting dialog window the zoom-out exit; composed inside the dialog so it finds its window. */
 @Composable

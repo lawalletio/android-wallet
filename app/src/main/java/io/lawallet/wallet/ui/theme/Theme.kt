@@ -31,6 +31,7 @@ object Lw {
     val Green = Color(0xFF22C55E)
     val Orange = Color(0xFFF97316)
     val NwcPurple = Color(0xFF937AFF)
+    val LncurlGreen = Color(0xFF9BE88A) // the LNCurl wordmark
     val Gold = Color(0xFFF5A623)
     val Neutral400 = Color(0xFFA3A3A3)
     val Neutral100 = Color(0xFFF5F5F5)

@@ -111,6 +111,10 @@ import io.lawallet.wallet.ui.theme.frosted
 import io.lawallet.wallet.ui.theme.glass
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.ripple
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
@@ -127,7 +131,8 @@ fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haz
     val brand = LocalBrand.current
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 16.dp, top = 12.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
-            Modifier.widthIn(max = 320.dp).fillMaxWidth().height(64.dp)
+            // Nearly as tall as the scan button, so the three read as one bar.
+            Modifier.widthIn(max = 380.dp).fillMaxWidth().height(82.dp)
                 .shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
                 .frosted(haze, CircleShape)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
@@ -151,17 +156,20 @@ fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haz
     }
 }
 
-/** Icon over a small label; the whole half-pill is the touch target. Dimmed (not hidden) when unavailable. */
+/** Icon over its label in a lit capsule of its own (a button, not text on glass). Dimmed (not hidden) when unavailable. */
 @Composable
 private fun ActionItem(icon: Int, label: String, tag: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val tint = if (enabled) Lw.Foreground else Lw.MutedFg.copy(alpha = 0.5f)
     Column(
-        modifier.fillMaxHeight().clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick).testTag(tag),
+        modifier.fillMaxHeight().clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) 0.14f else 0.05f), Color.White.copy(alpha = if (enabled) 0.06f else 0.02f))))
+            .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (enabled) 0.22f else 0.08f), Color.Transparent)), CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).testTag(tag),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
-        LwIcon(icon, size = 22.dp, tint = tint)
-        Spacer(Modifier.height(2.dp))
-        Txt(label, size = 12.sp, weight = FontWeight.Medium, color = tint, maxLines = 1)
+        LwIcon(icon, size = 28.dp, tint = tint)
+        Spacer(Modifier.height(3.dp))
+        Txt(label, size = 15.sp, weight = FontWeight.SemiBold, color = tint, maxLines = 1)
     }
 }
 
@@ -212,8 +220,10 @@ fun AmountKeypad(value: String, onChange: (String) -> Unit, mode: KeypadMode, mo
 }
 
 /** currency-toggle.tsx — pill group; one glass indicator springs between the measured segments. */
+/** [onLongPress], when given: holding any segment (e.g. Home's, to open currency settings). */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null) {
     if (codes.size < 2) return
     // Segment x/width in px, relative to the Row; labels vary in width ("SAT" vs "USD" vs "EUR").
     val bounds = remember { mutableStateMapOf<String, Pair<Float, Float>>() }
@@ -227,7 +237,10 @@ fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> 
         launch { x.animateTo(tx, bounce) }
         w.animateTo(tw, bounce)
     }
-    Box(modifier.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
+    // One press source for every segment: holding any of them "charges" the whole switcher toward [onLongPress].
+    val press = remember { MutableInteractionSource() }
+    val hold = if (onLongPress != null) holdProgress(press) else 0f
+    Box(modifier.graphicsLayer { scaleX = 1f - 0.08f * hold; scaleY = scaleX; alpha = 1f - 0.25f * hold }.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
         Box(
             Modifier.matchParentSize().layout { m, c ->
                 val p = m.measure(Constraints.fixed(w.value.roundToInt().coerceAtLeast(0), c.maxHeight))
@@ -239,7 +252,7 @@ fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> 
                 val fg by animateColorAsState(if (code == selected) Lw.Foreground else Lw.MutedFg, spring(stiffness = Spring.StiffnessMedium), label = "currency-fg")
                 Box(
                     Modifier.onPlaced { bounds[code] = it.positionInParent().x to it.size.width.toFloat() }
-                        .clip(CircleShape).clickable { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
+                        .clip(CircleShape).combinedClickable(interactionSource = press, indication = ripple(), onLongClick = onLongPress) { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
                 ) { Txt(code, size = 12.sp, weight = FontWeight.SemiBold, color = fg) }
             }
         }

@@ -154,6 +154,13 @@ class Prefs(context: Context) {
         get() = sp.getString("pending-activation", null)?.let { it to sp.getLong("pending-activation-at", 0) }
         set(v) = sp.edit { putString("pending-activation", v?.first); putLong("pending-activation-at", v?.second ?: 0) }
 
+    /** Remote wallets that were primary, most recent first: who takes over when the primary goes away. */
+    val primaryHistory: List<String> get() = sp.getString("primary-history", null)?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
+    fun notePrimary(id: String) {
+        val h = primaryHistory
+        if (h.firstOrNull() != id) sp.edit { putString("primary-history", (listOf(id) + h.filter { it != id }).take(20).joinToString(",")) }
+    }
+
     var bonusSats: Long
         get() = sp.getLong("bonus-sats", 0)
         set(v) = sp.edit { putLong("bonus-sats", v) }

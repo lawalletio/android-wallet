@@ -309,6 +309,12 @@ fun lwFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = Color.White.copy(alpha = 0.06f), unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
     cursorColor = Lw.Foreground, focusedTextColor = Lw.Foreground, unfocusedTextColor = Lw.Foreground,
     focusedPlaceholderColor = Lw.MutedFg, unfocusedPlaceholderColor = Lw.MutedFg,
+    // Fields are disabled while their form submits: still readable, visibly on hold.
+    disabledTextColor = Lw.Foreground.copy(alpha = 0.55f), disabledBorderColor = Color.White.copy(alpha = 0.06f),
+    disabledContainerColor = Color.White.copy(alpha = 0.02f), disabledPlaceholderColor = Lw.MutedFg.copy(alpha = 0.5f),
+    disabledLabelColor = Lw.MutedFg.copy(alpha = 0.6f), disabledPrefixColor = Lw.MutedFg.copy(alpha = 0.6f),
+    disabledSuffixColor = Lw.MutedFg.copy(alpha = 0.6f), disabledSupportingTextColor = Lw.MutedFg.copy(alpha = 0.6f),
+    disabledTrailingIconColor = Lw.MutedFg.copy(alpha = 0.5f),
 )
 
 @Composable
@@ -344,7 +350,7 @@ fun NostrLoginScreen() {
             }
             Txt(stringResource(R.string.auth_privateKeyTab), size = 14.sp, weight = FontWeight.Medium)
             OutlinedTextField(
-                key, { key = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("nsec-input"),
+                key, { key = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("nsec-input"), enabled = !loading,
                 placeholder = { Txt(stringResource(R.string.auth_nsecPlaceholder), color = Lw.MutedFg) },
                 singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
                 visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),

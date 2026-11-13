@@ -7,6 +7,19 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.PI
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import kotlin.math.cos
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +43,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +85,11 @@ import com.composables.icons.lucide.R as L
 @Composable
 fun LwIcon(@DrawableRes id: Int, modifier: Modifier = Modifier, size: Dp = 20.dp, tint: Color = Lw.Foreground, contentDescription: String? = null) =
     Icon(painterResource(id), contentDescription, modifier.size(size), tint = tint)
+
+/** A remote wallet's full-colour mark, LNCurl or NWC (the NWC art has a margin, so it draws a bit larger than [size]). */
+@Composable
+fun WalletMark(lncurl: Boolean, size: Dp, modifier: Modifier = Modifier) =
+    Image(painterResource(if (lncurl) io.lawallet.wallet.R.drawable.ic_lncurl else io.lawallet.wallet.R.drawable.ic_nwc), null, modifier.size(if (lncurl) size else size * 1.3f))
 
 @Composable
 fun Txt(
@@ -175,9 +194,13 @@ fun ScreenHeader(title: String?, onBack: (() -> Unit)?, close: Boolean = false, 
 
 /** Settings pages: same round glass back button as flows, large left-aligned title below. */
 @Composable
-fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String) {
+fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String, action: (@Composable () -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
-        GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = backLabel)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = backLabel)
+            Spacer(Modifier.weight(1f))
+            action?.invoke() // top right
+        }
         Spacer(Modifier.height(16.dp))
         Txt(title, Modifier.padding(start = 4.dp), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
     }
@@ -240,6 +263,38 @@ fun BrandImage(url: String?, fallbackAsset: String, modifier: Modifier = Modifie
     if (url == null && fallbackAsset == "isotype.svg") {
         androidx.compose.foundation.Image(painterResource(io.lawallet.wallet.R.drawable.ic_isotype), contentDescription, modifier, contentScale = androidx.compose.ui.layout.ContentScale.Fit)
     } else AsyncImage(model = url ?: "file:///android_asset/brand/$fallbackAsset", contentDescription = contentDescription, modifier = modifier)
+}
+
+/**
+ * 0 → 1 while [source] is pressed, timed to the long-press delay so it peaks just as a hold fires;
+ * springs back on release. Drive a "charging" press effect with it (shrink, dim).
+ */
+@Composable
+fun holdProgress(source: InteractionSource): Float {
+    val pressed by source.collectIsPressedAsState()
+    val hold = LocalViewConfiguration.current.longPressTimeoutMillis.toInt()
+    val p by animateFloatAsState(if (pressed) 1f else 0f, if (pressed) tween(hold, easing = LinearOutSlowInEasing) else spring(0.5f, Spring.StiffnessMedium), label = "hold")
+    return p
+}
+
+/** Three dots bouncing in a wave: the hero balance's "still loading". */
+@Composable
+fun LoadingDots(modifier: Modifier = Modifier, dot: Dp = 10.dp, color: Color = Lw.Foreground) {
+    // One clock drives all three; each dot trails the previous by a beat, so the wave rolls left to right.
+    val t by rememberInfiniteTransition(label = "dots").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "t",
+    )
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(dot * 0.8f), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            Box(
+                Modifier.size(dot).graphicsLayer {
+                    val lift = 0.5f - 0.5f * cos(2f * PI.toFloat() * (t - i * 0.14f)) // 0..1, smooth both ways
+                    translationY = -lift * dot.toPx()
+                    alpha = 0.35f + 0.65f * lift
+                }.clip(CircleShape).background(color),
+            )
+        }
+    }
 }
 
 @Composable
