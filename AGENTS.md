@@ -105,7 +105,8 @@ MockWebServer, parsers). Compose UI tests in `app/src/androidTest`.
    APKs (`lawallet-<version>-<abi>.apk`, the names the in-app updater matches), runs tests and `lintRelease`, creates
    the GitHub release with generated notes, and uploads the AAB to Play's internal track. `versionName` comes from
    the tag; `versionCode` is the commit count.
-2. Zapstore: `./scripts/publish-zapstore.sh`. It waits for the release workflow, then `zsp` publishes the arm64 APK
-   with metadata from `fastlane/metadata`. It needs an **interactive terminal** (it prompts) and the maintainer's
-   NIP-07 browser extension to sign, so an agent can start it but a human must finish it.
+2. Zapstore: automatic. `.github/workflows/zapstore.yml` runs when the Release workflow succeeds on a tag (or a
+   release is published by hand) and `zsp` publishes the arm64 APK with metadata from `fastlane/metadata`, signed
+   by the maintainer's NIP-46 remote signer (`ZAPSTORE_BUNKER` secret, a `bunker://` string; never commit it).
+   Fallback: `./scripts/publish-zapstore.sh` signs with the NIP-07 browser extension in an interactive terminal.
 3. Play listing, store metadata and console declarations: [PLAY_STORE.md](PLAY_STORE.md).
