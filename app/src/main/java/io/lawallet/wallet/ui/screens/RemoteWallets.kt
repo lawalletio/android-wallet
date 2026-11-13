@@ -224,7 +224,7 @@ private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClic
 }
 
 @Composable
-private fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
+internal fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
     Txt(text, Modifier.glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
 
 /** Add a remote wallet: pick a source first (import NWC / disposable LNCurl), then fill its form. */
@@ -569,4 +569,4 @@ private fun WebhookDialog(onDismiss: () -> Unit, onSave: (String, String, String
 
 /** Small muted caption above a field, like the Add wallet form's. */
 @Composable
-private fun FieldCaption(text: String) = Txt(text, Modifier.padding(start = 4.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+internal fun FieldCaption(text: String) = Txt(text, Modifier.padding(start = 4.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)

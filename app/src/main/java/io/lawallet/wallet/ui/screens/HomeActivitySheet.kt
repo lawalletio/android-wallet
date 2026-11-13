@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -106,6 +107,9 @@ internal class ActivitySheet(initial: Float) {
 
     suspend fun collapse() = settleTo(0f)
 
+    /** Jumps to [p] (mirroring the other Home page; nothing to animate, it's out of sight). */
+    fun snapTo(p: Float) { settling?.cancel(); progress = p.coerceIn(0f, 1f) }
+
     /** Up-drags lift the sheet before the list scrolls; down-drags the list didn't use lower it. */
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource) =
@@ -138,18 +142,30 @@ internal fun rememberActivitySheet(enabled: Boolean): ActivitySheet {
 }
 
 /**
- * Home's [header] and [top] content with the activity sheet docked beneath it. The sheet docks with its
- * grabber at mid-screen (lower if [top] needs the room), and [top] centres in the space left above it.
- * Home itself no longer scrolls: every drag drives the sheet.
+ * Home's [header], [top] (the balance) and [below] (banners) with the activity sheet docked beneath. The sheet
+ * docks with its grabber at mid-screen, and [top] centres between the header and that line as if nothing hung
+ * under it, so the balance sits at the same spot on every page (Onchain and Lightning swipe past each other with
+ * it fixed). [below] hangs under the balance and pushes the sheet down instead. Home itself doesn't scroll: every
+ * drag drives the sheet.
  */
 @Composable
-internal fun ActivitySheetLayout(sheet: ActivitySheet, header: @Composable () -> Unit, top: @Composable ColumnScope.() -> Unit, sheetContent: @Composable () -> Unit) {
+internal fun ActivitySheetLayout(
+    sheet: ActivitySheet, header: @Composable () -> Unit, top: @Composable ColumnScope.() -> Unit, below: @Composable ColumnScope.() -> Unit = {},
+    /** Dock at least this low (the other Home page's need), and report this page's through [onNeed]: the line matches across the swipe. */
+    floor: Float = 0f, onNeed: (Float) -> Unit = {},
+    sheetContent: @Composable () -> Unit,
+) {
     var fullH by remember { mutableIntStateOf(0) }
+    var headH by remember { mutableIntStateOf(0) }
     var topH by remember { mutableIntStateOf(0) }
+    var belowH by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     // ponytail: if Home's top content is taller than the screen minus a peek, its tail hides under the sheet; make it scroll if banners ever stack that high.
     val mid = with(density) { fullH / 2f - 18.dp.toPx() } // grabber line (16dp + half its 4dp) on the centre line
-    val docked = if (fullH == 0) topH.toFloat() else minOf(maxOf(topH.toFloat(), mid), fullH - with(density) { 200.dp.toPx() }).coerceAtLeast(0f)
+    val lift = ((mid - headH - topH) / 2f).coerceAtLeast(0f)
+    val content = headH + lift + topH + belowH
+    SideEffect { onNeed(content) }
+    val docked = if (fullH == 0) content else minOf(maxOf(content, mid, floor), fullH - with(density) { 200.dp.toPx() }).coerceAtLeast(0f)
     sheet.range = docked
     Box(
         Modifier.fillMaxSize().onSizeChanged { fullH = it.height }
@@ -158,7 +174,7 @@ internal fun ActivitySheetLayout(sheet: ActivitySheet, header: @Composable () ->
             .scrollable(rememberScrollableState { 0f }, Orientation.Vertical),
     ) {
         Column(
-            Modifier.fillMaxWidth().onSizeChanged { topH = it.height }.graphicsLayer {
+            Modifier.fillMaxWidth().graphicsLayer {
                 val p = sheet.progress
                 alpha = (1f - p * 2.2f).coerceIn(0f, 1f) // gone by ~45%, so it never fights the rising list
                 translationY = -p * 64.dp.toPx()
@@ -167,29 +183,35 @@ internal fun ActivitySheetLayout(sheet: ActivitySheet, header: @Composable () ->
                 transformOrigin = TransformOrigin(0.5f, 0f)
             },
         ) {
-            header()
-            // Translation, not padding, so topH stays the content's natural height (no measure loop).
-            Column(Modifier.graphicsLayer { translationY = ((docked - topH) / 2f).coerceAtLeast(0f) }, content = top)
+            Column(Modifier.fillMaxWidth().onSizeChanged { headH = it.height }) { header() }
+            // Translation, not padding, so the measured heights stay natural (no measure loop).
+            Column(Modifier.fillMaxWidth().graphicsLayer { translationY = lift }) {
+                Column(Modifier.fillMaxWidth().onSizeChanged { topH = it.height }, content = top)
+                Column(Modifier.fillMaxWidth().onSizeChanged { belowH = it.height }, content = below)
+            }
         }
-        Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer { translationY = docked * (1f - sheet.progress); compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    // Fade out the docked tail (behind the tab bar); it clears as the sheet rises, gone when fully expanded.
-                    val bottom = size.height - docked * (1f - sheet.progress)
-                    drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = sheet.progress), startY = bottom - 260.dp.toPx(), endY = bottom - 70.dp.toPx()), blendMode = BlendMode.DstIn)
-                },
-        ) { sheetContent() }
+        Box(Modifier.fillMaxSize().graphicsLayer { translationY = docked * (1f - sheet.progress) }) { sheetContent() }
     }
 }
 
+/**
+ * Fades out the docked tail of a list that runs to the sheet's bottom (behind the tab bar); it clears as the sheet
+ * rises, gone when fully expanded. On the rows only, not the whole sheet: an offscreen layer clips to its page, and
+ * the title and grabber above are pinned while the Home pages swipe.
+ */
+internal fun Modifier.sheetTailFade(sheet: ActivitySheet) = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val bottom = size.height - sheet.range * (1f - sheet.progress)
+        drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = sheet.progress), startY = bottom - 260.dp.toPx(), endY = bottom - 70.dp.toPx()), blendMode = BlendMode.DstIn)
+    }
+
 @Composable
-internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, onOpen: (Tx) -> Unit) {
+internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
-    BackHandler(sheet.progress > 0f) { scope.launch { launch { list.animateScrollToItem(0) }; sheet.collapse() } }
+    BackHandler(current && sheet.progress > 0f) { scope.launch { launch { list.animateScrollToItem(0) }; sheet.collapse() } }
     // The bottom bar (AppNav) swaps to search + filters with this; docking clears them.
     LaunchedEffect(sheet) { snapshotFlow { sheet.progress }.collect { ActivitySearch.sheet = it; if (it == 0f) ActivitySearch.reset() } }
     DisposableEffect(Unit) { onDispose { ActivitySearch.sheet = 0f } }
@@ -199,8 +221,9 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
     LaunchedEffect(s.query, s.sent, s.received, s.sizeOn, s.size) { if (s.active) list.scrollToItem(0) }
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         // Grabber: says "this moves", firmer as the sheet takes over.
-        Box(Modifier.align(Alignment.CenterHorizontally).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Grabber and title stay put while the Home pages swipe ([pin]); the rows slide.
+        Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
+        Row(Modifier.fillMaxWidth().then(pin).padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
             Txt(
                 stringResource(R.string.home_activityTitle), size = 15.sp, weight = FontWeight.SemiBold,
                 modifier = Modifier.graphicsLayer { val s = 1f + 0.45f * sheet.progress; scaleX = s; scaleY = s; transformOrigin = TransformOrigin(0f, 0.5f) },
@@ -219,7 +242,7 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
             // Bottom padding lets the last rows scroll clear of the faded tail and the tab bar.
             val rows = remember(filtered) { activityRows(filtered, months = true) }
             val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
-            Box(Modifier.weight(1f)) {
+            Box(Modifier.weight(1f).sheetTailFade(sheet)) {
                 LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {
                     activityList(rows, filtered, labels, paging, onOpen)
                 }

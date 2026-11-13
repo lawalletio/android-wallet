@@ -74,6 +74,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -127,7 +128,7 @@ import com.composables.icons.lucide.R as L
 
 /** Floating frosted pill (real backdrop blur over the scrolling screen): Receive · brand scan button · Send. */
 @Composable
-fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haze: HazeState?, modifier: Modifier = Modifier, canReceive: Boolean = true, canSend: Boolean = true) {
+fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haze: HazeState?, modifier: Modifier = Modifier, canReceive: Boolean = true, canSend: Boolean = true, accent: (() -> Color?)? = null) {
     val brand = LocalBrand.current
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 16.dp, top = 12.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
@@ -142,14 +143,21 @@ fun NavTabBar(onReceive: () -> Unit, onSend: () -> Unit, onScan: () -> Unit, haz
             Spacer(Modifier.width(96.dp)) // the scan button sits here
             ActionItem(L.drawable.lucide_ic_arrow_up_right, stringResource(R.string.home_send), "nav-send", canSend, onSend, Modifier.weight(1f))
         }
-        // Bottom-aligned with the pill; lit from above with a brand glow below.
+        // Bottom-aligned with the pill; lit from above with a glow below: the brand's, or [accent] (Home's page tone,
+        // read at draw time so a swipe recolours it every frame without recomposing).
         Box(
             Modifier.size(87.dp)
-                .shadow(12.dp, CircleShape, ambientColor = brand.t400.copy(alpha = 0.6f), spotColor = brand.t400.copy(alpha = 0.6f))
-                .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(brand.t400, brand.t300, brand.t200)))
-                .drawBehind { drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.28f), 0.5f to Color.Transparent)) }
-                .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), brand.t300.copy(alpha = 0.5f))), CircleShape)
+                .graphicsLayer {
+                    val glow = (accent?.invoke() ?: brand.t400).copy(alpha = 0.6f)
+                    shadowElevation = 12.dp.toPx(); shape = CircleShape; clip = true
+                    ambientShadowColor = glow; spotShadowColor = glow
+                }
+                .drawBehind {
+                    val a = accent?.invoke()
+                    drawRect(Brush.verticalGradient(if (a != null) listOf(lerp(a, Color.White, 0.14f), a, lerp(a, Color.Black, 0.38f)) else listOf(brand.t400, brand.t300, brand.t200)))
+                    drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.28f), 0.5f to Color.Transparent))
+                }
+                .border(1.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.10f))), CircleShape)
                 .clickable(onClick = onScan).testTag("nav-scan"),
             contentAlignment = Alignment.Center,
         ) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 36.dp, contentDescription = stringResource(R.string.shared_nav_scan)) }
@@ -223,7 +231,7 @@ fun AmountKeypad(value: String, onChange: (String) -> Unit, mode: KeypadMode, mo
 /** [onLongPress], when given: holding any segment (e.g. Home's, to open currency settings). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null) {
+fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null, enabled: Boolean = true) {
     if (codes.size < 2) return
     // Segment x/width in px, relative to the Row; labels vary in width ("SAT" vs "USD" vs "EUR").
     val bounds = remember { mutableStateMapOf<String, Pair<Float, Float>>() }
@@ -252,7 +260,8 @@ fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> 
                 val fg by animateColorAsState(if (code == selected) Lw.Foreground else Lw.MutedFg, spring(stiffness = Spring.StiffnessMedium), label = "currency-fg")
                 Box(
                     Modifier.onPlaced { bounds[code] = it.positionInParent().x to it.size.width.toFloat() }
-                        .clip(CircleShape).combinedClickable(interactionSource = press, indication = ripple(), onLongClick = onLongPress) { onSelect(code) }.padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
+                        // Disabled = no pointer input at all, so taps fall through (Home's off-page copy lies over the front one).
+                        .clip(CircleShape).then(if (enabled) Modifier.combinedClickable(interactionSource = press, indication = ripple(), onLongClick = onLongPress) { onSelect(code) } else Modifier).padding(horizontal = 12.dp, vertical = 6.dp).testTag("currency-$code"),
                 ) { Txt(code, size = 12.sp, weight = FontWeight.SemiBold, color = fg) }
             }
         }
