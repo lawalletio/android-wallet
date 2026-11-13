@@ -118,6 +118,7 @@ fun EmailLoginScreen() {
     val failed = stringResource(R.string.email_send_failed)
     val invalid = stringResource(R.string.email_invalid)
     val resent = stringResource(R.string.email_resent)
+    val noEmailApp = stringResource(R.string.email_no_app)
     val valid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
 
     LaunchedEffect(cooldown) { if (cooldown > 0) { delay(1000); cooldown-- } }
@@ -152,7 +153,7 @@ fun EmailLoginScreen() {
             if (to == null) EmailForm(email, { email = it.trim(); error = null }, valid, loading, error) { send(false) }
             else EmailSent(to, cooldown, loading, error, onResend = { send(true) }, onChange = ::back) {
                 val inbox = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                runCatching { context.startActivity(inbox) }.onFailure { context.toast(context.getString(R.string.email_no_app)) }
+                runCatching { context.startActivity(inbox) }.onFailure { context.toast(noEmailApp) }
             }
         }
     }
