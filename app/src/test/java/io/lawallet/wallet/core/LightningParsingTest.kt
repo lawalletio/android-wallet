@@ -1,6 +1,7 @@
 package io.lawallet.wallet.core
 
 import io.lawallet.wallet.core.ln.ActivationUrl
+import io.lawallet.wallet.core.ln.EmailLoginUrl
 import io.lawallet.wallet.core.ln.Bolt11
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.core.ln.DestinationException
@@ -97,6 +98,16 @@ class LightningParsingTest {
         assertNull(ActivationUrl.parse("https://beta.lawallet.io/wallet/activate"))
         assertNull(ActivationUrl.parse("https://beta.lawallet.io/wallet/activate/a/b"))
         assertNull(ActivationUrl.parse("lnurlw://x/wallet/activate/a"))
+    }
+
+    @Test fun emailLoginUrls() {
+        val t = "Ab_-" + "x".repeat(39)
+        assertEquals(EmailLoginUrl(t, "beta.lawallet.io"), EmailLoginUrl.parse("https://beta.lawallet.io/wallet/auth/email#token=$t"))
+        assertEquals(t, EmailLoginUrl.parse("http://10.0.2.2:3000/wallet/auth/email/#token=$t&claim=alice")?.token)
+        assertEquals("10.0.2.2:3000", EmailLoginUrl.parse("http://10.0.2.2:3000/wallet/auth/email#claim=a&token=$t")?.host)
+        assertNull(EmailLoginUrl.parse("https://beta.lawallet.io/wallet/auth/email?token=$t"))
+        assertNull(EmailLoginUrl.parse("https://beta.lawallet.io/admin/auth/email#token=$t"))
+        assertNull(EmailLoginUrl.parse("https://beta.lawallet.io/wallet/auth/email#token=short"))
     }
 
     @Test fun ndefUrls() {

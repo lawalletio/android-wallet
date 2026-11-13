@@ -151,6 +151,8 @@ object R0 {
     const val LOGIN = "login"
     const val LOGIN_NOSTR = "login/nostr"
     const val LOGIN_BUNKER = "login/bunker"
+    const val LOGIN_EMAIL = "login/email"
+    const val EMAIL_AUTH = "auth/email?token={token}&host={host}"
     const val WELCOME = "welcome"
     const val HOME = "home"
     const val PROFILE = "profile"
@@ -179,6 +181,7 @@ object R0 {
     const val FEEDBACK = "settings/feedback"
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
+    fun emailAuth(token: String, host: String) = "auth/email?token=$token&host=${android.net.Uri.encode(host)}"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
     fun sweep(from: String, to: String) = "sweep/$from/$to"
     const val ONCHAIN_ADD = "onchain/add"
@@ -354,6 +357,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.LOGIN) { LoginScreen() }
                 composable(R0.LOGIN_NOSTR) { NostrLoginScreen() }
                 composable(R0.LOGIN_BUNKER) { BunkerLoginScreen() }
+                composable(R0.LOGIN_EMAIL) { EmailLoginScreen() }
+                composable(R0.EMAIL_AUTH) { EmailAuthScreen(it.arguments?.getString("token").orEmpty(), it.arguments?.getString("host").orEmpty()) }
                 composable(R0.WELCOME) { WelcomeScreen() }
                 // Home ↔ profile is a plain cross-fade, so the avatar flying between them is the motion.
                 composable(
@@ -471,7 +476,7 @@ private fun CrashReportDialog() {
     )
 }
 
-private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, R0.LOGIN_BUNKER, "activate/{id}")
+private val PUBLIC_ROUTES = setOf(R0.LANDING, R0.SIGNUP, R0.CREATE_ACCOUNT, R0.CREATE_PASSKEY, R0.LOGIN, R0.LOGIN_NOSTR, R0.LOGIN_BUNKER, R0.LOGIN_EMAIL, R0.EMAIL_AUTH, "activate/{id}")
 
 /** wallet-loading-screen.tsx — isotype in an 80dp tile, indeterminate bar, version. */
 @Composable

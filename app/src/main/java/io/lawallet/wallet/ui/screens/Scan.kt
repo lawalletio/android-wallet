@@ -80,13 +80,16 @@ sealed interface ScanOutcome {
 }
 
 /** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
-suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome =
-    when (val r = c.scanRouter.route(raw, c.session.instanceHosts)) {
+suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome {
+    // Magic link: the landing checks the link's community against ours (it may offer to switch).
+    io.lawallet.wallet.core.ln.EmailLoginUrl.parse(raw)?.let { nav.navigate(R0.emailAuth(it.token, it.host)) { launchSingleTop = true }; return ScanOutcome.Handled }
+    return when (val r = c.scanRouter.route(raw, c.session.instanceHosts)) {
         is ScanResult.Activate -> if (r.sameInstance) { nav.navigate(R0.activate(r.tokenId)); ScanOutcome.Handled } else ScanOutcome.Foreign(r.url, java.net.URI(r.url).host)
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
         is ScanResult.Error -> ScanOutcome.Failed(r.message)
     }
+}
 
 /** Deep links / NFC taps outside the receive screen. */
 suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false) {

@@ -21,10 +21,16 @@ data class InstanceSettings(
     val lncurl_auto_create: String? = null,
     /** JSON array of Blossom media servers (unset → Blossom.DEFAULT_SERVERS). */
     val blossom_servers: String? = null,
+    val email_login_enabled: String? = null,
 ) {
+    val emailLoginEnabled get() = email_login_enabled == "true"
     val lncurlAutoCreate get() = lncurl_auto_create == "true"
     val lncurlEnabled get() = lncurl_enabled == "true"
 }
+
+/** [email] is masked (`a•••e@example.com`); [displayName]/[picture] are null for a new or nameless account. */
+@Serializable data class EmailLoginPreview(val isNew: Boolean = false, val email: String = "", val pubkey: String? = null, val displayName: String? = null, val picture: String? = null)
+@Serializable data class EmailLoginVerify(val secretHex: String, val pubkey: String, val isNew: Boolean = false)
 
 @Serializable data class VersionInfo(val currentVersion: String? = null)
 @Serializable data class JwtResponse(val token: String, val expiresIn: JsonElement? = null)
