@@ -647,6 +647,8 @@ fun FeedbackScreen() {
 fun PaymentsScreen() {
     val c = LocalContainer.current
     val slide by c.prefs.slideToPay.collectAsState()
+    val auto by c.prefs.nfcAutoPay.collectAsState()
+    var maxText by remember { mutableStateOf(auto.maxSats.toString()) }
     SettingsPage(stringResource(R.string.payments_title)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup {
@@ -655,6 +657,18 @@ fun PaymentsScreen() {
                 }
             }
             MutedText(stringResource(R.string.slide_to_pay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
+            Spacer(Modifier.height(16.dp))
+            SettingsGroup {
+                SettingsRow(stringResource(R.string.nfc_autopay_title), { c.prefs.setNfcAutoPay(auto.copy(enabled = !auto.enabled)) }, icon = L.drawable.lucide_ic_nfc) {
+                    Switch(auto.enabled, { c.prefs.setNfcAutoPay(auto.copy(enabled = it)) }, Modifier.testTag("nfc-autopay"), colors = lwSwitchColors())
+                }
+                if (auto.enabled) OutlinedTextField(maxText, { v ->
+                    maxText = v.filter(Char::isDigit).take(10)
+                    c.prefs.setNfcAutoPay(auto.copy(maxSats = maxText.toLongOrNull() ?: 0))
+                }, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp).testTag("nfc-autopay-max"), label = { Txt(stringResource(R.string.nfc_autopay_max)) }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = lwFieldColors())
+            }
+            MutedText(stringResource(R.string.nfc_autopay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
             Spacer(Modifier.height(16.dp))
             PaymentSoundGroup()
         }

@@ -91,8 +91,8 @@ class MainActivity : AppCompatActivity() {
             lastTap = url to now
             Trail.add("nfc", if (NdefUrl.isInvoice(url)) "invoice tapped" else "card link tapped")
             // Invoices are for us to pay; card links charge the invoice the receive screen shows.
-            if (NdefUrl.isInvoice(url)) Intents.payloads.trySend(Intents.NFC + url)
-            else NfcBus.consumer?.invoke(url) ?: Intents.payloads.trySend(url)
+            if (NdefUrl.isInvoice(url)) { container.lock.nfcTapped(); Intents.payloads.trySend(Intents.NFC + url) }
+            else NfcBus.consumer?.invoke(url) ?: run { container.lock.nfcTapped(); Intents.payloads.trySend(url) }
         }
     }
 

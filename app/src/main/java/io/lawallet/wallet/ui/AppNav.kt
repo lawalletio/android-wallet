@@ -61,6 +61,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -143,6 +144,9 @@ fun Modifier.sharedAddress(): Modifier {
 }
 
 /** Routes mirror /wallet paths. */
+/** Where an NFC-tapped payment's own prompt stands in for the app lock. */
+private val PAY_ROUTES = setOf(R0.SEND_AMOUNT, R0.SEND_PREVIEW)
+
 object R0 {
     const val LANDING = "landing"
     const val SIGNUP = "signup"
@@ -226,7 +230,12 @@ fun LaWalletRoot(container: AppContainer) {
                         val locked by container.lock.locked.collectAsState()
                         // Nothing to guard before login (a lock left on from a removed wallet is reset with it).
                         LaunchedEffect(loggedIn) { if (!loggedIn) container.lock.locked.value = false }
-                        if (locked && loggedIn) LockScreen()
+                        val nfcHold by container.lock.nfcHold.collectAsState()
+                        val nfcPaying by container.lock.nfcPaying.collectAsState()
+                        if (locked && loggedIn && !nfcPaying) LockScreen(prompt = !nfcHold)
+                        // On a tapped payment standing in for the lock, back asks for the lock before any other screen
+                        // shows (predictive back would preview the one underneath). Composed after the NavHost, so it wins.
+                        if (locked && loggedIn && nfcPaying) BackHandler { container.lock.nfcPaying.value = false }
                     }
                 }
             }
@@ -328,7 +337,13 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
         if (!loggedIn && route != null && route !in PUBLIC_ROUTES) nav.navigate(R0.LANDING) { popUpTo(0) { inclusive = true } }
     }
     LaunchedEffect(Unit) { Intents.routes.receiveAsFlow().collect { r -> if (loggedIn || r.startsWith("activate/")) nav.navigate(r) { launchSingleTop = true } } }
-    LaunchedEffect(loggedIn) { Intents.payloads.receiveAsFlow().collect { p -> handleScanPayload(container, nav, p.removePrefix(Intents.NFC), viaNfc = p.startsWith(Intents.NFC)) } }
+    LaunchedEffect(loggedIn) {
+        Intents.payloads.receiveAsFlow().collect { p ->
+            handleScanPayload(container, nav, p.removePrefix(Intents.NFC), viaNfc = p.startsWith(Intents.NFC))
+            container.lock.nfcRouted(nav.currentDestination?.route in PAY_ROUTES)
+        }
+    }
+    LaunchedEffect(route) { route?.let { container.lock.onRoute(it in PAY_ROUTES) } }
     LaunchedEffect(loggedIn) {
         if (loggedIn) container.wallet.notices.collect { n -> notice = n; delay(2660); if (notice?.id == n.id) notice = null }
     }

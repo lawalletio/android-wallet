@@ -380,11 +380,12 @@
     <string name="usdt_activity">Tu actividad en USDT va a aparecer acá</string>
     <string name="usdt_cta_title">Dólares digitales con USDT</string>
     <string name="lock_title">Bloqueo</string>
-    <string name="lock_hint">Usa tu huella, rostro o bloqueo de pantalla.</string>
-    <string name="lock_sensitive">Requerir biometría para mostrar datos sensibles</string>
-    <string name="lock_sensitive_hint">Mostrar un saldo oculto, cadenas de conexión y frases de recuperación.</string>
-    <string name="lock_open">Requerir biometría al desbloquear</string>
-    <string name="lock_payments">Requerir biometría en pagos</string>
+    <string name="lock_hint">Usa tu huella, rostro o bloqueo de pantalla. Datos sensibles: un saldo oculto, cadenas de conexión y frases de recuperación. Inicio: al abrir la app. Apertura: cada vez que la traés de vuelta desde segundo plano.</string>
+    <string name="lock_require">Requerir</string>
+    <string name="lock_sensitive">Datos sensibles</string>
+    <string name="lock_startup">Inicio</string>
+    <string name="lock_access">Apertura</string>
+    <string name="lock_payments">Pagos</string>
     <string name="lock_min_amount">Monto mínimo (sats)</string>
     <string name="lock_min_amount_hint">Los pagos desde este monto piden confirmación. 0 la pide en todos.</string>
     <string name="lock_unavailable">Primero configurá una huella o bloqueo de pantalla en este dispositivo</string>
@@ -394,4 +395,8 @@
     <string name="lock_auth_sensitive">Desbloquear para mostrar</string>
     <string name="lock_locked">LaWallet está bloqueada</string>
     <string name="lock_unlock">Desbloquear</string>
+    <string name="nfc_autopay_title">Pagar toques NFC automáticamente</string>
+    <string name="nfc_autopay_max">Menos de (sats)</string>
+    <string name="nfc_autopay_body">Una factura tocada por NFC por menos de este monto se paga sin deslizar. El bloqueo de pagos igual pide confirmación cuando corresponde.</string>
+    <string name="lock_locked_body">Usá tu huella, rostro o bloqueo de pantalla para continuar.</string>
 </resources>

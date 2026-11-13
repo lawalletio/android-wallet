@@ -9,11 +9,17 @@ import kotlinx.coroutines.CompletableDeferred
 class ActivityBridge : AmberSigner.IntentLauncher {
     var launch: ((Intent, (Intent?) -> Unit) -> Unit)? = null
     var activity: Activity? = null
+    /** An intent we launched (Amber) is in front: leaving for it isn't leaving the app. */
+    @Volatile var awaiting = 0
+        private set
 
     override suspend fun launch(intent: Intent): Intent? {
         val l = launch ?: return null
         val result = CompletableDeferred<Intent?>()
-        l(intent) { result.complete(it) }
-        return result.await()
+        awaiting++
+        try {
+            l(intent) { result.complete(it) }
+            return result.await()
+        } finally { awaiting-- }
     }
 }
