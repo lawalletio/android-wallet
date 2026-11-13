@@ -128,6 +128,20 @@ fun Modifier.sharedAvatar(): Modifier {
     }
 }
 
+/** Home's address pill expands into the Lightning addresses screen's hero card (and folds back). */
+@Composable
+fun Modifier.sharedAddress(): Modifier {
+    val shared = LocalSharedScope.current ?: return this
+    val dest = LocalDestScope.current ?: return this
+    return with(shared) {
+        this@sharedAddress.sharedBounds(
+            rememberSharedContentState("me-address"), dest,
+            boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 360f) },
+            clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(24.dp)),
+        )
+    }
+}
+
 /** Routes mirror /wallet paths. */
 object R0 {
     const val LANDING = "landing"
@@ -140,6 +154,7 @@ object R0 {
     const val WELCOME = "welcome"
     const val HOME = "home"
     const val PROFILE = "profile"
+    const val ADDRESSES = "addresses"
     const val SEND = "send"
     const val SEND_AMOUNT = "send/amount"
     const val SEND_PREVIEW = "send/preview"
@@ -343,13 +358,18 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 // Home ↔ profile is a plain cross-fade, so the avatar flying between them is the motion.
                 composable(
                     R0.HOME,
-                    exitTransition = { if (targetState.destination.route == R0.PROFILE) ProfileFadeOut else null },
-                    popEnterTransition = { if (initialState.destination.route == R0.PROFILE) ProfileFadeIn else null },
+                    // Profile and Addresses grow out of Home's header (shared elements): plain fades around them.
+                    exitTransition = { if (targetState.destination.route in setOf(R0.PROFILE, R0.ADDRESSES)) ProfileFadeOut else null },
+                    popEnterTransition = { if (initialState.destination.route in setOf(R0.PROFILE, R0.ADDRESSES)) ProfileFadeIn else null },
                 ) { TrackTab(R0.HOME, tabShown); CompositionLocalProvider(LocalDestScope provides this) { HomeScreen() } }
                 composable(
                     R0.PROFILE,
                     enterTransition = { ProfileFadeIn }, popExitTransition = { ProfileFadeOut },
                 ) { CompositionLocalProvider(LocalDestScope provides this) { ProfileScreen() } }
+                composable(
+                    R0.ADDRESSES,
+                    enterTransition = { ProfileFadeIn }, popExitTransition = { ProfileFadeOut },
+                ) { CompositionLocalProvider(LocalDestScope provides this) { LightningAddressesScreen() } }
                 composable("activity/{hash}") { ActivityDetailScreen(it.arguments?.getString("hash").orEmpty()) }
                 composable(R0.SEND) { SendRecipientScreen() }
                 composable(R0.SEND_AMOUNT) { SendAmountScreen() }

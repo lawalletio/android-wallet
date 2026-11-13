@@ -99,6 +99,7 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.goHome
+import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
 import kotlinx.coroutines.delay
@@ -124,6 +125,11 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     var claimed by remember { mutableStateOf<String?>(null) }
     val domain = settings?.domain ?: stringResource(R.string.claim_yourDomain)
     val fromActivate = from == "activate"
+    // From Lightning addresses (the web's /admin register flow): success goes back to configure the
+    // new address, or to Home after a beat when it's the user's first.
+    val fromAddresses = from == "addresses"
+    var priorAddresses by remember { mutableStateOf<Int?>(null) } // snapshot before claiming: is this the first?
+    LaunchedEffect(Unit) { if (fromAddresses) priorAddresses = runCatching { c.session.api.value.addresses().size }.getOrNull() }
     val charsetErr = stringResource(R.string.claim_errors_charset)
     val maxErr = stringResource(R.string.claim_errors_maxLength)
     val createFailed = stringResource(R.string.claim_errors_createFailed)
@@ -140,6 +146,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     }
 
     suspend fun finish(address: String?) {
+        if (fromAddresses && settings?.lncurlEnabled == true) provisionLncurl(c, username)
         claimed = address ?: "$username@$domain"
         step = "success"
         runCatching { c.session.refreshMe() }
@@ -159,6 +166,8 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     }
 
     val celebrate = rememberCelebration(step == "success")
+    // First address: flash the success, then the dashboard (as /admin/addresses/register does).
+    LaunchedEffect(step) { if (fromAddresses && step == "success" && priorAddresses == 0) { delay(2000); nav.goHome() } }
     androidx.activity.compose.BackHandler(step == "payment") { step = "username"; invoice = null }
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(if (step == "success") null else stringResource(if (step == "payment") R.string.claim_paymentTitle else R.string.claim_headerTitle), if ((fromActivate && step == "username") || step == "success") null else ({ if (step == "payment") { step = "username"; invoice = null } else nav.popBackStack() }), close = step != "payment")
@@ -240,7 +249,8 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                 Modifier.fillMaxWidth().padding(16.dp).testTag("claim-submit"), BtnVariant.Theme, enabled = username.isNotEmpty() && validation == null && available != false, loading = loading,
             )
             "success" -> LwButton(
-                stringResource(R.string.claim_goToWallet), { nav.goHome() },
+                stringResource(if (fromAddresses) R.string.addresses_configure else R.string.claim_goToWallet),
+                { if (fromAddresses) { if (!nav.popBackStack(R0.ADDRESSES, inclusive = false)) nav.goHome() } else nav.goHome() },
                 Modifier.fillMaxWidth().padding(16.dp).graphicsLayer {
                     val p = celebrate.phase(0.70f, 0.92f)
                     alpha = p; translationY = (1f - p) * 16.dp.toPx()
@@ -393,5 +403,19 @@ private fun CacheDrawScope.lightning(clock: Animatable<Float, *>, t400: Color, t
             drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.8f * a), t400.copy(alpha = 0.35f * a), Color.Transparent), end, r), r, end)
             drawCircle(t300.copy(alpha = 0.8f * a), 30.dp.toPx() + 90.dp.toPx() * burst, end, style = Stroke(2.5.dp.toPx() * a + 0.5.dp.toPx()))
         }
+    }
+}
+
+/**
+ * A new address gets its own disposable LNCurl wallet when the instance runs LNCurl: created, named
+ * after the address, and the address routed into it. It becomes primary only if there's no active one.
+ * Best effort: a failure leaves the address on the server's default routing.
+ */
+internal suspend fun provisionLncurl(c: io.lawallet.wallet.app.AppContainer, username: String) {
+    val api = c.session.api.value
+    runCatching {
+        val hasPrimary = api.remoteWallets().any { it.isDefault && it.status == "ACTIVE" }
+        val w = api.createLncurlWallet(name = username, isDefault = !hasPrimary)
+        api.routeAddressToWallet(username, w.id)
     }
 }

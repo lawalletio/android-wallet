@@ -292,7 +292,13 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
     val dest = if (tx.incoming) null else destinations[tx.paymentHash]
     val (label, describedComment) = splitPaymentDescription(tx.description)
     val comment = if (dest != null) dest.comment else describedComment
-    Row(Modifier.freshEntrance(tx).fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("tx-row"), verticalAlignment = Alignment.CenterVertically) {
+    // A faint wash says the direction at a glance (received green, sent red). Inset + rounded like a group
+    // row; the paddings add back up to the old 16/12, so content and row height don't move.
+    Row(
+        Modifier.freshEntrance(tx).fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp).clip(RoundedCornerShape(20.dp))
+            .background(txWash(tx.incoming)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp).testTag("tx-row"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (dest != null) Box {
             AsyncImage(c.avatars.of(dest.address), null, Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong).clip(CircleShape), contentScale = ContentScale.Crop)
             Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
@@ -303,17 +309,26 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Txt(dest?.name ?: dest?.address ?: label.ifEmpty { null } ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+            Txt(dest?.name ?: dest?.address ?: label.ifEmpty { null } ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1, color = txTitle(tx.incoming))
             if (comment != null) Txt("“$comment”", size = 12.sp, color = Lw.Foreground.copy(alpha = 0.8f), maxLines = 1)
             Txt(if (tx.state == "pending") stringResource(R.string.shared_receipt_pending) else if (tx.state == "failed") stringResource(R.string.shared_receipt_failed) else relativeTime(tx.settledAt ?: tx.createdAt), size = 12.sp, color = Lw.MutedFg)
         }
         Row(verticalAlignment = Alignment.Bottom) {
-            Txt((if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amountSats), size = 14.sp, weight = FontWeight.SemiBold, color = if (tx.incoming) Lw.Green else Lw.Foreground)
+            Txt((if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amountSats), size = 14.sp, weight = FontWeight.SemiBold, color = txAmount(tx.incoming))
             Spacer(Modifier.width(4.dp))
             Txt("sats", size = 12.sp, color = Lw.MutedFg)
         }
     }
 }
+
+/** The activity rows' direction wash: very low-opacity green (received) or red (sent). */
+private fun txWash(incoming: Boolean) = (if (incoming) Lw.Green else Lw.Red).copy(alpha = 0.06f)
+
+/** The row title: mostly white with a hint of the direction colour. */
+private fun txTitle(incoming: Boolean) = androidx.compose.ui.graphics.lerp(Lw.Foreground, if (incoming) Lw.Green else Lw.Red, 0.35f)
+
+/** The amount: clearly in the direction colour, a touch softened toward white. */
+private fun txAmount(incoming: Boolean) = androidx.compose.ui.graphics.lerp(Lw.Foreground, if (incoming) Lw.Green else Lw.Red, 0.7f)
 
 /**
  * A run of same-titled payments (e.g. hosting fees) as one row: summed amount, count badge, and a
@@ -331,7 +346,7 @@ fun TransactionGroup(txs: List<Tx>, onOpen: (Tx) -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Column(Modifier.freshEntrance(first).fillMaxWidth().padding(horizontal = 8.dp).clip(shape).background(Color.White.copy(alpha = well))) {
         Row(
-            Modifier.fillMaxWidth().clip(shape)
+            Modifier.fillMaxWidth().clip(shape).background(txWash(first.incoming))
                 .clickable(onClickLabel = stringResource(if (open) R.string.activity_group_collapse else R.string.activity_group_expand)) { open = !open }
                 .padding(horizontal = 8.dp, vertical = 12.dp).testTag("tx-group"),
             verticalAlignment = Alignment.CenterVertically,
@@ -347,11 +362,11 @@ fun TransactionGroup(txs: List<Tx>, onOpen: (Tx) -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Txt(label, size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+                Txt(label, size = 14.sp, weight = FontWeight.Medium, maxLines = 1, color = txTitle(first.incoming))
                 Txt(pluralStringResource(R.plurals.activity_group_count, txs.size, txs.size) + " · " + relativeTime(first.settledAt ?: first.createdAt), size = 12.sp, color = Lw.MutedFg, maxLines = 1)
             }
             Row(verticalAlignment = Alignment.Bottom) {
-                Txt((if (first.incoming) "+" else "−") + Currencies.formatSats(txs.sumOf { it.amountSats }), size = 14.sp, weight = FontWeight.SemiBold, color = if (first.incoming) Lw.Green else Lw.Foreground)
+                Txt((if (first.incoming) "+" else "−") + Currencies.formatSats(txs.sumOf { it.amountSats }), size = 14.sp, weight = FontWeight.SemiBold, color = txAmount(first.incoming))
                 Spacer(Modifier.width(4.dp))
                 Txt("sats", size = 12.sp, color = Lw.MutedFg)
             }

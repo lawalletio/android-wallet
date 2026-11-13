@@ -74,6 +74,7 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.SwipeButton
 import io.lawallet.wallet.ui.components.Txt
+import io.lawallet.wallet.ui.components.autoFocus
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
@@ -156,7 +157,7 @@ fun SendRecipientScreen() {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Txt(stringResource(R.string.send_to), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
             OutlinedTextField(
-                input, { input = it; error = null }, Modifier.fillMaxWidth().testTag("recipient-input"), enabled = !loading,
+                input, { input = it; error = null }, Modifier.fillMaxWidth().autoFocus().testTag("recipient-input"), enabled = !loading,
                 placeholder = { Txt("satoshi@lawallet.io", color = Lw.MutedFg) },
                 singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Go),

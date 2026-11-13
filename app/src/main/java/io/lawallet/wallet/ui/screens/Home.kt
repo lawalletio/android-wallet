@@ -139,6 +139,8 @@ import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import io.lawallet.wallet.ui.sharedAddress
+import androidx.compose.material3.ripple
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import io.lawallet.wallet.ui.components.holdProgress
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -350,10 +352,14 @@ private fun PageWatermark(page: Int, offset: () -> Float, sheet: () -> Float) {
 }
 
 /** Avatar · centre pill · settings, fixed over both pages; the pill turns from the Lightning address into the onchain primary. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeHeader(intro: Boolean, pages: HomePages) {
     val c = LocalContainer.current
     val nav = LocalNav.current
+    val haptics = LocalHapticFeedback.current
+    val addressPress = remember { MutableInteractionSource() }
+    val addressHold = holdProgress(addressPress)
     val brand = LocalBrand.current
     val me by c.session.me.collectAsState()
     val accountPubkey by c.session.accountPubkey.collectAsState()
@@ -387,12 +393,25 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
         // Centre pill: the user's Lightning address (tap to receive) or the logotype; on Onchain, the primary wallet.
         val address = me?.lightningAddress
         Box(
-            Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable {
-                when {
-                    HomePager.onchain -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
-                    address != null -> nav.navigate(R0.RECEIVE)
-                }
-            }.testTag("home-address"),
+            // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
+            // "charging" (shrinks, dims) up to the long press.
+            Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                .then(if (address != null) Modifier.sharedAddress() else Modifier)
+                .height(44.dp).glass(CircleShape)
+                .combinedClickable(
+                    interactionSource = addressPress, indication = ripple(),
+                    onLongClick = {
+                        if (!HomePager.onchain && address != null) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+                        }
+                    },
+                ) {
+                    when {
+                        HomePager.onchain -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                        address != null -> nav.navigate(R0.RECEIVE)
+                    }
+                }.testTag("home-address"),
         ) {
             // A little carousel inside the pill (it clips): the faces slide sideways 1:1 with the pages, Bitcoin
             // coming in from the left as Lightning leaves to the right, and back.

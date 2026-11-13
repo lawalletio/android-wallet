@@ -133,6 +133,15 @@ class LaWalletApi(
         send("POST", "/api/invoices/${enc(id)}/claim", buildJsonObject { put("preimage", preimage) }, ClaimInvoiceResult.serializer())
 
     // ---------- remote wallets ----------
+    // ---------- addresses: routing and removal (list / create / primary are above) ----------
+    /** Routes the address's payments into one of the user's remote wallets. */
+    suspend fun routeAddressToWallet(username: String, walletId: String) =
+        send("PUT", "/api/wallet/addresses/${enc(username)}", buildJsonObject { put("mode", "CUSTOM_NWC"); put("remoteWalletId", walletId) }, JsonElement.serializer())
+    /** Forwards the address to another lightning address (the server probes it on save). */
+    suspend fun redirectAddress(username: String, target: String) =
+        send("PUT", "/api/wallet/addresses/${enc(username)}", buildJsonObject { put("mode", "ALIAS"); put("redirect", target) }, JsonElement.serializer())
+    suspend fun deleteAddress(username: String) = send("DELETE", "/api/wallet/addresses/${enc(username)}", null, JsonElement.serializer())
+
     suspend fun remoteWallets() = get("/api/remote-wallets", ListSerializer(RemoteWallet.serializer()))
     suspend fun remoteWallet(id: String) = get("/api/remote-wallets/${enc(id)}", RemoteWallet.serializer())
     suspend fun createNwcWallet(name: String, connectionString: String, mode: String, isDefault: Boolean) =
