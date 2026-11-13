@@ -171,6 +171,7 @@ object R0 {
     const val SETTINGS = "settings"
     const val CARDS = "settings/cards"
     const val SECURITY = "settings/security"
+    const val LOCKING = "settings/locking"
     const val REMOTE_WALLETS = "settings/remote-wallets"
     const val REMOTE_WALLET_ADD = "settings/remote-wallets-add"
     const val CURRENCIES = "settings/currencies"
@@ -219,7 +220,14 @@ fun LaWalletRoot(container: AppContainer) {
                 val auth by container.session.auth.collectAsState()
                 when (auth) {
                     AuthState.Loading -> LoadingScreen()
-                    else -> AppNavHost(container, loggedIn = auth == AuthState.LoggedIn)
+                    else -> {
+                        val loggedIn = auth == AuthState.LoggedIn
+                        AppNavHost(container, loggedIn = loggedIn)
+                        val locked by container.lock.locked.collectAsState()
+                        // Nothing to guard before login (a lock left on from a removed wallet is reset with it).
+                        LaunchedEffect(loggedIn) { if (!loggedIn) container.lock.locked.value = false }
+                        if (locked && loggedIn) LockScreen()
+                    }
                 }
             }
         }
@@ -393,6 +401,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.SETTINGS) { TrackTab(R0.SETTINGS, tabShown); SettingsScreen() }
                 composable(R0.CARDS) { CardsScreen() }
                 composable(R0.SECURITY) { SecurityScreen() }
+                composable(R0.LOCKING) { LockingScreen() }
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
                 composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
                 composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }

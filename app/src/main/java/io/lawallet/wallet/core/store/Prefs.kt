@@ -16,6 +16,8 @@ import kotlinx.serialization.json.Json
 @Serializable data class CurrencyState(val active: List<String> = Currencies.DEFAULT_ACTIVE, val selected: String = Currencies.DEFAULT_SELECTED, val localEdit: Boolean = false)
 /** What we knew about a Lightning Address send at pay time (payment-destinations.ts) — NWC only returns the invoice description. */
 @Serializable data class PaymentDestination(val address: String, val name: String? = null, val comment: String? = null, val savedAt: Long = 0)
+/** Settings → Locking. [paymentsMinSats]: payments from this amount up ask for the device lock (0 = all). */
+@Serializable data class LockPrefs(val onOpen: Boolean = false, val sensitive: Boolean = false, val payments: Boolean = false, val paymentsMinSats: Long = 0)
 @Serializable data class Contact(val address: String, val name: String? = null, val picture: String? = null, val savedAt: Long = 0)
 
 /** Small typed wrapper over SharedPreferences — the Android twin of the web wallet's localStorage keys. */
@@ -88,6 +90,12 @@ class Prefs(context: Context) {
     private val _slideToPay = MutableStateFlow(sp.getBoolean("slide-to-pay", true))
     val slideToPay: StateFlow<Boolean> = _slideToPay
     fun setSlideToPay(v: Boolean) { _slideToPay.value = v; sp.edit { putBoolean("slide-to-pay", v) } }
+
+    private val _lock = MutableStateFlow(
+        sp.getString("lock", null)?.let { runCatching { json.decodeFromString(LockPrefs.serializer(), it) }.getOrNull() } ?: LockPrefs(),
+    )
+    val lock: StateFlow<LockPrefs> = _lock
+    fun setLock(v: LockPrefs) { _lock.value = v; sp.edit { putString("lock", json.encodeToString(LockPrefs.serializer(), v)) } }
 
     /** Opt-in crash reporting (docs/monitoring-plan.md). Device-level: survives logout. Forced on in beta builds;
      *  the stored choice is untouched, so it applies again once BETA is off. */
@@ -175,11 +183,12 @@ class Prefs(context: Context) {
         val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "bunker-relays") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
         _destinations.value = emptyMap()
+        _lock.value = LockPrefs()
     }
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg", "bunker", "bunker-relays") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg", "bunker", "bunker-relays", "lock") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }

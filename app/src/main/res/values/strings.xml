@@ -379,4 +379,19 @@
     <string name="usdt_empty">No USDT wallets yet</string>
     <string name="usdt_activity">Your USDT activity will show up here</string>
     <string name="usdt_cta_title">Digital dollars with USDT</string>
+    <string name="lock_title">Locking</string>
+    <string name="lock_hint">Uses your fingerprint, face or screen lock.</string>
+    <string name="lock_sensitive">Require biometrics for displaying sensitive data</string>
+    <string name="lock_sensitive_hint">Showing a hidden balance, connection strings and recovery phrases.</string>
+    <string name="lock_open">Require biometrics on main unlock</string>
+    <string name="lock_payments">Require biometrics on payments</string>
+    <string name="lock_min_amount">Minimum amount (sats)</string>
+    <string name="lock_min_amount_hint">Payments from this amount up ask first. 0 asks for every payment.</string>
+    <string name="lock_unavailable">Set up a fingerprint or screen lock on this device first</string>
+    <string name="lock_auth_settings">Unlock locking settings</string>
+    <string name="lock_auth_open">Unlock LaWallet</string>
+    <string name="lock_auth_pay">Confirm payment</string>
+    <string name="lock_auth_sensitive">Unlock to show</string>
+    <string name="lock_locked">LaWallet is locked</string>
+    <string name="lock_unlock">Unlock</string>
 </resources>

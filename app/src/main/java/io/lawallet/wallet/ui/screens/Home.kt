@@ -573,6 +573,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val client by c.wallet.client.collectAsState()
     val recent by c.wallet.recent.collectAsState()
     val hidden by c.prefs.hideBalance.collectAsState()
+    val sensitiveGate = rememberSensitiveGate()
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
     val scope = rememberCoroutineScope()
@@ -739,7 +740,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                                     val primary = wallets?.firstOrNull { it.isDefault }
                                     nav.navigate(if (primary != null) R0.remoteWallet(primary.id) else R0.REMOTE_WALLETS) { launchSingleTop = true }
                                 },
-                            ) { c.prefs.setHideBalance(!hidden) })
+                            ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                             .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
                             .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
                             // Holding "charges" the figure (shrinks, dims) up to the long press; inside measureRoot so the ghost's start isn't skewed.

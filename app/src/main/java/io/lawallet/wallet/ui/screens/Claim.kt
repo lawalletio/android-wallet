@@ -114,6 +114,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
+    val paymentGate = rememberPaymentGate()
     val settings by c.session.settings.collectAsState()
     var username by rememberSaveable { mutableStateOf("") }
     var available by remember { mutableStateOf<Boolean?>(null) }
@@ -205,6 +206,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                             ErrorText(error, Modifier.fillMaxWidth())
                             LwButton(stringResource(R.string.claim_payWithWallet), {
                                 scope.launch {
+                                    if (!paymentGate(inv.amountSats)) return@launch
                                     loading = true
                                     runCatching { c.wallet.freshClient()?.payInvoice(inv.bolt11) ?: error("no wallet") }
                                         .onSuccess { if (it.preimage.isNotEmpty()) claimPaid(inv, it.preimage) }

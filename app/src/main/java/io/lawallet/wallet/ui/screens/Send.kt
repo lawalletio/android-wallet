@@ -301,10 +301,12 @@ fun SendPreviewScreen() {
     // Unknown balance (still loading / offline) doesn't block; fees aren't quoted, so this only catches the obvious case.
     val balance by c.wallet.balance.collectAsState()
     val short = balance?.let { amount > it } == true && !paying && !done
+    val paymentGate = rememberPaymentGate()
 
     fun pay() {
         paying = true; error = null
         scope.launch {
+            if (!paymentGate(amount)) { paying = false; return@launch }
             runCatching {
                 val nwc = c.wallet.freshClient() ?: throw IllegalStateException(noWallet)
                 var sentComment = s.comment

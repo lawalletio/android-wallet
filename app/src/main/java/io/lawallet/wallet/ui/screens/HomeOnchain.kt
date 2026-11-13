@@ -135,6 +135,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
     val density = LocalDensity.current
     val wallets by c.onchain.wallets.collectAsState()
     val hidden by c.prefs.hideBalance.collectAsState()
+    val sensitiveGate = rememberSensitiveGate()
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
@@ -200,7 +201,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
                                     },
-                                ) { c.prefs.setHideBalance(!hidden) })
+                                ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                                 .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("onchain-balance-toggle")
                                 .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
                                 .graphicsLayer { rollIn(ONCHAIN); scaleX = 1f - 0.06f * hold; scaleY = scaleX; alpha *= 1f - 0.3f * hold },
