@@ -1,5 +1,11 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.builtins.MapSerializer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +14,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -127,10 +148,29 @@ internal suspend fun fetchRemoteWallets(c: AppContainer, onList: (List<RemoteWal
     val list = runCatching { ensurePrimary(c, c.session.api.value.remoteWallets()) }.onSuccess { onList(it); c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }.getOrNull()
     coroutineScope {
         (list ?: c.prefs.cached("remote-wallets", remoteWalletsSer)).orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
-            launch { balances[w.id] = runCatching { c.session.api.value.remoteWalletBalance(w.id) }.getOrNull() }
+            launch { readWalletBalance(c, w.id, balances) }
         }
     }
     return list != null
+}
+
+private val walletBalancesSer = MapSerializer(String.serializer(), Long.serializer())
+internal fun cachedWalletBalances(c: AppContainer): Map<String, Long> = c.prefs.cached("rw-balances", walletBalancesSer).orEmpty()
+internal fun saveWalletBalance(c: AppContainer, id: String, sats: Long) = c.prefs.setCached("rw-balances", walletBalancesSer, cachedWalletBalances(c) + (id to sats))
+
+/** Each remote wallet's balance (missing = loading, null = unavailable), filled from the last known figures so the
+ *  cards show at once while live reads come in. */
+@Composable
+internal fun rememberWalletBalances(): SnapshotStateMap<String, Long?> {
+    val c = LocalContainer.current
+    return remember { mutableStateMapOf<String, Long?>().apply { putAll(cachedWalletBalances(c)) } }
+}
+
+/** A live read of one wallet's balance into [balances] and the cache; a failure keeps the last figure if there is one. */
+internal suspend fun readWalletBalance(c: AppContainer, id: String, balances: MutableMap<String, Long?>) {
+    runCatching { c.session.api.value.remoteWalletBalance(id) }
+        .onSuccess { balances[id] = it; saveWalletBalance(c, id, it) }
+        .onFailure { if (balances[id] == null) balances[id] = null }
 }
 
 @Composable
@@ -138,8 +178,9 @@ fun RemoteWalletsScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
-    val balances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
+    val balances = rememberWalletBalances()
     var failed by remember { mutableStateOf(false) }
+    val newId = rememberNewWallet()
     LaunchedEffect(Unit) { failed = !fetchRemoteWallets(c, { wallets = it }, balances) }
     Column(Modifier.fillMaxSize()) {
         SettingsHeader(stringResource(R.string.settings_remoteWallets), { nav.popBackStack() }, stringResource(R.string.common_back))
@@ -171,13 +212,57 @@ fun RemoteWalletsScreen() {
                         MutedText(pluralStringResource(R.plurals.rw_wallet_count, list.size, list.size), size = 13.sp)
                     }
                     list.sortedWith(compareByDescending<RemoteWallet> { it.isDefault }.thenBy { it.status != "ACTIVE" }).forEach { w ->
-                        WalletCard(w, if (w.status == "ACTIVE") balances[w.id] else null, loading = w.status == "ACTIVE" && !balances.containsKey(w.id)) { nav.navigate(R0.remoteWallet(w.id)) }
+                        key(w.id) {
+                            NewWalletEntrance(w.id == newId, RoundedCornerShape(24.dp)) {
+                                WalletCard(w, if (w.status == "ACTIVE") balances[w.id] else null, loading = w.status == "ACTIVE" && !balances.containsKey(w.id)) { nav.navigate(R0.remoteWallet(w.id)) }
+                            }
+                        }
                     }
                 }
             }
         }
         LwButton(stringResource(R.string.rw_add), { nav.navigate(R0.REMOTE_WALLET_ADD) }, Modifier.fillMaxWidth().padding(16.dp).testTag("add-wallet"), BtnVariant.Theme, icon = L.drawable.lucide_ic_plus)
     }
+}
+
+/** The wallet just added (consumed once: coming back later doesn't replay its entrance). */
+@Composable
+internal fun rememberNewWallet(): String? {
+    val c = LocalContainer.current
+    return remember { c.flow.newWalletId.also { c.flow.newWalletId = null } }
+}
+
+/**
+ * A just-added wallet's card: once [start] returns (the screen has landed), it rises in from below on a soft spring,
+ * growing into place, while a brand-coloured halo blooms behind it and fades.
+ */
+@Composable
+internal fun NewWalletEntrance(isNew: Boolean, shape: Shape, start: suspend () -> Unit = { delay(320) }, content: @Composable () -> Unit) {
+    if (!isNew) return content()
+    val rise = remember { Animatable(0f) }
+    val halo = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        start()
+        launch { rise.animateTo(1f, spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow)) }
+        halo.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+        halo.animateTo(0f, tween(1100, delayMillis = 450, easing = LinearOutSlowInEasing))
+    }
+    val tint = LocalBrand.current.t400
+    Box(
+        Modifier
+            .graphicsLayer {
+                val p = rise.value
+                alpha = p.coerceIn(0f, 1f)
+                translationY = (1f - p) * 56.dp.toPx()
+                scaleX = 0.9f + 0.1f * p; scaleY = scaleX
+            }
+            .drawBehind {
+                if (halo.value <= 0f) return@drawBehind
+                val grow = 6.dp.toPx() * halo.value
+                val outline = shape.createOutline(Size(size.width + grow * 2, size.height + grow * 2), layoutDirection, this)
+                translate(-grow, -grow) { drawOutline(outline, tint.copy(alpha = 0.28f * halo.value)) }
+            },
+    ) { content() }
 }
 
 @Composable
@@ -249,16 +334,19 @@ fun AddRemoteWalletScreen() {
     val derivedName = remember(conn) { runCatching { NwcUri.parse(conn) }.getOrNull()?.let { it.lud16 ?: it.relays.firstOrNull()?.substringAfter("://")?.substringBefore('/') } ?: "Wallet" }
     val back = { if (step != null) { step = null; error = null; scanning = false } else nav.popBackStack() }
     androidx.activity.compose.BackHandler(step != null) { back() }
-    fun submit(create: suspend () -> Unit) {
+    fun submit(create: suspend () -> RemoteWallet) {
         busy = true; error = null
         scope.launch {
-            runCatching { create() }.onSuccess {
-                runCatching { c.session.refreshMe() }
-                // Back to Home with the wallet list open, so the new wallet is right there.
-                c.flow.revealWallets = true
-                if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
-            }.onFailure { error = it.message }
-            busy = false
+            runCatching { create() }.onSuccess { created ->
+                // Back where we came from (Home's wallet list or Remote wallets) while the button still spins: the list
+                // already holds the new wallet (cache) and plays its entrance. Busy stays on: this screen is leaving.
+                val others = c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty().filter { it.id != created.id }
+                c.prefs.setCached("remote-wallets", remoteWalletsSer, others.map { if (created.isDefault) it.copy(isDefault = false) else it } + created)
+                c.flow.newWalletId = created.id
+                c.scope.launch { runCatching { c.session.refreshMe() } }
+                if (nav.previousBackStackEntry?.destination?.route == R0.HOME) c.flow.revealWallets = true
+                if (!nav.popBackStack()) nav.goHome()
+            }.onFailure { error = it.message; busy = false }
         }
     }
     Column(Modifier.fillMaxSize()) {
@@ -303,6 +391,20 @@ fun AddRemoteWalletScreen() {
     }
 }
 
+/** A receive protocol as a small round icon: lit when supported, dimmed when not; a tap says which and why. */
+@Composable
+private fun ProtocolBadge(@DrawableRes icon: Int, name: String, supported: Boolean, reason: String?) {
+    val context = LocalContext.current
+    val status = stringResource(if (supported) R.string.shared_protocol_supported else R.string.shared_protocol_notSupported)
+    val tint = if (supported) Lw.Green else Lw.MutedFg
+    Box(
+        Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = if (supported) 0.16f else 0.08f))
+            .clickable(role = Role.Button) { context.toast(listOfNotNull("$name · $status", reason?.takeIf { !supported }).joinToString("\n")) }
+            .semantics { contentDescription = "$name: $status" },
+        contentAlignment = Alignment.Center,
+    ) { LwIcon(icon, size = 14.dp, tint = tint.copy(alpha = if (supported) 1f else 0.6f)) }
+}
+
 /** Top-right status button: green "Live" with a pause icon, or muted "Paused" with a play icon; a tap flips it. */
 @Composable
 private fun StatusToggle(live: Boolean, busy: Boolean, onClick: () -> Unit) {
@@ -326,7 +428,7 @@ fun RemoteWalletDetailScreen(id: String) {
     val scope = rememberCoroutineScope()
     var wallet by remember { mutableStateOf<RemoteWallet?>(null) }
     var notFound by remember { mutableStateOf(false) }
-    var balance by remember { mutableStateOf<Long?>(null) }
+    var balance by remember { mutableStateOf(cachedWalletBalances(c)[id]) }
     var connection by remember { mutableStateOf<String?>(null) }
     var showConn by remember { mutableStateOf(false) }
     var toggling by remember { mutableStateOf(false) }
@@ -341,14 +443,16 @@ fun RemoteWalletDetailScreen(id: String) {
     suspend fun load() {
         val api = c.session.api.value
         runCatching { api.remoteWallet(id) }.onSuccess { wallet = it }.onFailure { notFound = true; return }
-        balance = runCatching { api.remoteWalletBalance(id) }.getOrNull()
+        runCatching { api.remoteWalletBalance(id) }.onSuccess { balance = it; saveWalletBalance(c, id, it) } // a failure keeps the cached figure
         connection = runCatching { api.remoteWalletConnectionString(id) }.getOrNull()
         action = runCatching { api.receiveAction(id) }.getOrNull()
         notifications = runCatching { api.remoteWalletNotifications(id) }.getOrDefault(emptyList())
     }
     LaunchedEffect(id) { load() }
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(wallet?.name ?: stringResource(R.string.remoteWallets_detail_title), { nav.popBackStack() }, stringResource(R.string.common_back)) {
+        SettingsHeader(wallet?.name ?: stringResource(R.string.remoteWallets_detail_title), { nav.popBackStack() }, stringResource(R.string.common_back),
+            titleAction = if (wallet == null) null else ({ GlassIconButton(L.drawable.lucide_ic_pencil, { renaming = true }, Modifier.testTag("wallet-rename"), size = 36.dp, contentDescription = stringResource(R.string.rw_rename)) }),
+        ) {
             // Status as a toggle: says what it is (Live / Paused), the icon says what a tap does (pause / play).
             val w = wallet
             if (w != null && (w.status == "ACTIVE" || w.status == "DISABLED")) StatusToggle(w.status == "ACTIVE", toggling) {
@@ -363,20 +467,36 @@ fun RemoteWalletDetailScreen(id: String) {
         val w = wallet
         if (w == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { if (notFound) MutedText(stringResource(R.string.remoteWallets_detail_notFound)) else Spinner() }; return@Column }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Txt(stringResource(R.string.remote_wallet_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                Txt(balance?.let { Currencies.formatSats(it) } ?: "—", size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallet-balance"))
-                Txt("sats", size = 14.sp, color = Lw.MutedFg)
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (w.isDefault) Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400)
-                    if (w.status != "ACTIVE" && w.status != "DISABLED") Pill(w.status, Lw.Red) // e.g. DEAD: nothing to toggle
-                    w.provider?.let { Pill(if (it == "lncurl") "LNCurl" else it, Lw.NwcPurple) }
+            Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Txt(stringResource(R.string.remote_wallet_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                    Txt(balance?.let { Currencies.formatSats(it) } ?: "—", size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallet-balance"))
+                    Txt("sats", size = 14.sp, color = Lw.MutedFg)
+                    val dead = w.status != "ACTIVE" && w.status != "DISABLED" // e.g. DEAD: nothing to toggle
+                    if (w.isDefault || dead) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (w.isDefault) Pill(stringResource(R.string.remoteWallets_list_primary), LocalBrand.current.t400)
+                            if (dead) Pill(w.status, Lw.Red)
+                        }
+                    }
+                }
+                // What kind of wallet it is (LNCurl or NWC), as its mark in the corner.
+                val lncurl = w.provider == "lncurl"
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(14.dp).size(34.dp).clip(CircleShape).background((if (lncurl) Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.16f))
+                        .semantics { contentDescription = if (lncurl) "LNCurl" else "NWC" }.testTag("wallet-kind"),
+                    contentAlignment = Alignment.Center,
+                ) { WalletMark(lncurl, 16.dp) }
+                w.receiveCapabilities?.let { caps ->
+                    Row(Modifier.align(Alignment.BottomEnd).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ProtocolBadge(L.drawable.lucide_ic_badge_check, "LUD-21 (verify)", w.status == "ACTIVE", null)
+                        ProtocolBadge(L.drawable.lucide_ic_zap, "NIP-57 (zaps)", caps.nip57, caps.reason)
+                    }
                 }
             }
-            SettingsGroup {
-                if (!w.isDefault && w.status == "ACTIVE") { SettingsRow(stringResource(R.string.remoteWallets_list_setPrimary), { scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, isDefault = true) }.onSuccess { c.prefs.notePrimary(id) }; load(); runCatching { c.session.refreshMe() } } }, icon = L.drawable.lucide_ic_check); GroupDivider() }
-                SettingsRow(stringResource(R.string.rw_rename), { renaming = true }, icon = L.drawable.lucide_ic_pencil)
+            if (!w.isDefault && w.status == "ACTIVE") SettingsGroup {
+                SettingsRow(stringResource(R.string.remoteWallets_list_setPrimary), { scope.launch { runCatching { c.session.api.value.updateRemoteWallet(id, isDefault = true) }.onSuccess { c.prefs.notePrimary(id) }; load(); runCatching { c.session.refreshMe() } } }, icon = L.drawable.lucide_ic_check)
             }
             connection?.let { cs ->
                 SettingsGroup(stringResource(R.string.remote_wallet_connection)) {
@@ -390,19 +510,18 @@ fun RemoteWalletDetailScreen(id: String) {
                 }
             }
             connection?.let { cs -> runCatching { NwcUri.parse(cs).relays }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { relays ->
-                SettingsGroup(stringResource(R.string.bunker_relays)) {
-                    relays.forEachIndexed { i, r ->
-                        if (i > 0) GroupDivider()
-                        SettingsRow(r.removePrefix("wss://").removePrefix("ws://").trimEnd('/'), { context.copyToClipboard(r, copied) }, icon = L.drawable.lucide_ic_radio_tower)
+                // Labels in one row, scrolling sideways; a tap copies the relay.
+                Column {
+                    Txt(stringResource(R.string.bunker_relays), Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("wallet-relays"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        relays.forEach { r ->
+                            Row(Modifier.clip(CircleShape).glass(CircleShape, GlassLevel.Thin).clickable { context.copyToClipboard(r, copied) }.padding(start = 10.dp, end = 12.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                LwIcon(L.drawable.lucide_ic_radio_tower, size = 14.dp, tint = Lw.MutedFg)
+                                Spacer(Modifier.width(6.dp))
+                                Txt(r.removePrefix("wss://").removePrefix("ws://").trimEnd('/'), size = 13.sp, maxLines = 1)
+                            }
+                        }
                     }
-                }
-            }
-            w.receiveCapabilities?.let { caps ->
-                SettingsGroup(stringResource(R.string.remoteWallets_protocols_label)) {
-                    SettingsRow("LUD-21 (verify)", null, value = stringResource(if (w.status == "ACTIVE") R.string.shared_protocol_supported else R.string.shared_protocol_notSupported))
-                    GroupDivider()
-                    SettingsRow("NIP-57 (zaps)", null, value = stringResource(if (caps.nip57) R.string.shared_protocol_supported else R.string.shared_protocol_notSupported))
-                    caps.reason?.let { MutedText(it, Modifier.padding(16.dp), size = 12.sp) }
                 }
             }
             action?.let { a ->

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import kotlinx.serialization.builtins.ListSerializer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,7 +88,9 @@ fun LightningAddressesScreen() {
     val settings by c.session.settings.collectAsState()
     val me by c.session.me.collectAsState()
     val domain = settings?.domain ?: me?.lightningAddress?.substringAfter('@', "") ?: c.session.instanceHost
-    var addresses by remember { mutableStateOf<List<WalletAddress>?>(null) }
+    // Last list seen, shown at once (offline too) while the server's answer comes in.
+    val addressesSer = ListSerializer(WalletAddress.serializer())
+    var addresses by remember { mutableStateOf(c.prefs.cached("addresses", addressesSer)) }
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var acting by remember { mutableStateOf<WalletAddress?>(null) }
@@ -98,8 +101,8 @@ fun LightningAddressesScreen() {
     val copied = stringResource(R.string.common_copied)
     suspend fun load() {
         val api = c.session.api.value
-        runCatching { api.addresses() }.onSuccess { addresses = it; error = null }.onFailure { error = it.message }
-        runCatching { api.remoteWallets() }.onSuccess { wallets = it }
+        runCatching { api.addresses() }.onSuccess { addresses = it; error = null; c.prefs.setCached("addresses", addressesSer, it) }.onFailure { error = it.message }
+        runCatching { api.remoteWallets() }.onSuccess { wallets = it; c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
     }
     // On every return too: an address added through the claim flow shows up when it pops back here.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { load() } }

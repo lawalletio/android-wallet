@@ -134,7 +134,7 @@ internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> =
 }
 
 /** Day-grouped transaction rows plus the paging footer; used by Home's activity sheet. */
-internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
+internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, filtering: Boolean = false, onOpen: (Tx) -> Unit) {
     rows.forEachIndexed { i, row ->
         when (row) {
             // A rule between months (none above the first); the month's name shows in the scroll/scrubber overlays.
@@ -155,7 +155,8 @@ internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>
             when {
                 paging.loading -> Spinner()
                 items.isEmpty() && paging.error -> MutedText(stringResource(R.string.activity_loadFailed), align = TextAlign.Center)
-                items.isEmpty() -> MutedText(stringResource(R.string.activity_empty), align = TextAlign.Center)
+                // A search with no results says so itself ("No matching activity"), not "No activity yet".
+                items.isEmpty() -> if (!filtering) MutedText(stringResource(R.string.activity_empty), align = TextAlign.Center)
                 !paging.hasMore -> MutedText(stringResource(R.string.activity_end), align = TextAlign.Center, size = 12.sp)
             }
         }
@@ -180,7 +181,7 @@ internal data class DayLabels(val today: String, val yesterday: String) {
     fun of(day: Pair<Long, Int>): String = when (day.second) {
         0 -> today
         1 -> yesterday
-        in 2..6 -> java.text.SimpleDateFormat("EEEE", java.util.Locale.getDefault()).format(Date(day.first)).replaceFirstChar { it.uppercase() }
+        in 2..6 -> java.text.SimpleDateFormat("EEEE d", java.util.Locale.getDefault()).format(Date(day.first)).replaceFirstChar { it.uppercase() } // "Tuesday 5"
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(day.first))
     }
 }

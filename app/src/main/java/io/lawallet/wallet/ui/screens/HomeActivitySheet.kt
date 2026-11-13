@@ -63,6 +63,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.ui.components.MutedText
@@ -143,7 +146,7 @@ internal fun rememberActivitySheet(enabled: Boolean): ActivitySheet {
 
 /**
  * Home's [header], [top] (the balance) and [below] (banners) with the activity sheet docked beneath. The sheet
- * docks with its grabber at mid-screen, and [top] centres between the header and that line as if nothing hung
+ * docks with its grabber a little above mid-screen, and [top] centres between the header and that line as if nothing hung
  * under it, so the balance sits at the same spot on every page (Onchain and Lightning swipe past each other with
  * it fixed). [below] hangs under the balance and pushes the sheet down instead. Home itself doesn't scroll: every
  * drag drives the sheet.
@@ -161,7 +164,8 @@ internal fun ActivitySheetLayout(
     var belowH by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     // ponytail: if Home's top content is taller than the screen minus a peek, its tail hides under the sheet; make it scroll if banners ever stack that high.
-    val mid = with(density) { fullH / 2f - 18.dp.toPx() } // grabber line (16dp + half its 4dp) on the centre line
+    // Grabber line (16dp + half its 4dp) on the centre line, then raised so the docked sheet is ~15% taller (+10%, then +5%).
+    val mid = with(density) { fullH - (fullH / 2f + 18.dp.toPx()) * 1.155f }
     val lift = ((mid - headH - topH) / 2f).coerceAtLeast(0f)
     val content = headH + lift + topH + belowH
     SideEffect { onNeed(content) }
@@ -177,6 +181,9 @@ internal fun ActivitySheetLayout(
             Modifier.fillMaxWidth().graphicsLayer {
                 val p = sheet.progress
                 alpha = (1f - p * 2.2f).coerceIn(0f, 1f) // gone by ~45%, so it never fights the rising list
+                // No offscreen buffer: it would clip to this column's measured height, and [top] is translated past it
+                // (the lift), cropping the currency toggle and dots as soon as the fade starts.
+                compositingStrategy = CompositingStrategy.ModulateAlpha
                 translationY = -p * 64.dp.toPx()
                 scaleX = 1f - 0.06f * p
                 scaleY = scaleX
@@ -206,6 +213,24 @@ internal fun Modifier.sheetTailFade(sheet: ActivitySheet) = graphicsLayer { comp
         drawRect(Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = sheet.progress), startY = bottom - 260.dp.toPx(), endY = bottom - 70.dp.toPx()), blendMode = BlendMode.DstIn)
     }
 
+/** The sheet's "Activity" title, shared by every Home page. */
+@Composable
+internal fun SheetTitle(sheet: ActivitySheet, pin: Modifier) {
+    // The title only shows as the sheet rises: docked, it takes no room and the rows sit right under the grabber.
+    Row(
+        Modifier.fillMaxWidth().then(pin).clipToBounds()
+            .layout { m, c -> val p = m.measure(c); val h = (p.height * sheet.progress).roundToInt(); layout(p.width, h) { p.place(0, 0) } }
+            .graphicsLayer { alpha = sheet.progress }
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Txt(
+            stringResource(R.string.home_activityTitle), size = 15.sp, weight = FontWeight.SemiBold,
+            modifier = Modifier.graphicsLayer { val s = 1f + 0.45f * sheet.progress; scaleX = s; scaleY = s; transformOrigin = TransformOrigin(0f, 0.5f) },
+        )
+    }
+}
+
 @Composable
 internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
     val list = rememberLazyListState()
@@ -223,15 +248,10 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
         // Grabber: says "this moves", firmer as the sheet takes over.
         // Grabber and title stay put while the Home pages swipe ([pin]); the rows slide.
         Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
-        Row(Modifier.fillMaxWidth().then(pin).padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(
-                stringResource(R.string.home_activityTitle), size = 15.sp, weight = FontWeight.SemiBold,
-                modifier = Modifier.graphicsLayer { val s = 1f + 0.45f * sheet.progress; scaleX = s; scaleY = s; transformOrigin = TransformOrigin(0f, 0.5f) },
-            )
-        }
+        SheetTitle(sheet, pin)
         val empty = when {
             !hasNwc -> stringResource(R.string.home_list_activity_connect)
-            recent.isEmpty() -> stringResource(R.string.home_list_activity_empty)
+            recent.isEmpty() && !s.active -> stringResource(R.string.home_list_activity_empty)
             else -> null
         }
         if (empty != null) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
@@ -244,7 +264,7 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
             val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
             Box(Modifier.weight(1f).sheetTailFade(sheet)) {
                 LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {
-                    activityList(rows, filtered, labels, paging, onOpen)
+                    activityList(rows, filtered, labels, paging, filtering = s.active, onOpen = onOpen)
                 }
                 androidx.compose.animation.AnimatedVisibility(filtered.isEmpty(), enter = fadeIn(tween(200)), exit = fadeOut(tween(120))) {
                     Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
@@ -253,7 +273,8 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
                 }
                 // Clear of the floating Receive/Scan/Send bar.
                 if (expanded) TimelineScrubber(list, rows, Modifier.align(Alignment.TopEnd).padding(bottom = 138.dp))
-                ScrollMonthLabel(list, rows, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 8.dp))
+                // Only once the sheet is up: a drag that lifts it isn't a scroll through months.
+                if (expanded) ScrollMonthLabel(list, rows, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 8.dp))
             }
         }
     }

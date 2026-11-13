@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -78,6 +80,7 @@ import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.derivedStateOf
@@ -100,6 +103,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -159,7 +163,13 @@ internal const val PAGES = 3
 
 /** Which Home page shows: 0 = Onchain, 1 = Lightning, 2 = USDT, fractional mid-swipe. The tab bar reads it. */
 object HomePager {
-    var position by mutableFloatStateOf(LIGHTNING.toFloat())
+    /** Home's pager while it's on screen. Read straight from it, in the same frame the pages draw: a copy collected
+     *  through a flow lands a frame late, and the pinned switcher, grabber and figures wobbled by that much mid-swipe. */
+    var state by mutableStateOf<PagerState?>(null)
+    val position: Float get() = state?.let { it.currentPage + it.currentPageOffsetFraction } ?: last
+    /** Where Home's pager last was, for while it's off screen. */
+    private var last = LIGHTNING.toFloat()
+    fun release(s: PagerState) { if (state === s) { last = s.currentPage + s.currentPageOffsetFraction; state = null } }
     /** The page nearest the front. */
     val page get() = position.roundToInt().coerceIn(0, PAGES - 1)
     /** How much [page] is in front: 1 when it is, 0 a page or more away (the weights always sum to 1). */
@@ -184,6 +194,8 @@ internal fun pageTone(position: Float = HomePager.position): Color {
 @Stable
 internal class HomePages {
     val y = mutableStateListOf(*Array(PAGES) { Float.NaN })
+    /** Root-space top of each page's currency switcher, for [pinnedGlide]. */
+    val toggleY = mutableStateListOf(*Array(PAGES) { Float.NaN })
     val reveal = mutableStateListOf<HomeReveal?>(*arrayOfNulls(PAGES))
     val sheet = mutableStateListOf<ActivitySheet?>(*arrayOfNulls(PAGES))
     /** What each page needs above its docked activity line; all dock at the largest, so the line never moves. */
@@ -206,6 +218,21 @@ internal fun Modifier.pinned(pages: HomePages, page: Int) = graphicsLayer {
     translationX = o * pages.width
     alpha = if (abs(o) < 0.5f) 1f else 0f
 }
+
+/**
+ * [pinned], and vertically gliding: every page's copy sits at the swipe's blend of the pages' own heights ([ys],
+ * measured here), so if the pages put it at different heights it slides from one to the next with the finger
+ * instead of jumping when the copies swap at mid-swipe.
+ */
+internal fun Modifier.pinnedGlide(pages: HomePages, page: Int, ys: SnapshotStateList<Float>) =
+    onGloballyPositioned { ys[page] = it.positionInRoot().y }
+        .graphicsLayer {
+            val o = HomePager.position - page
+            translationX = o * pages.width
+            alpha = if (abs(o) < 0.5f) 1f else 0f
+            val own = ys[page]
+            if (!own.isNaN()) translationY = (0 until PAGES).sumOf { k -> (HomePager.weight(k) * (ys[k].takeUnless(Float::isNaN) ?: own)).toDouble() }.toFloat() - own
+        }
 
 /**
  * Pinned, for what differs between the pages (the balance figure): a stationary window the pages' figures slide
@@ -302,7 +329,7 @@ fun HomeScreen() {
         if (c.flow.revealWallets) pager.scrollToPage(LIGHTNING)
         if (c.flow.revealOnchain) pager.scrollToPage(ONCHAIN)
     }
-    LaunchedEffect(pager) { snapshotFlow { pager.currentPage + pager.currentPageOffsetFraction }.collect { HomePager.position = it } }
+    DisposableEffect(pager) { HomePager.state = pager; onDispose { HomePager.release(pager) } }
     // Back from Onchain or USDT goes to Lightning first (the pages' own handlers, composed later, win while they're open).
     BackHandler(pager.currentPage != LIGHTNING) { scope.launch { pager.animateScrollToPage(LIGHTNING) } }
     // First entry into Home plays the intro (staggered rise + balance rolling up from 0); coming back
@@ -328,7 +355,8 @@ fun HomeScreen() {
     var rootTop by remember { mutableFloatStateOf(0f) }
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootTop = it.positionInRoot().y; anchors.width = it.size.width.toFloat() }.testTag("home-root")) {
         HorizontalPager(
-            pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+            // No edge stretch: it would drag the pinned switcher, grabber and figures off their spots.
+            pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, overscrollEffect = null,
             flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = spring(0.86f, Spring.StiffnessMediumLow)),
         ) { page ->
             Box(Modifier.fillMaxSize()) {
@@ -347,7 +375,7 @@ fun HomeScreen() {
             Modifier.align(Alignment.TopCenter).padding(top = HEADER_H + 20.dp).riseIn(0, intro),
         )
         HomeHeader(intro, anchors)
-        PageDots(anchors, pager.settledPage, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(it) } }
+        PageDots(anchors, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(it) } }
     }
 }
 
@@ -505,33 +533,38 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     }
 }
 
+/**
+ * An invisible balance-sized line in every page's figure slot, so the slot keeps one height whatever it shows (loading
+ * dots, an error, "Soon"): the switcher, dots and sheet line then sit at the same spot on every page.
+ */
+@Composable
+internal fun FigureStrut() = Txt("0", Modifier.alpha(0f).clearAndSetSemantics {}, size = 56.sp, weight = FontWeight.SemiBold, lineHeight = 60.sp, letterSpacing = (-1.5).sp)
+
 /** Under each page's balance: where the fixed dots sit. */
 @Composable
-internal fun DotsSlot(anchors: HomePages, page: Int) =
+internal fun DotsSlot(anchors: HomePages, page: Int) {
     Spacer(Modifier.padding(top = 18.dp).height(DOT).onGloballyPositioned { anchors.y[page] = it.positionInRoot().y + it.size.height / 2f })
+    // A page the pager drops stops counting (its last spot may be stale).
+    DisposableEffect(page) { onDispose { anchors.y[page] = Float.NaN } }
+}
 
 private val DOT = 6.dp
 
 /**
  * One dot per page, Onchain (orange), Lightning (blue), USDT (green): the page in front stretches into a lit pill,
- * scrubbed by the swipe itself. They hold still while the pages slide under them; vertically they follow the
- * settled page's balance (reveal, sheet), easing over only if the next page's balance sits elsewhere once it lands
- * (its wallet list open, say). Tap a dot to go to its page.
+ * scrubbed by the swipe itself. They hold still while the pages slide under them, at the same height on every page,
+ * and follow the balance's vertical moves (reveal), which the pages mirror. Tap a dot to go to its page.
  */
 @Composable
-private fun PageDots(anchors: HomePages, settled: Int, rootTop: Float, modifier: Modifier, onTap: (Int) -> Unit) {
+private fun PageDots(anchors: HomePages, rootTop: Float, modifier: Modifier, onTap: (Int) -> Unit) {
     val desc = stringResource(R.string.home_pages_hint)
-    val follow = remember { Animatable(settled.toFloat()) }
-    LaunchedEffect(settled) { follow.animateTo(settled.toFloat(), spring(0.9f, Spring.StiffnessMediumLow)) }
     Box(
         modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally)
+            // One height for all pages (the lowest page's slot), so a horizontal swipe never moves them; they still
+            // ride the balance's vertical moves (wallet reveal), which every page mirrors.
             .offset {
-                val f = follow.value.coerceIn(0f, PAGES - 1f)
-                val i = f.toInt().coerceAtMost(PAGES - 2)
-                val any = anchors.y.firstOrNull { !it.isNaN() } ?: Float.NaN
-                val a = anchors.y[i].takeUnless(Float::isNaN) ?: any
-                val b = anchors.y[i + 1].takeUnless(Float::isNaN) ?: a
-                IntOffset(0, if (a.isNaN()) 0 else (a + (b - a) * (f - i) - rootTop - 16.dp.toPx()).toInt())
+                val y = anchors.y.filterNot(Float::isNaN).maxOrNull()
+                IntOffset(0, if (y == null) 0 else (y - rootTop - 16.dp.toPx()).toInt())
             }
             .graphicsLayer {
                 alpha = if (anchors.y.all(Float::isNaN)) 0f else (1f - anchors.sheetAt(HomePager.position) * 2.2f).coerceIn(0f, 1f)
@@ -586,7 +619,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     reveal.minTravel = with(density) { 48.dp.toPx() }
     val open by remember { derivedStateOf { reveal.open } }
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
-    val walletBalances = remember { mutableStateMapOf<String, Long?>() } // missing = loading, null = unavailable
+    val newWallet = rememberNewWallet()
+    val walletBalances = rememberWalletBalances() // cached figures first, then live
     var promoting by remember { mutableStateOf<String?>(null) }
     // While the primary switches, the main balance shows the new wallet's known balance until its own arrives.
     var heldBalance by remember { mutableStateOf<Long?>(null) }
@@ -598,14 +632,14 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
         while (true) {
             delay(10_000)
             wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
-                launch { runCatching { c.session.api.value.remoteWalletBalance(w.id) }.onSuccess { walletBalances[w.id] = it } }
+                launch { readWalletBalance(c, w.id, walletBalances) }
             }
         }
     }
     // A payment on the main connection (NWC notification) re-reads the primary card at once, from its own endpoint.
     LaunchedEffect(open, balance) {
         val primary = wallets?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
-        if (open && walletBalances.containsKey(primary.id)) runCatching { c.session.api.value.remoteWalletBalance(primary.id) }.onSuccess { walletBalances[primary.id] = it }
+        if (open && walletBalances.containsKey(primary.id)) readWalletBalance(c, primary.id, walletBalances)
     }
     // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
     var sweepFrom by remember { mutableStateOf<String?>(null) }
@@ -676,9 +710,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
         c.wallet.notices.collectLatest { n -> cue = if (n.type == "payment_received") "incoming" else "outgoing"; delay(2660); cue = null }
     }
     val motion = rolling ?: cue
-    var glowColor by remember { mutableStateOf(Lw.Green) }
-    LaunchedEffect(motion) { if (motion != null) glowColor = if (motion == "incoming") Lw.Green else Lw.Orange }
-    val glowAlpha by animateFloatAsState(if (cue != null) 1f else 0f, tween(315), label = "glow")
 
     val hasNwc = client != null
     val autoCreate = settings?.lncurlAutoCreate == true
@@ -701,18 +732,13 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
         },
         floor = anchors.floorFor(LIGHTNING), onNeed = { anchors.need[LIGHTNING] = it },
         top = {
-            // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
+            // The balance: free on the prism light (no panel).
             Box(
                 Modifier.fillMaxWidth()
                     // Measured at rest; the reveal then slides it down to the bottom, 1:1 with the finger.
                     .measureRoot { reveal.balanceTop = it.top; reveal.balanceH = it.height }
                     .graphicsLayer { translationY = reveal.progress * reveal.range }
-                    .riseIn(1, intro).padding(start = 16.dp, end = 16.dp, top = 20.dp).drawBehind {
-                    if (glowAlpha > 0f) {
-                        val r = size.width * 0.75f
-                        drawCircle(Brush.radialGradient(0f to glowColor.copy(alpha = 0.42f * glowAlpha), 1f to Color.Transparent, center = Offset(size.width / 2, size.height * 0.38f), radius = r), r, Offset(size.width / 2, size.height * 0.38f))
-                    }
-                },
+                    .riseIn(1, intro).padding(start = 16.dp, end = 16.dp, top = 20.dp),
             ) {
                 Column(
                     Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
@@ -746,6 +772,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                             .graphicsLayer { rollIn(LIGHTNING); val p = balanceHold; scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                         contentAlignment = Alignment.Center,
                     ) {
+                        FigureStrut()
                         when {
                             shown == null && hasNwc && loadingBalance -> LoadingDots(Modifier.testTag("balance-loading"), dot = 12.dp)
                             shown == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
@@ -766,7 +793,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     }
                     // Receive / Send live in the bottom bar.
                     if (currencies.active.size >= 2) CurrencyToggle(
-                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinned(anchors, LIGHTNING),
+                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinnedGlide(anchors, LIGHTNING, anchors.toggleY),
                         onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
                         enabled = current,
                     )
@@ -822,6 +849,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
           onSetPrimary = setPrimary,
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
+          newWalletId = newWallet,
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
           sweepFrom = sweepFrom,
           onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
