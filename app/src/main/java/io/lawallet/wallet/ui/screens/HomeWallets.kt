@@ -635,7 +635,7 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
 }
 
 @Composable
-private fun SheetAction(icon: Int, label: String, tint: Color, tag: String, labelColor: Color = Lw.Foreground, onClick: () -> Unit) =
+internal fun SheetAction(icon: Int, label: String, tint: Color, tag: String, labelColor: Color = Lw.Foreground, onClick: () -> Unit) =
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 16.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,

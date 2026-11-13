@@ -465,7 +465,7 @@ fun RemoteWalletDetailScreen(id: String) {
 }
 
 @Composable
-internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, saveLabel: String = title, placeholder: String? = null, maxLength: Int = 64, onSave: (String) -> Unit) {
     // Opens focused with the current text selected: type to replace, Done (or the button) to save.
     var v by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
     val save = { if (v.text.isNotBlank()) onSave(v.text.trim()) }
@@ -474,14 +474,15 @@ internal fun TextPrompt(title: String, initial: String, onDismiss: () -> Unit, o
         title = { Txt(title, size = 19.sp, weight = FontWeight.SemiBold) },
         text = {
             OutlinedTextField(
-                v, { v = it.copy(text = it.text.take(64)) }, Modifier.fillMaxWidth().heightIn(min = 60.dp).autoFocus().testTag("prompt-field"),
+                v, { v = it.copy(text = it.text.take(maxLength)) }, Modifier.fillMaxWidth().heightIn(min = 60.dp).autoFocus().testTag("prompt-field"),
+                placeholder = placeholder?.let { p -> { Txt(p, color = Lw.MutedFg) } },
                 singleLine = true, colors = lwFieldColors(), shape = RoundedCornerShape(16.dp),
                 textStyle = androidx.compose.material3.LocalTextStyle.current.copy(fontSize = 18.sp),
                 keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
             )
         },
-        confirmButton = { ModalAction(title, save, Modifier.testTag("prompt-save"), enabled = v.text.isNotBlank()) },
+        confirmButton = { ModalAction(saveLabel, save, Modifier.testTag("prompt-save"), enabled = v.text.isNotBlank()) },
     )
 }
 
