@@ -259,7 +259,7 @@
     <string name="onchain_title">Bitcoin</string>
     <string name="home_lightningBalance">Lightning balance</string>
     <string name="home_onchainBalance">Onchain balance</string>
-    <string name="home_pages_hint">Switch between Onchain and Lightning</string>
+    <string name="home_pages_hint">Switch between Onchain, Lightning and USDT</string>
     <string name="onchain_soon_short">Soon</string>
     <string name="onchain_soon">Onchain send and receive are coming soon</string>
     <string name="onchain_wallets">Onchain wallets</string>
@@ -371,4 +371,12 @@
     <string name="email_auth_switch">Switch to %1$s</string>
     <string name="email_auth_offline_title">Can\'t reach the server</string>
     <string name="email_auth_offline_body">Check your connection and try again. Your link is still valid.</string>
+
+    <!-- USDT (UI, coming soon) -->
+    <string name="home_usdtBalance">USDT balance</string>
+    <string name="usdt_soon">USDT is coming soon</string>
+    <string name="usdt_wallets">USDT wallets</string>
+    <string name="usdt_empty">No USDT wallets yet</string>
+    <string name="usdt_activity">Your USDT activity will show up here</string>
+    <string name="usdt_cta_title">Digital dollars with USDT</string>
 </resources>
