@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import android.os.Build
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -253,6 +256,8 @@ internal fun WalletsReveal(
     onRename: (RemoteWallet, String) -> Unit = { _, _ -> },
     onTransfer: (RemoteWallet) -> Unit = {},
     onDelete: (RemoteWallet, Long?) -> Unit = { _, _ -> },
+    /** Just added: its card plays the entrance once the list is open. */
+    newWalletId: String? = null,
 ) {
     val sorted = wallets?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
     RevealDeck(
@@ -273,11 +278,13 @@ internal fun WalletsReveal(
         empty = { DeckEmpty(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle)) },
         footer = { if (sorted.orEmpty().size > 1) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal) },
     ) { w ->
-        WalletRevealCard(
-            w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
-            code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
-            sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
-        )
+        NewWalletEntrance(w.id == newWalletId, RoundedCornerShape(24.dp), start = { snapshotFlow { reveal.progress >= 0.97f }.first { it }; delay(60) }) {
+            WalletRevealCard(
+                w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
+                code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
+                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
+            )
+        }
     }
 }
 

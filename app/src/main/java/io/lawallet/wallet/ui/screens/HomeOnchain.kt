@@ -207,6 +207,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                 .graphicsLayer { rollIn(ONCHAIN); scaleX = 1f - 0.06f * hold; scaleY = scaleX; alpha *= 1f - 0.3f * hold },
                             contentAlignment = Alignment.Center,
                         ) {
+                            FigureStrut()
                             AnimatedContent(
                                 code,
                                 transitionSpec = {
@@ -224,7 +225,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                             }
                         }
                         if (currencies.active.size >= 2) CurrencyToggle(
-                            currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).pinned(anchors, ONCHAIN),
+                            currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).pinnedGlide(anchors, ONCHAIN, anchors.toggleY),
                             onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } },
                             enabled = current,
                         )
@@ -306,12 +307,7 @@ private fun OnchainCta(modifier: Modifier, onCreate: () -> Unit, onImport: () ->
 internal fun AssetActivity(sheet: ActivitySheet, empty: String, pin: Modifier) {
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
-        Row(Modifier.fillMaxWidth().then(pin).padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(
-                stringResource(R.string.home_activityTitle), size = 15.sp, weight = FontWeight.SemiBold,
-                modifier = Modifier.graphicsLayer { val s = 1f + 0.45f * sheet.progress; scaleX = s; scaleY = s; transformOrigin = TransformOrigin(0f, 0.5f) },
-            )
-        }
+        SheetTitle(sheet, pin)
         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
             MutedText(empty, align = TextAlign.Center)
         }

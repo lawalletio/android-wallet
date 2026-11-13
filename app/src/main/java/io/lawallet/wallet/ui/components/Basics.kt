@@ -194,7 +194,7 @@ fun ScreenHeader(title: String?, onBack: (() -> Unit)?, close: Boolean = false, 
 
 /** Settings pages: same round glass back button as flows, large left-aligned title below. */
 @Composable
-fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String, action: (@Composable () -> Unit)? = null) {
+fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String, titleAction: (@Composable () -> Unit)? = null, action: (@Composable () -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = backLabel)
@@ -202,7 +202,10 @@ fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String, action:
             action?.invoke() // top right
         }
         Spacer(Modifier.height(16.dp))
-        Txt(title, Modifier.padding(start = 4.dp), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Txt(title, Modifier.padding(start = 4.dp).weight(1f, fill = false), size = 28.sp, weight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
+            titleAction?.let { Spacer(Modifier.width(8.dp)); it() } // beside the title (rename)
+        }
     }
 }
 

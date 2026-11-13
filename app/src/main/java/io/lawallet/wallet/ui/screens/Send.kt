@@ -91,6 +91,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.produceState
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import io.lawallet.wallet.core.api.NostrProfile
@@ -101,6 +102,8 @@ import java.text.DateFormat
 import java.util.Date
 import com.composables.icons.lucide.R as L
 
+/** A complete Lightning address, as typed: name@domain.tld. */
+private val FULL_ADDRESS = Regex("^[a-z0-9._-]+@[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}$", RegexOption.IGNORE_CASE)
 private val SUGGESTED_DOMAINS = listOf("lacrypta.ar", "lawallet.io", "walletofsatoshi.com", "blink.sv", "strike.me", "getalby.com", "ln.tips", "stacker.news", "primal.net", "fountain.fm", "coinos.io", "bitrefill.me", "zbd.gg", "npub.cash")
 
 /** Resolves a parsed destination into the send flow; returns the next route. */
@@ -152,6 +155,8 @@ fun SendRecipientScreen() {
     val typedDomain = input.substringAfter('@', "")
     val suggestions = if (user.isNotBlank() && !input.startsWith("ln", true) && user.all { it.isLetterOrDigit() || it in "._-" })
         SUGGESTED_DOMAINS.filter { it.startsWith(typedDomain, true) && "$user@$it" != input }.take(6) else emptyList()
+    // Fully written: the address leads the box, expanded with its Nostr face and name.
+    val full = input.trim().takeIf { FULL_ADDRESS.matches(it) }
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(stringResource(R.string.send_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -173,7 +178,10 @@ fun SendRecipientScreen() {
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
-            if (suggestions.isNotEmpty()) AddressGroup(stringResource(R.string.shared_addressInput_suggestions), suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }) { if (!loading) { input = it; submit(it) } }
+            if (full != null || suggestions.isNotEmpty()) AddressGroup(
+                stringResource(R.string.shared_addressInput_suggestions),
+                listOfNotNull(full).map { it to c.avatars.of(it) } + suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }, expanded = full,
+            ) { if (!loading) { input = it; submit(it) } }
             if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { if (!loading) { input = it; submit(it) } }
         }
         LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
@@ -181,12 +189,13 @@ fun SendRecipientScreen() {
 }
 
 @Composable
-private fun AddressGroup(title: String, items: List<Pair<String, String>>, onPick: (String) -> Unit) {
+private fun AddressGroup(title: String, items: List<Pair<String, String>>, expanded: String? = null, onPick: (String) -> Unit) {
     Column {
         Txt(title, Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp))) {
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).animateContentSize()) {
             items.forEach { (address, avatar) ->
-                Row(Modifier.fillMaxWidth().clickable { onPick(address) }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (address == expanded) ExpandedAddress(address, avatar) { onPick(address) }
+                else Row(Modifier.fillMaxWidth().clickable { onPick(address) }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(avatar, null, Modifier.size(32.dp).glass(CircleShape, GlassLevel.Strong), contentScale = ContentScale.Crop)
                     Spacer(Modifier.width(12.dp))
                     Txt(address, size = 14.sp, maxLines = 1)
@@ -194,6 +203,38 @@ private fun AddressGroup(title: String, items: List<Pair<String, String>>, onPic
             }
         }
     }
+}
+
+/** A fully typed address: avatar, display name and address, from its NIP-05 profile once that answers. */
+@Composable
+private fun ExpandedAddress(address: String, fallbackAvatar: String, onClick: () -> Unit) {
+    val profile = rememberAddressProfile(address, debounceMs = 350)
+    val name = profile?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp).testTag("recipient-match"), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(profile?.picture?.takeIf(String::isNotBlank) ?: fallbackAvatar, null, Modifier.size(52.dp).clip(CircleShape).glass(CircleShape, GlassLevel.Strong), contentScale = ContentScale.Crop)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(name ?: address.substringBefore('@'), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LwIcon(L.drawable.lucide_ic_zap, size = 12.dp, tint = Lw.Gold)
+                Spacer(Modifier.width(4.dp))
+                Txt(address, size = 13.sp, color = Lw.MutedFg, maxLines = 1)
+            }
+        }
+        LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+    }
+}
+
+/** The Nostr profile behind a Lightning address (its NIP-05), or null; [debounceMs] waits out typing. */
+@Composable
+private fun rememberAddressProfile(address: String, debounceMs: Long = 0): NostrProfile? {
+    val c = LocalContainer.current
+    val profile by produceState<NostrProfile?>(null, address) {
+        value = null
+        delay(debounceMs)
+        value = c.lnurl.nip05Pubkey(address)?.let { pk -> runCatching { c.session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
+    }
+    return profile
 }
 
 private fun kindLabel(d: Destination?) = when (d) {
@@ -400,10 +441,7 @@ fun SendPreviewScreen() {
  */
 @Composable
 private fun RecipientHeader(address: String, lnurlImage: String?) {
-    val c = LocalContainer.current
-    val profile by produceState<NostrProfile?>(null, address) {
-        value = c.lnurl.nip05Pubkey(address)?.let { pk -> runCatching { c.session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
-    }
+    val profile = rememberAddressProfile(address)
     val name = profile?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
     val picture = profile?.picture?.takeIf(String::isNotBlank) ?: lnurlImage
     AnimatedVisibility(picture != null || name != null, enter = fadeIn() + expandVertically()) {

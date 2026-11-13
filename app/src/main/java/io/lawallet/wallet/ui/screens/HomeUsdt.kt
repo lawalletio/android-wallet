@@ -92,10 +92,11 @@ internal fun UsdtPage(current: Boolean, anchors: HomePages) {
                                 .graphicsLayer { rollIn(USDT) }.testTag("usdt-soon"),
                             contentAlignment = Alignment.Center,
                         ) {
+                            FigureStrut()
                             Txt(stringResource(R.string.onchain_soon_short), size = 56.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, lineHeight = 60.sp, letterSpacing = (-1.5).sp)
                         }
                         if (currencies.active.size >= 2) CurrencyToggle(
-                            currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).pinned(anchors, USDT),
+                            currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).pinnedGlide(anchors, USDT, anchors.toggleY),
                             onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } },
                             enabled = current,
                         )

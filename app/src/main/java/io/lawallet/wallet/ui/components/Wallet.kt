@@ -116,7 +116,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.ripple
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
-import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
 import androidx.compose.animation.animateColorAsState
@@ -268,6 +267,7 @@ fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> 
     }
 }
 
+/** "Just now", "7m ago", "1h ago"; past two hours the time itself (the rows sit under their day's heading). */
 @Composable
 fun relativeTime(ms: Long): String {
     val diff = System.currentTimeMillis() - ms
@@ -275,9 +275,8 @@ fun relativeTime(ms: Long): String {
     return when {
         diff < 0 || minutes < 1 -> stringResource(R.string.shared_tx_justNow)
         minutes < 60 -> stringResource(R.string.shared_tx_minutesAgo, minutes)
-        (minutes / 60.0).roundToInt() < 24 -> stringResource(R.string.shared_tx_hoursAgo, (minutes / 60.0).roundToInt())
-        (minutes / 1440.0).roundToInt() < 7 -> stringResource(R.string.shared_tx_daysAgo, (minutes / 1440.0).roundToInt())
-        else -> DateFormat.getDateInstance(DateFormat.SHORT).format(Date(ms))
+        minutes <= 120 -> stringResource(R.string.shared_tx_hoursAgo, (minutes / 60.0).roundToInt())
+        else -> android.text.format.DateFormat.getTimeFormat(LocalContext.current).format(Date(ms)) // 12/24h as the phone has it
     }
 }
 
