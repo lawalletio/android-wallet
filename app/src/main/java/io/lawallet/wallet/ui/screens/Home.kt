@@ -114,6 +114,8 @@ import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import io.lawallet.wallet.ui.sharedAddress
+import androidx.compose.material3.ripple
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import io.lawallet.wallet.ui.components.holdProgress
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -129,6 +131,8 @@ fun HomeScreen() {
     val haptics = LocalHapticFeedback.current
     val balancePress = remember { MutableInteractionSource() }
     val balanceHold = holdProgress(balancePress)
+    val addressPress = remember { MutableInteractionSource() }
+    val addressHold = holdProgress(addressPress)
     val nav = LocalNav.current
     val brand = LocalBrand.current
     val me by c.session.me.collectAsState()
@@ -279,8 +283,14 @@ fun HomeScreen() {
                 }
                 // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
                 val address = me?.lightningAddress
+                // Tap: receive. Hold: the pill expands into the Lightning addresses screen (with the hold "charge").
                 if (address != null) Row(
-                    Modifier.weight(1f).height(44.dp).glass(CircleShape).clickable { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp)
+                    Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                        .sharedAddress().height(44.dp).glass(CircleShape)
+                        .combinedClickable(
+                            interactionSource = addressPress, indication = ripple(),
+                            onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.ADDRESSES) { launchSingleTop = true } },
+                        ) { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp)
                         .testTag("home-address").semantics(mergeDescendants = true) {},
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
                 ) {
