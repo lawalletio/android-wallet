@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.border
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.runtime.Stable
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,7 +67,6 @@ import io.lawallet.wallet.ui.components.TransactionRow
 import io.lawallet.wallet.ui.components.TransactionGroup
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.shareText
-import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Glass
@@ -74,6 +75,7 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -133,10 +135,12 @@ internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> =
 
 /** Day-grouped transaction rows plus the paging footer; used by Home's activity sheet. */
 internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, onOpen: (Tx) -> Unit) {
-    rows.forEach { row ->
+    rows.forEachIndexed { i, row ->
         when (row) {
-            // Zero-height marker: the month only shows as the scrubber's drag overlay.
-            is ActivityRow.Month -> item("month-" + row.startMs) {}
+            // A rule between months (none above the first); the month's name shows in the scroll/scrubber overlays.
+            is ActivityRow.Month -> item("month-" + row.startMs) {
+                if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp), thickness = 1.dp, color = Lw.Border)
+            }
             is ActivityRow.Day -> item(row.day.first) { Txt(labels.of(row.day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
             is ActivityRow.Run -> {
                 val run = row.txs
@@ -196,6 +200,26 @@ private fun yearOf(ms: Long) = Calendar.getInstance().apply { timeInMillis = ms 
 private fun monthLabel(ms: Long, skeleton: String): String {
     val locale = java.util.Locale.getDefault()
     return java.text.SimpleDateFormat(android.text.format.DateFormat.getBestDateTimePattern(locale, skeleton), locale).format(Date(ms)).replaceFirstChar { it.uppercase() }
+}
+
+/** Top-left month pill: shows while a finger drags the list, fades out a second after release (even as a fling coasts on). */
+@Composable
+internal fun ScrollMonthLabel(list: LazyListState, rows: List<ActivityRow>, modifier: Modifier) {
+    val months = remember(rows) { rows.mapIndexedNotNull { i, r -> (r as? ActivityRow.Month)?.let { i to it.startMs } } }
+    if (months.isEmpty()) return
+    val dragged by list.interactionSource.collectIsDraggedAsState()
+    // Lingers a second after release, then fades.
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(dragged) { if (dragged) shown = true else { delay(1000); shown = false } }
+    val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 150 else 450), label = "month")
+    if (alpha == 0f) return
+    val current = months.lastOrNull { it.first <= list.firstVisibleItemIndex }?.second ?: months.first().second
+    Txt(
+        monthLabel(current, "MMMMyyyy"),
+        modifier.graphicsLayer { this.alpha = alpha }.clip(CircleShape).background(Lw.Card).border(1.dp, Lw.Border, CircleShape)
+            .padding(horizontal = 14.dp, vertical = 8.dp).testTag("activity-month"),
+        size = 14.sp, weight = FontWeight.SemiBold,
+    )
 }
 
 /**
@@ -323,7 +347,7 @@ fun ActivityDetailScreen(hash: String) {
             val shareTitle = stringResource(R.string.shared_receipt_text_title)
             ReceiptFooter(
                 onShare = { context.shareText("$shareTitle\n$title: ${Currencies.formatSats(t.amountSats)} sats\n${rows.joinToString("\n") { "${it.first}: ${it.second}" }}\nHash: ${t.paymentHash}") },
-                onDone = { nav.goHome() },
+                onDone = { nav.popBackStack() }, // same as the close button: back to where it was opened
             )
         }
     }

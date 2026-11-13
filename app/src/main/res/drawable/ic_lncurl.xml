@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LNCurl mark: the wordmark's pixel-block "LN" with its offset outline shadow. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="304" android:viewportHeight="304">
+    <path android:strokeColor="#9BE88A" android:strokeWidth="5" android:fillColor="#00000000" android:pathData="M13,73h35v28h-35zM13,108h35v28h-35zM13,143h35v28h-35zM13,178h35v28h-35zM13,213h118v28h-118zM148,73h51v28h-51zM148,108h68v28h-68zM148,143h35v28h-35zM199,143h34v28h-34zM148,178h35v28h-35zM216,178h34v28h-34zM148,213h35v28h-35zM233,213h67v28h-67zM266,73h35v28h-35zM266,108h35v28h-35zM266,143h35v28h-35zM266,178h35v28h-35z"/>
+    <path android:fillColor="#9BE88A" android:pathData="M4,64h35v28h-35zM4,99h35v28h-35zM4,134h35v28h-35zM4,169h35v28h-35zM4,204h118v28h-118zM139,64h51v28h-51zM139,99h68v28h-68zM139,134h35v28h-35zM190,134h34v28h-34zM139,169h35v28h-35zM207,169h34v28h-34zM139,204h35v28h-35zM224,204h67v28h-67zM257,64h35v28h-35zM257,99h35v28h-35zM257,134h35v28h-35zM257,169h35v28h-35z"/>
+</vector>

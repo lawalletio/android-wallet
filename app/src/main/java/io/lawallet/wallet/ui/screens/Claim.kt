@@ -170,7 +170,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                     if (bonus && c.prefs.bonusSats > 0) MutedText(stringResource(R.string.claim_cardBonus, Currencies.formatSats(c.prefs.bonusSats)))
                     Txt(stringResource(R.string.claim_username), size = 14.sp, weight = FontWeight.Medium)
                     OutlinedTextField(
-                        username, { username = it.lowercase().trim(); error = null }, Modifier.fillMaxWidth().testTag("username-input"),
+                        username, { username = it.lowercase().trim(); error = null }, Modifier.fillMaxWidth().testTag("username-input"), enabled = !loading,
                         singleLine = true, shape = RoundedCornerShape(12.dp), colors = lwFieldColors(),
                         suffix = { Txt("@$domain", color = Lw.MutedFg) },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false),

@@ -65,6 +65,10 @@
     <string name="notification_name">Nombre</string>
     <string name="notification_received">Al recibir un pago</string>
     <string name="notification_forwarded">Al reenviar un pago</string>
+    <string name="webhook_trigger">Enviar cuando un pago es</string>
+    <string name="webhook_on_received">Recibido</string>
+    <string name="webhook_on_forwarded">Reenviado</string>
+    <string name="webhook_url_short">URL</string>
     <string name="relay_retry">Reintentar</string>
     <string name="open_externally">Abrir en el navegador</string>
     <string name="paste">Pegar</string>
@@ -200,6 +204,10 @@
     <string name="profile_unnamed">Anónimo</string>
     <string name="sweep_menu_details">Ver detalles</string>
     <string name="sweep_menu">Barrer fondos</string>
+    <string name="transfer_menu">Transferir monto</string>
+    <string name="transfer_to">Transferencia a %1$s</string>
+    <string name="rw_delete_sweepFirst">Esta billetera todavía tiene %1$s sats. Barrelos a otra billetera primero; podrás eliminarla cuando termine el barrido.</string>
+    <string name="send_kind_wallet">Billetera remota</string>
     <string name="sweep_pick">Elegí la billetera que recibe todos los fondos</string>
     <string name="sweep_from">Desde</string>
     <string name="sweep_title">Barrer fondos</string>

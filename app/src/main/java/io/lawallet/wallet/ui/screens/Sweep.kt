@@ -73,9 +73,11 @@ import io.lawallet.wallet.core.nwc.NwcException
 import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
+import io.lawallet.wallet.ui.components.WalletMark
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.SettingsHeader
 import io.lawallet.wallet.ui.components.Spinner
@@ -206,7 +208,13 @@ internal class SweepRun(val from: RemoteWallet, val to: RemoteWallet) {
 }
 
 /** The run outlives the screen (payments are in flight); the screen picks it back up by its wallets. */
-internal object Sweeps { var current: SweepRun? = null }
+internal object Sweeps {
+    var current: SweepRun? = null
+    /** "Delete" on a wallet with funds sweeps it first; this is that wallet, until the sweep ends. */
+    var deleteAfter: String? = null
+    /** Set when that sweep has finished: Home asks to delete the wallet on return. */
+    var deletePrompt: String? = null
+}
 
 @Composable
 fun SweepScreen(fromId: String, toId: String) {
@@ -225,8 +233,11 @@ fun SweepScreen(fromId: String, toId: String) {
     // Sweeps start from Home's wallet list: going back reopens it there.
     val back = {
         if (run?.phase != SweepRun.Phase.Running) Sweeps.current = null
+        run?.takeIf { it.finished && it.from.id == Sweeps.deleteAfter }?.let { Sweeps.deletePrompt = it.from.id; Sweeps.deleteAfter = null }
         c.flow.revealWallets = true
-        nav.popBackStack(); Unit
+        // Back to Home, not "back one": the auto-return and a Done tap can both fire, and a second plain pop
+        // would pop Home itself and leave a blank screen.
+        nav.popBackStack(R0.HOME, inclusive = false); Unit
     }
     BackHandler { back() }
     // Once the funds are across, let the outcome land for a beat, then return to where the sweep started.
@@ -293,7 +304,7 @@ private fun FlowHeader(r: SweepRun) {
 @Composable
 private fun WalletBadge(w: RemoteWallet, dim: Boolean, highlight: Boolean = false) {
     val lncurl = w.provider == "lncurl"
-    val accent = if (lncurl) Lw.Gold else Lw.NwcPurple
+    val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     val glow by animateFloatAsState(if (highlight) 1f else 0f, spring(0.5f, Spring.StiffnessLow), label = "badge")
     val alpha by animateFloatAsState(if (dim) 0.55f else 1f, tween(400), label = "dim")
     Column(Modifier.widthIn(max = 116.dp).graphicsLayer { this.alpha = alpha }, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -301,7 +312,7 @@ private fun WalletBadge(w: RemoteWallet, dim: Boolean, highlight: Boolean = fals
             Modifier.size(64.dp).graphicsLayer { val s = 1f + 0.08f * glow; scaleX = s; scaleY = s }
                 .clip(RoundedCornerShape(20.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.38f), accent.copy(alpha = 0.10f)))),
             contentAlignment = Alignment.Center,
-        ) { LwIcon(if (lncurl) L.drawable.lucide_ic_zap else L.drawable.lucide_ic_link, size = 26.dp, tint = accent) }
+        ) { WalletMark(lncurl, 26.dp) }
         Spacer(Modifier.height(8.dp))
         Txt(w.name, size = 13.sp, weight = FontWeight.SemiBold, maxLines = 1, align = TextAlign.Center)
     }

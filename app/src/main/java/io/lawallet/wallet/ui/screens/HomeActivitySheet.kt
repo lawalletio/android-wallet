@@ -229,7 +229,8 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
                     }
                 }
                 // Clear of the floating Receive/Scan/Send bar.
-                if (expanded) TimelineScrubber(list, rows, Modifier.align(Alignment.TopEnd).padding(bottom = 120.dp))
+                if (expanded) TimelineScrubber(list, rows, Modifier.align(Alignment.TopEnd).padding(bottom = 138.dp))
+                ScrollMonthLabel(list, rows, Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 8.dp))
             }
         }
     }

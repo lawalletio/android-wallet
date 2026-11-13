@@ -260,7 +260,7 @@ fun BunkerLoginScreen() {
 
 /** Two-segment glass switch; the selected segment takes the brand tint. */
 @Composable
-private fun TabSwitch(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+internal fun TabSwitch(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
         labels.forEachIndexed { i, label ->
             val on = i == selected

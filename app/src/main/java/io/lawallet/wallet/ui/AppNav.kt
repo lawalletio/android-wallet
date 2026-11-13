@@ -155,8 +155,6 @@ object R0 {
     const val REMOTE_WALLETS = "settings/remote-wallets"
     const val REMOTE_WALLET_ADD = "settings/remote-wallets-add"
     const val CURRENCIES = "settings/currencies"
-    const val LANGUAGE = "settings/language"
-    const val SOUND = "settings/payment-sound"
     const val PAYMENTS = "settings/payments"
     const val INSTANCE = "settings/instance"
     const val DIAGNOSTICS = "settings/diagnostics"
@@ -289,7 +287,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     LaunchedEffect(Unit) { Intents.routes.receiveAsFlow().collect { r -> if (loggedIn || r.startsWith("activate/")) nav.navigate(r) { launchSingleTop = true } } }
     LaunchedEffect(loggedIn) { Intents.payloads.receiveAsFlow().collect { p -> handleScanPayload(container, nav, p.removePrefix(Intents.NFC), viaNfc = p.startsWith(Intents.NFC)) } }
     LaunchedEffect(loggedIn) {
-        if (loggedIn) container.wallet.notices.collect { n -> notice = n; delay(3800); if (notice?.id == n.id) notice = null }
+        if (loggedIn) container.wallet.notices.collect { n -> notice = n; delay(2660); if (notice?.id == n.id) notice = null }
     }
 
     val haze = rememberHazeState()
@@ -355,8 +353,6 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
-                composable(R0.LANGUAGE) { LanguageScreen() }
-                composable(R0.SOUND) { PaymentSoundScreen() }
                 composable(R0.PAYMENTS) { PaymentsScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
@@ -374,7 +370,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                     Txt(stringResource(R.string.offline_mode), size = 11.sp, color = Lw.Orange)
                 }
             }
-            AnimatedVisibility(notice != null, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+            // Home shows payments on its own balance (cue + odometer), so the pill stays away there.
+            AnimatedVisibility(notice != null && route != R0.HOME, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
         }

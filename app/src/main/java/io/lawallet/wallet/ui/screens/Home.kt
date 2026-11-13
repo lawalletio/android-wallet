@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -90,6 +91,7 @@ import coil3.compose.AsyncImage
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.core.fx.Currencies
+import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
@@ -99,6 +101,7 @@ import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.Spinner
+import io.lawallet.wallet.ui.components.LoadingDots
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Glass
@@ -111,11 +114,21 @@ import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import io.lawallet.wallet.ui.components.holdProgress
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.composables.icons.lucide.R as L
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen() {
     val c = LocalContainer.current
+    val haptics = LocalHapticFeedback.current
+    val balancePress = remember { MutableInteractionSource() }
+    val balanceHold = holdProgress(balancePress)
     val nav = LocalNav.current
     val brand = LocalBrand.current
     val me by c.session.me.collectAsState()
@@ -138,7 +151,7 @@ fun HomeScreen() {
 
     // Swipe down: the balance settles at the bottom and the remote wallets show above it.
     val reveal = remember { HomeReveal() }
-    reveal.bottomReserve = with(density) { 140.dp.toPx() } // floating tab bar (~92dp) plus breathing room
+    reveal.bottomReserve = with(density) { 158.dp.toPx() } // floating tab bar (~110dp) plus breathing room
     reveal.minTravel = with(density) { 48.dp.toPx() }
     val open by remember { derivedStateOf { reveal.open } }
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
@@ -178,7 +191,14 @@ fun HomeScreen() {
         }
         snapshotFlow { reveal.progress >= 1f }.collect { revealSaved = it }
     }
-    BackHandler(open) { if (sweepFrom != null) sweepFrom = null else scope.launch { reveal.settleTo(0f) } }
+    // Delete: a wallet with funds is swept first (Sweeps.deleteAfter), then the prompt comes back here.
+    var deleting by remember { mutableStateOf<RemoteWallet?>(null) }
+    var sweepFirst by remember { mutableStateOf<Pair<RemoteWallet, Long>?>(null) }
+    LaunchedEffect(wallets) {
+        val id = Sweeps.deletePrompt ?: return@LaunchedEffect
+        wallets?.find { it.id == id }?.let { deleting = it; Sweeps.deletePrompt = null }
+    }
+    BackHandler(open) { if (sweepFrom != null) { Sweeps.deleteAfter = null; sweepFrom = null } else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
     val setPrimary: (RemoteWallet) -> Unit = { w ->
         if (promoting == null) scope.launch {
@@ -189,10 +209,13 @@ fun HomeScreen() {
             heldBalance = walletBalances[w.id]
             runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }
                 .onSuccess {
+                    c.prefs.notePrimary(w.id)
                     wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
                     promoting = null
                     runCatching { c.session.refreshMe() }
-                    withTimeoutOrNull(10_000) { c.wallet.client.first { it !== oldClient }; c.wallet.balance.first { it != null } }
+                    // Hold the list's figure until the new wallet answers: its first emission is the on-device
+                    // cache (stale, often 0), so wait for a live read instead.
+                    withTimeoutOrNull(10_000) { c.wallet.refreshBalance(c.wallet.client.first { it != null && it !== oldClient }) }
                     heldBalance = null
                 }
                 .onFailure { wallets = before; heldBalance = null; promoting = null; context.toast(it.message ?: "") }
@@ -220,15 +243,15 @@ fun HomeScreen() {
         delay(900)
         rolling = null
     }
-    // Payment cue: lives as long as the payment notice (3.8s), like the web's `cue`.
+    // Payment cue: lives as long as the payment notice (2.66s), like the web's `cue`.
     var cue by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        c.wallet.notices.collectLatest { n -> cue = if (n.type == "payment_received") "incoming" else "outgoing"; delay(3800); cue = null }
+        c.wallet.notices.collectLatest { n -> cue = if (n.type == "payment_received") "incoming" else "outgoing"; delay(2660); cue = null }
     }
     val motion = rolling ?: cue
     var glowColor by remember { mutableStateOf(Lw.Green) }
     LaunchedEffect(motion) { if (motion != null) glowColor = if (motion == "incoming") Lw.Green else Lw.Orange }
-    val glowAlpha by animateFloatAsState(if (cue != null) 1f else 0f, tween(450), label = "glow")
+    val glowAlpha by animateFloatAsState(if (cue != null) 1f else 0f, tween(315), label = "glow")
 
     val hasNwc = client != null
     val autoCreate = settings?.lncurlAutoCreate == true
@@ -274,6 +297,11 @@ fun HomeScreen() {
                     Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
                 )
             }
+            // Swipe hint, a short way under the header (not with the balance, which centres itself lower down).
+            // Zero height and drawn past it: the layout below doesn't move.
+            Box(Modifier.fillMaxWidth().height(0.dp).wrapContentHeight(Alignment.Top, unbounded = true), contentAlignment = Alignment.TopCenter) {
+                SwipeHint(reveal, Modifier.padding(top = 20.dp))
+            }
         },
         top = {
             // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
@@ -306,13 +334,24 @@ fun HomeScreen() {
                     Box(
                         Modifier.fillMaxWidth()
                             // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
-                            .clickable(null, null, onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)) { c.prefs.setHideBalance(!hidden) }
+                            // Hold it to open the wallet it belongs to (the primary), or the wallet list without one.
+                            .combinedClickable(
+                                interactionSource = balancePress, indication = null,
+                                onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance),
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val primary = wallets?.firstOrNull { it.isDefault }
+                                    nav.navigate(if (primary != null) R0.remoteWallet(primary.id) else R0.REMOTE_WALLETS) { launchSingleTop = true }
+                                },
+                            ) { c.prefs.setHideBalance(!hidden) }
                             .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
-                            .measureRoot { if (reveal.progress == 0f) reveal.figure = it },
+                            .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
+                            // Holding "charges" the figure (shrinks, dims) up to the long press; inside measureRoot so the ghost's start isn't skewed.
+                            .graphicsLayer { val p = balanceHold; scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha = 1f - 0.3f * p },
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
-                            shown == null && hasNwc && loadingBalance -> Box(Modifier.width(170.dp).height(44.dp).glass(RoundedCornerShape(12.dp), GlassLevel.Thin))
+                            shown == null && hasNwc && loadingBalance -> LoadingDots(Modifier.testTag("balance-loading"), dot = 12.dp)
                             shown == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
                             else -> AnimatedContent(
                                 code,
@@ -337,7 +376,10 @@ fun HomeScreen() {
                         }
                     }
                     // Receive / Send live in the bottom bar.
-                    if (currencies.active.size >= 2) CurrencyToggle(currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro))
+                    if (currencies.active.size >= 2) CurrencyToggle(
+                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro),
+                        onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
+                    )
                 }
             }
 
@@ -383,9 +425,11 @@ fun HomeScreen() {
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
           sweepFrom = sweepFrom,
-          onSweep = { sweepFrom = it.id },
+          onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
           onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
-          onSweepCancel = { sweepFrom = null },
+          onSweepCancel = { Sweeps.deleteAfter = null; sweepFrom = null },
+          onDelete = { w, bal -> if ((bal ?: 0L) > 0L) sweepFirst = w to bal!! else deleting = w },
+          onTransfer = { w -> scope.launch { nav.navigate(startSend(c, Destination.Wallet(w.id, w.name))) } },
           // Optimistic: the card shows the new name at once; a failed save puts the old one back.
           onRename = { w, name ->
               val before = wallets
@@ -397,6 +441,35 @@ fun HomeScreen() {
               }
           },
       )
+      sweepFirst?.let { (w, bal) ->
+          LwAlertDialog(
+              onDismissRequest = { sweepFirst = null },
+              title = { Txt(stringResource(R.string.rw_delete)) },
+              text = { Txt(stringResource(R.string.rw_delete_sweepFirst, Currencies.formatSats(bal))) },
+              confirmButton = { ModalAction(stringResource(R.string.sweep_menu), { sweepFirst = null; Sweeps.deleteAfter = w.id; sweepFrom = w.id }) },
+          )
+      }
+      deleting?.let { w ->
+          LwAlertDialog(
+              onDismissRequest = { deleting = null },
+              title = { Txt(w.name) },
+              text = { Txt(stringResource(R.string.rw_delete_confirm)) },
+              confirmButton = { ModalAction(stringResource(R.string.rw_delete), {
+                  deleting = null
+                  val before = wallets
+                  wallets = wallets?.filter { it.id != w.id }
+                  scope.launch {
+                      runCatching { c.session.api.value.deleteRemoteWallet(w.id, permanent = w.status != "ACTIVE") }
+                          .onSuccess {
+                              wallets = wallets?.let { ensurePrimary(c, it) } // deleting the primary hands it on
+                              wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                              runCatching { c.session.refreshMe() }
+                          }
+                          .onFailure { wallets = before; context.toast(it.message ?: "") }
+                  }
+              }, destructive = true) },
+          )
+      }
       if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
       }

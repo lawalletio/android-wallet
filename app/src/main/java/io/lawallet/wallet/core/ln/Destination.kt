@@ -8,6 +8,8 @@ sealed interface Destination {
     data class Invoice(val bolt11: String, val amountSats: Long?, val description: String?, val paymentHash: String?, val expiresAtMs: Long?) : Destination
     data class LnurlPay(val lnurlpUrl: String, val address: String?, val username: String?, val host: String?) : Destination
     data class Npub(val npub: String) : Destination
+    /** One of the user's remote wallets; never parsed, only picked from its menu. Invoiced over its own NWC. */
+    data class Wallet(val id: String, val name: String) : Destination
 }
 
 class DestinationException(val code: String, message: String) : Exception(message)
