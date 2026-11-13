@@ -27,8 +27,8 @@ object Bech32 {
         return hrp + "1" + (words + checksum).joinToString("") { CHARSET[it].toString() }
     }
 
-    /** Returns hrp + 5-bit words (checksum stripped). No length limit (bolt11/lnurl exceed 90). */
-    fun decode(input: String): Pair<String, IntArray> {
+    /** Returns hrp + 5-bit words (checksum stripped). No length limit (bolt11/lnurl exceed 90). [bech32m]: BIP-350 (Taproot addresses). */
+    fun decode(input: String, bech32m: Boolean = false): Pair<String, IntArray> {
         val s = input.trim()
         require(s == s.lowercase() || s == s.uppercase()) { "mixed case" }
         val lower = s.lowercase()
@@ -38,7 +38,7 @@ object Bech32 {
         val data = IntArray(lower.length - pos - 1) {
             CHARSET.indexOf(lower[pos + 1 + it]).also { v -> require(v >= 0) { "invalid char" } }
         }
-        require(polymod(hrpExpand(hrp) + data) == 1) { "bad checksum" }
+        require(polymod(hrpExpand(hrp) + data) == if (bech32m) 0x2bc830a3 else 1) { "bad checksum" }
         return hrp to data.copyOf(data.size - 6)
     }
 

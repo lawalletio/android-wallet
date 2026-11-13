@@ -230,7 +230,7 @@ internal class HomeReveal {
 }
 
 private fun LayoutCoordinates.rootRect() = positionInRoot().let { Rect(it, Offset(it.x + size.width, it.y + size.height)) }
-private fun smooth(a: Float, b: Float, x: Float) = ((x - a) / (b - a)).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
+internal fun smooth(a: Float, b: Float, x: Float) = ((x - a) / (b - a)).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
 
 /** The wallet list, filling the space between the header and the landed balance. */
 @Composable
@@ -254,62 +254,68 @@ internal fun WalletsReveal(
     onTransfer: (RemoteWallet) -> Unit = {},
     onDelete: (RemoteWallet, Long?) -> Unit = { _, _ -> },
 ) {
+    val sorted = wallets?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
+    RevealDeck(
+        reveal, sorted, { it.id }, Modifier.testTag("home-wallets"),
+        header = {
+            AnimatedContent(
+                sweepFrom != null,
+                transitionSpec = {
+                    (fadeIn(tween(220, 60)) + slideInVertically(spring(0.85f, Spring.StiffnessMediumLow)) { -it / 2 })
+                        .togetherWith(fadeOut(tween(120)) + slideOutVertically(tween(180)) { it / 3 })
+                },
+                label = "sweepBanner",
+            ) { picking ->
+                if (picking) SweepPickBanner(onSweepCancel)
+                else DeckTitle(reveal, stringResource(R.string.settings_remoteWallets), onManage, onAdd)
+            }
+        },
+        empty = { DeckEmpty(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle)) },
+        footer = { if (sorted.orEmpty().size > 1) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal) },
+    ) { w ->
+        WalletRevealCard(
+            w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
+            code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
+            sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
+        )
+    }
+}
+
+/**
+ * The deck both Home pages reveal (remote wallets on Lightning, onchain wallets on Onchain): [items] come
+ * sorted with the primary last, right above the balance, and fan out of it as the reveal opens.
+ */
+@Composable
+internal fun <T> RevealDeck(
+    reveal: HomeReveal,
+    items: List<T>?,
+    key: (T) -> Any,
+    modifier: Modifier = Modifier,
+    header: @Composable () -> Unit,
+    empty: @Composable () -> Unit,
+    footer: @Composable () -> Unit = {},
+    card: @Composable (T) -> Unit,
+) {
     val top = reveal.headerBottom - reveal.rootTop
     val bottom = reveal.maxLanding - reveal.rootTop
     if (bottom - top <= 0f) return
     Column(
-        Modifier.fillMaxWidth()
+        modifier.fillMaxWidth()
             .layout { m, c ->
                 // Wraps its content up to the room above the tab bar; only placed (drawn, touchable) while open.
                 val p = m.measure(c.copy(minHeight = 0, maxHeight = (bottom - top).toInt().coerceAtLeast(0)))
                 reveal.listH = p.height.toFloat()
                 layout(p.width, p.height) { if (reveal.open) p.place(0, top.toInt()) }
             }
-            .graphicsLayer { alpha = smooth(0.05f, 0.35f, reveal.progress) }
-            .testTag("home-wallets"),
+            .graphicsLayer { alpha = smooth(0.05f, 0.35f, reveal.progress) },
     ) {
-        AnimatedContent(
-            sweepFrom != null,
-            transitionSpec = {
-                (fadeIn(tween(220, 60)) + slideInVertically(spring(0.85f, Spring.StiffnessMediumLow)) { -it / 2 })
-                    .togetherWith(fadeOut(tween(120)) + slideOutVertically(tween(180)) { it / 3 })
-            },
-            label = "sweepBanner",
-        ) { picking ->
-            if (picking) SweepPickBanner(onSweepCancel)
-            else {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 4.dp).graphicsLayer {
-                    translationY = (1f - smooth(0f, 0.6f, reveal.progress)) * -16.dp.toPx()
-                },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(Modifier.weight(1f).clip(CircleShape).clickable(onClick = onManage).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(stringResource(R.string.settings_remoteWallets), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                    LwIcon(L.drawable.lucide_ic_chevron_right, size = 16.dp, tint = Lw.MutedFg)
-                }
-                Row(
-                    Modifier.height(40.dp).glass(CircleShape, GlassLevel.Regular).clickable(onClick = onAdd).padding(horizontal = 16.dp).testTag("home-wallets-add"),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LwIcon(L.drawable.lucide_ic_plus, size = 18.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Txt(stringResource(R.string.rw_add), size = 15.sp, weight = FontWeight.SemiBold)
-                }
-            }
-            }
-        }
+        header()
         when {
-            wallets == null -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Spinner() }
-            wallets.isEmpty() -> Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(64.dp).glass(CircleShape), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_wallet, size = 28.dp, tint = Lw.MutedFg) }
-                Spacer(Modifier.height(12.dp))
-                MutedText(stringResource(R.string.remoteWallets_list_emptyTitle))
-            }
+            items == null -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Spinner() }
+            items.isEmpty() -> empty()
             else -> {
-                val sorted = wallets.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
                 // Opens scrolled to the end, where the primary sits right above the balance.
-                val listState = rememberLazyListState(sorted.lastIndex)
+                val listState = rememberLazyListState(items.lastIndex)
                 LazyColumn(
                     // Shrinks (and scrolls) before it pushes the total out of the room.
                     Modifier.weight(1f, fill = false).fillMaxWidth().nestedScroll(reveal.listConnection).pointerInput(reveal) {
@@ -324,13 +330,13 @@ internal fun WalletsReveal(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    itemsIndexed(sorted, key = { _, w -> w.id }) { i, w ->
+                    itemsIndexed(items, key = { _, w -> key(w) }) { i, w ->
                         Box(
                             Modifier.animateItem(placementSpec = spring(0.8f, Spring.StiffnessMediumLow)).graphicsLayer {
                                 // The deck rides down on top of the balance: shifted up by the travel the balance has
                                 // left, so the primary sits right above the moving figure from its first frame and
                                 // the cards slide out from under the header. At rest (open) the shift is zero.
-                                val d = sorted.size - 1 - i // the primary (nearest the balance) leads
+                                val d = items.size - 1 - i // the primary (nearest the balance) leads
                                 val t = smooth(0.12f + d * 0.06f, 0.7f + d * 0.06f, reveal.progress)
                                 alpha = t
                                 translationY = -(1f - reveal.progress) * reveal.range - (1f - t) * 12.dp.toPx() * d
@@ -338,24 +344,50 @@ internal fun WalletsReveal(
                                 scaleX = s; scaleY = s
                                 transformOrigin = TransformOrigin(0.5f, 1f) // grow from the bottom edge: it stays on the balance
                             },
-                        ) {
-                            WalletRevealCard(
-                                w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == "ACTIVE" && !balances.containsKey(w.id),
-                                code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
-                                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
-                            )
-                        }
+                        ) { card(w) }
                     }
                 }
-                if (sorted.size > 1) WalletsTotal(sorted.filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal)
+                footer()
             }
         }
     }
 }
 
+/** The deck's title row: what the list is (tap to manage, when [onManage]) and an Add button. */
+@Composable
+internal fun DeckTitle(reveal: HomeReveal, title: String, onManage: (() -> Unit)?, onAdd: () -> Unit, addTag: String = "home-wallets-add", addEnabled: Boolean = true) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 4.dp).graphicsLayer {
+            translationY = (1f - smooth(0f, 0.6f, reveal.progress)) * -16.dp.toPx()
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.weight(1f).clip(CircleShape).then(if (onManage != null) Modifier.clickable(onClick = onManage) else Modifier).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt(title, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+            if (onManage != null) LwIcon(L.drawable.lucide_ic_chevron_right, size = 16.dp, tint = Lw.MutedFg)
+        }
+        Row(
+            Modifier.height(40.dp).graphicsLayer { alpha = if (addEnabled) 1f else 0.4f }.glass(CircleShape, GlassLevel.Regular)
+                .clickable(enabled = addEnabled, onClick = onAdd).padding(horizontal = 16.dp).testTag(addTag),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LwIcon(L.drawable.lucide_ic_plus, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Txt(stringResource(R.string.rw_add), size = 15.sp, weight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+internal fun DeckEmpty(icon: Int, text: String) = Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Box(Modifier.size(64.dp).glass(CircleShape), contentAlignment = Alignment.Center) { LwIcon(icon, size = 28.dp, tint = Lw.MutedFg) }
+    Spacer(Modifier.height(12.dp))
+    MutedText(text)
+}
+
 /** Bottom right of the list: every active wallet's balance summed, rolling like the cards as figures arrive. */
 @Composable
-private fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boolean, reveal: HomeReveal) {
+internal fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boolean, reveal: HomeReveal) {
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 10.dp)
             .graphicsLayer {
@@ -475,7 +507,7 @@ private fun WalletRevealCard(
     }
 }
 
-private val CARD_FIGURE = 18.sp
+internal val CARD_FIGURE = 18.sp
 
 /**
  * The ghost: a translucent copy of the balance that lifts off it, arcs into the primary card's figure and
@@ -516,16 +548,16 @@ internal fun BalanceGhost(reveal: HomeReveal, text: String, size: TextUnit) {
     }
 }
 
-/** Two soft chevrons nudging down above the balance: says the wallet list is a swipe away; gone as soon as it opens. */
+/** Two soft chevrons nudging down above the balance: says the wallet list is a swipe away; [hidden] (0..1) fades them as it opens. */
 @Composable
-internal fun SwipeHint(reveal: HomeReveal, modifier: Modifier = Modifier) {
+internal fun SwipeHint(hidden: () -> Float, modifier: Modifier = Modifier) {
     val bob by rememberInfiniteTransition(label = "hint").animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bob")
     LwIcon(
         L.drawable.lucide_ic_chevrons_down,
         modifier.graphicsLayer {
             translationY = bob * 9.dp.toPx()
             scaleX = 1.8f // wide and flat: a soft "pull" cue rather than a button
-            alpha = (0.45f + 0.2f * bob) * (1f - smooth(0f, 0.15f, reveal.progress))
+            alpha = (0.45f + 0.2f * bob) * (1f - hidden().coerceIn(0f, 1f))
         }.testTag("home-swipe-hint"),
         size = 36.dp, tint = Lw.MutedFg,
     )
@@ -540,7 +572,16 @@ internal fun Modifier.measureRoot(onRect: (Rect) -> Unit) = onGloballyPositioned
  */
 @Composable
 internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium) {
-    val t by animateFloatAsState(if (flipped) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "roll")
+    val t = animateFloatAsState(if (flipped) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "roll")
+    RollingLabel(from, to, { t.value }, size, color, weight)
+}
+
+/**
+ * Same wheel, turned by [t] (0 = [from], 1 = [to]) directly: e.g. the Home pager's swipe. [sideways]: the words
+ * slide horizontally instead, [from] on the left and [to] on the right, like the pages they name.
+ */
+@Composable
+internal fun RollingLabel(from: String, to: String, t: () -> Float, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium, sideways: Boolean = false) {
     val fw = from.split(' ')
     val tw = to.split(' ')
     val head = fw.zip(tw).takeWhile { (x, y) -> x == y }.size
@@ -558,13 +599,21 @@ internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: Text
             },
             modifier = Modifier.clipToBounds(),
         ) { ms, c ->
+            val t = t().coerceIn(0f, 1f)
             val pa = ms[0].measure(c.copy(minWidth = 0))
             val pb = ms[1].measure(c.copy(minWidth = 0))
             val h = maxOf(pa.height, pb.height)
-            layout((pa.width + (pb.width - pa.width) * t).toInt(), h) {
-                // Old face rolls up and out, new face rolls up from below (the odometer's direction).
-                pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
-                pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
+            val w = (pa.width + (pb.width - pa.width) * t).toInt()
+            layout(w, h) {
+                if (sideways) {
+                    // [from] leaves to the left as [to] comes in from the right (and back), each centred in the slot.
+                    pa.placeWithLayer((w - pa.width) / 2, 0) { translationX = -t * w; alpha = 1f - t }
+                    pb.placeWithLayer((w - pb.width) / 2, 0) { translationX = (1f - t) * w; alpha = t }
+                } else {
+                    // Old face rolls up and out, new face rolls up from below (the odometer's direction).
+                    pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
+                    pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
+                }
             }
         }
         if (suf.isNotEmpty()) Txt(suf, size = size, weight = weight, color = color, maxLines = 1)

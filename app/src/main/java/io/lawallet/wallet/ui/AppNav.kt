@@ -22,6 +22,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
@@ -89,6 +90,7 @@ import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.NavTabBar
 import io.lawallet.wallet.ui.components.PaymentNoticePill
 import io.lawallet.wallet.ui.components.Txt
+import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.screens.*
 import io.lawallet.wallet.ui.theme.LaWalletTheme
 import io.lawallet.wallet.ui.theme.LocalBrand
@@ -179,6 +181,11 @@ object R0 {
     fun activate(id: String) = "activate/$id"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
     fun sweep(from: String, to: String) = "sweep/$from/$to"
+    const val ONCHAIN_ADD = "onchain/add"
+    const val ONCHAIN_CREATE = "onchain/create"
+    const val ONCHAIN_IMPORT = "onchain/import"
+    fun onchainWallet(id: String) = "onchain/wallet/$id"
+    fun onchainBackup(id: String) = "onchain/backup/$id"
 }
 
 /** Deep links / notifications / NFC push routes or raw payloads here; the UI consumes them. */
@@ -249,19 +256,27 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val client by c.wallet.client.collectAsState()
     val settings by c.session.settings.collectAsState()
     // Home's activity sheet rising swaps the tabs for search + filters, 1:1 with the finger.
-    val tabs by remember { derivedStateOf { ActivitySearch.sheet < 1f } }
-    val search by remember { derivedStateOf { ActivitySearch.sheet > 0f } }
+    // Only Lightning has the sheet: swiping to Onchain swaps the search back to the tabs, 1:1 with the pager.
+    val sheet = { if (route == R0.HOME) ActivitySearch.sheet * HomePager.position.coerceIn(0f, 1f) else ActivitySearch.sheet }
+    val tabs by remember(route) { derivedStateOf { sheet() < 1f } }
+    val search by remember(route) { derivedStateOf { sheet() > 0f } }
+    val context = LocalContext.current
+    val soon = stringResource(R.string.onchain_soon)
+    val onchain = route == R0.HOME && HomePager.onchain
     // Both tabs composed = switching tabs: the bar stays put.
     Box(modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f }, contentAlignment = Alignment.BottomCenter) {
         if (tabs) NavTabBar(
-            onReceive = { nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
-            onSend = { nav.navigate(R0.SEND) { launchSingleTop = true } },
+            // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
+            onReceive = { if (onchain) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
+            onSend = { if (onchain) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
             onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
             haze = haze,
-            canReceive = client != null || settings?.lncurlAutoCreate == true,
-            canSend = client != null,
+            canReceive = onchain || client != null || settings?.lncurlAutoCreate == true,
+            canSend = onchain || client != null,
+            // Home tints it with the page tone, blending 1:1 with the swipe (Bitcoin orange ⇄ Lightning blue).
+            accent = if (route == R0.HOME) ({ androidx.compose.ui.graphics.lerp(Lw.Bitcoin, Lw.Lightning, HomePager.position.coerceIn(0f, 1f)) }) else null,
             modifier = Modifier.graphicsLayer {
-                val p = ActivitySearch.sheet
+                val p = sheet()
                 alpha = (1f - p * 2f).coerceIn(0f, 1f)
                 translationY = p * 56.dp.toPx()
                 scaleX = 1f - 0.1f * p; scaleY = scaleX
@@ -270,7 +285,7 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
         if (search) ActivitySearchBar(
             haze,
             Modifier.graphicsLayer {
-                val p = ActivitySearch.sheet
+                val p = sheet()
                 alpha = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
                 translationY = (1f - p) * 56.dp.toPx()
             },
@@ -313,6 +328,9 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
           // Everything the floating glass (tab bar, notices) frosts over: the prism + the current screen.
           Box(Modifier.fillMaxSize().hazeSource(haze)) {
             PrismBackground(brand)
+            // Read at draw time only: recomposing AppNavHost mid-transition breaks NavHost's gesture seek (see TabBar).
+            val homeShown = animateFloatAsState(if (route == R0.HOME) 1f else 0f, tween(320), label = "homeBackdrop")
+            HomeBackdrop { homeShown.value }
             // Fixed for the NavHost's lifetime: changing it would reset the back stack on login
             // (skipping the welcome screen / pending activation).
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
@@ -372,6 +390,11 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
                 composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
+                composable(R0.ONCHAIN_ADD) { AddOnchainWalletScreen() }
+                composable(R0.ONCHAIN_CREATE) { CreateOnchainWalletScreen() }
+                composable(R0.ONCHAIN_IMPORT) { ImportOnchainWalletScreen() }
+                composable("onchain/wallet/{id}") { OnchainWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
+                composable("onchain/backup/{id}") { OnchainBackupScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
                 composable(R0.PAYMENTS) { PaymentsScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
@@ -391,7 +414,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 }
             }
             // Home shows payments on its own balance (cue + odometer), so the pill stays away there.
-            AnimatedVisibility(notice != null && route != R0.HOME, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+            // …except on its Onchain page, where the Lightning balance is out of sight.
+            AnimatedVisibility(notice != null && (route != R0.HOME || HomePager.onchain), Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
         }

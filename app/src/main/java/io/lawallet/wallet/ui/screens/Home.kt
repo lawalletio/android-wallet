@@ -1,6 +1,31 @@
 package io.lawallet.wallet.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.contentDescription
+import io.lawallet.wallet.ui.theme.Prism
+import kotlin.math.abs
 import io.lawallet.wallet.ui.theme.Inter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -124,17 +149,352 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.composables.icons.lucide.R as L
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Which Home page shows: 0 = Onchain, 1 = Lightning, fractional mid-swipe. The tab bar reads it. */
+object HomePager {
+    var position by mutableFloatStateOf(LIGHTNING.toFloat())
+    val onchain get() = position < 0.5f
+}
+
+/**
+ * What the two pages share. [y]: root-space y of each page's dots slot (NaN until laid out). [reveal] and
+ * [sheet]: each page's vertical state (wallet list, activity panel), registered by the page; HomeScreen mirrors
+ * the settled page's onto the other, so a swipe lands in the same place: activity to activity, wallets to wallets.
+ */
+@Stable
+internal class HomePages {
+    val y = mutableStateListOf(Float.NaN, Float.NaN)
+    val reveal = mutableStateListOf<HomeReveal?>(null, null)
+    val sheet = mutableStateListOf<ActivitySheet?>(null, null)
+    /** What each page needs above its docked activity line; both dock at the larger, so the line never moves. */
+    val need = mutableStateListOf(0f, 0f)
+    /** A page's width in px: how far a pinned element counter-slides. */
+    var width by mutableFloatStateOf(0f)
+    /** The activity panel's rise, blended across the swipe: what the fixed header and dots fade with. */
+    fun sheetAt(position: Float) = blend(position) { sheet[it]?.progress ?: 0f }
+    fun revealAt(position: Float) = blend(position) { reveal[it]?.progress ?: 0f }
+    private inline fun blend(position: Float, v: (Int) -> Float): Float {
+        val p = position.coerceIn(0f, 1f)
+        return v(ONCHAIN) * (1f - p) + v(LIGHTNING) * p
+    }
+}
+
+/**
+ * Holds an element still on screen while its page slides (counter-translated by the page's offset). Both pages
+ * draw the same thing there, so only the page nearer the front shows its copy: they swap unseen at mid-swipe.
+ */
+internal fun Modifier.pinned(pages: HomePages, page: Int) = graphicsLayer {
+    val o = HomePager.position - page
+    translationX = o * pages.width
+    alpha = if (abs(o) < 0.5f) 1f else 0f
+}
+
+/**
+ * Pinned, for what differs between the pages (the balance figure): a stationary window both pages' figures slide
+ * through, 1:1 with the swipe: Onchain's from the left, Lightning's from the right, like the pages and the label's
+ * word. Put [rollIn] on the content inside it.
+ */
+internal fun Modifier.pinnedSlot(pages: HomePages, page: Int) = graphicsLayer {
+    translationX = (HomePager.position - page) * pages.width
+    clip = true
+}
+
+internal fun GraphicsLayerScope.rollIn(page: Int) {
+    val o = HomePager.position - page
+    translationX = -o * size.width
+    alpha = (1f - abs(o) * 1.3f).coerceIn(0f, 1f)
+}
+
+/**
+ * "Onchain balance" ⇄ "Lightning balance", the word sliding sideways with the swipe, and "Primary balance" once the wallet
+ * list is open. Centred on its own; [badge] (Lightning's relay status) sits to its right without pushing it over,
+ * so the label lands on the same spot on both pages.
+ */
+@Composable
+internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null) {
+    val pt by animateFloatAsState(if (primary) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "primary")
+    Layout(
+        content = {
+            Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
+                Box(Modifier.graphicsLayer { translationY = -pt * size.height; alpha = 1f - pt }) {
+                    RollingLabel(stringResource(R.string.home_onchainBalance), stringResource(R.string.home_lightningBalance), { HomePager.position }, 14.sp, Lw.MutedFg, sideways = true)
+                }
+                Txt(stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
+            }
+            badge?.invoke()
+        },
+        modifier = Modifier.fillMaxWidth().height(BALANCE_LABEL_H),
+    ) { ms, c ->
+        val free = c.copy(minWidth = 0, minHeight = 0)
+        val label = ms[0].measure(free)
+        val b = ms.getOrNull(1)?.measure(free)
+        layout(c.maxWidth, c.maxHeight) {
+            val x = (c.maxWidth - label.width) / 2
+            label.place(x, (c.maxHeight - label.height) / 2)
+            b?.place(x + label.width + 8.dp.roundToPx(), (c.maxHeight - b.height) / 2)
+        }
+    }
+}
+
+internal const val ONCHAIN = 0
+internal const val LIGHTNING = 1
+/** The fixed header's height; each page leaves this much room for it. */
+internal val HEADER_H = 56.dp
+/** The balance label row's height, the same on both pages. */
+internal val BALANCE_LABEL_H = 20.dp
+
+/**
+ * Home: Onchain on the left, Lightning on the right (where it opens). A horizontal swipe anywhere on a page
+ * (balance, activity, wallet deck) slides between them; the header and the two dots under the balance stay
+ * put, the dots tracking which page is in front.
+ */
 @Composable
 fun HomeScreen() {
+    val c = LocalContainer.current
+    val scope = rememberCoroutineScope()
+    val pager = rememberPagerState(initialPage = if (c.flow.revealOnchain) ONCHAIN else LIGHTNING) { 2 }
+    LaunchedEffect(Unit) {
+        if (c.flow.revealWallets) pager.scrollToPage(LIGHTNING)
+        if (c.flow.revealOnchain) pager.scrollToPage(ONCHAIN)
+    }
+    LaunchedEffect(pager) { snapshotFlow { pager.currentPage + pager.currentPageOffsetFraction }.collect { HomePager.position = it } }
+    // Back from Onchain goes to Lightning first (the pages' own handlers, composed later, win while they're open).
+    BackHandler(pager.currentPage == ONCHAIN) { scope.launch { pager.animateScrollToPage(LIGHTNING) } }
+    // First entry into Home plays the intro (staggered rise + balance rolling up from 0); coming back
+    // from another screen doesn't (saved with the back-stack entry).
+    val balance by c.wallet.balance.collectAsState()
+    var intro by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(balance != null) { if (balance != null) { delay(1600); intro = false } }
+    val anchors = remember { HomePages() }
+    // Keep the page out of sight in the same state as the one in front (only while nothing is swiping, so the
+    // page being swiped to is never moved under the finger). A page that can't follow (no activity) stays put.
+    LaunchedEffect(pager, anchors) {
+        snapshotFlow {
+            if (pager.isScrollInProgress) null
+            else pager.settledPage.let { s -> Triple(s, anchors.reveal[s]?.progress, anchors.sheet[s]?.progress) }
+        }.collect { t ->
+            val (s, r, sh) = t ?: return@collect
+            val other = 1 - s
+            r?.let { anchors.reveal[other]?.snapTo(it.coerceIn(0f, 1f)) }
+            sh?.let { v -> anchors.sheet[other]?.takeIf { it.enabled }?.snapTo(v) }
+        }
+    }
+    var rootTop by remember { mutableFloatStateOf(0f) }
+    Box(Modifier.fillMaxSize().onGloballyPositioned { rootTop = it.positionInRoot().y; anchors.width = it.size.width.toFloat() }.testTag("home-root")) {
+        HorizontalPager(
+            pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+            flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = spring(0.86f, Spring.StiffnessMediumLow)),
+        ) { page ->
+            Box(Modifier.fillMaxSize()) {
+                PageWatermark(page, { pager.currentPage - page + pager.currentPageOffsetFraction }, { anchors.sheet[page]?.progress ?: 0f })
+                if (page == ONCHAIN) OnchainPage(pager.currentPage == ONCHAIN, anchors) else LightningPage(pager.currentPage == LIGHTNING, intro, anchors)
+            }
+        }
+        // The pull-down arrows, fixed under the header for both pages; they fade as the wallet list or the activity opens.
+        SwipeHint(
+            { maxOf(smooth(0f, 0.15f, anchors.revealAt(HomePager.position)), anchors.sheetAt(HomePager.position) * 2.2f) },
+            Modifier.align(Alignment.TopCenter).padding(top = HEADER_H + 20.dp).riseIn(0, intro),
+        )
+        HomeHeader(intro, anchors)
+        PageDots(anchors, pager.settledPage, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(1 - pager.currentPage) } }
+    }
+}
+
+/**
+ * Home's light, drawn full-bleed behind everything (AppNav, under the status bar): the prism calmed, then each
+ * page's tone, warm Bitcoin orange on Onchain and Lightning blue, crossfading 1:1 with the swipe. [shown] fades it
+ * in and out as Home comes and goes.
+ */
+@Composable
+internal fun HomeBackdrop(shown: () -> Float) {
+    Spacer(Modifier.fillMaxSize().drawBehind {
+        val s = shown()
+        if (s <= 0f) return@drawBehind
+        val p = HomePager.position.coerceIn(0f, 1f)
+        val w = size.width
+        val h = size.height
+        drawRect(Lw.Background.copy(alpha = 0.62f * s))
+        fun glow(c: Color, a: Float, x: Float, y: Float, r: Float) {
+            if (a > 0.003f) drawRect(Brush.radialGradient(0f to c.copy(alpha = a), 0.55f to c.copy(alpha = a * 0.35f), 1f to Color.Transparent, center = Offset(x, y), radius = r))
+        }
+        // Lightning: a cool blue dome over the balance, a cyan pool low on the right.
+        glow(Lw.Lightning, 0.32f * p * s, w * 0.5f, h * 0.2f, w * 1.05f)
+        glow(Color(0xFF38BDF8), 0.12f * p * s, w, h * 0.66f, w * 0.85f)
+        // Onchain: the same shapes in orange and amber, the pool on the left.
+        glow(Lw.Bitcoin, 0.34f * (1f - p) * s, w * 0.5f, h * 0.2f, w * 1.05f)
+        glow(Color(0xFFFFB547), 0.14f * (1f - p) * s, 0f, h * 0.66f, w * 0.85f)
+    })
+}
+
+/**
+ * A huge, faint mark behind each page (the tilted ₿ of the Bitcoin logo, the Lightning bolt), filled with a wash
+ * of its tone that fades out toward the bottom right. Only on its own page: it fades in as the page arrives and out
+ * as it leaves (the half-speed drift would otherwise carry it onto the other page). Steps back as the activity
+ * panel rises over it. [offset]: the page's distance from the front, in pages.
+ */
+@Composable
+private fun PageWatermark(page: Int, offset: () -> Float, sheet: () -> Float) {
+    val tone = if (page == ONCHAIN) Lw.Bitcoin else Lw.Lightning
+    Box(Modifier.fillMaxSize().graphicsLayer {
+        val o = offset()
+        translationX = o * size.width * 0.5f
+        alpha = smooth(0.15f, 1f, 1f - abs(o)) * (1f - 0.7f * sheet())
+    }) {
+        Image(
+            painterResource(if (page == ONCHAIN) L.drawable.lucide_ic_bitcoin else L.drawable.lucide_ic_zap), null,
+            Modifier.size(500.dp).align(Alignment.Center).offset(x = 120.dp, y = 30.dp)
+                .graphicsLayer { rotationZ = if (page == ONCHAIN) 14f else -10f; compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Brush.linearGradient(listOf(tone.copy(alpha = 0.17f), tone.copy(alpha = 0.05f), Color.Transparent), Offset.Zero, Offset(size.width, size.height)), blendMode = BlendMode.SrcIn)
+                },
+        )
+    }
+}
+
+/** Avatar · centre pill · settings, fixed over both pages; the pill turns from the Lightning address into the onchain primary. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HomeHeader(intro: Boolean, pages: HomePages) {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val haptics = LocalHapticFeedback.current
+    val addressPress = remember { MutableInteractionSource() }
+    val addressHold = holdProgress(addressPress)
+    val brand = LocalBrand.current
+    val me by c.session.me.collectAsState()
+    val accountPubkey by c.session.accountPubkey.collectAsState()
+    val profiles by c.session.profiles.entries.collectAsState()
+    val avatar = accountPubkey?.let { profiles[it]?.picture }
+    val onchain by c.onchain.wallets.collectAsState()
+    val primary = onchain.firstOrNull { it.isPrimary }
+    // Lightning's activity sheet rising takes the header away with the page (as ActivitySheetLayout does); once it's
+    // gone it leaves the composition, so it never catches taps meant for the raised list.
+    val sheet = { pages.sheetAt(HomePager.position) }
+    val gone by remember { derivedStateOf { sheet() > 0.45f } }
+    if (gone) return
+    Row(
+        Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
+            val p = sheet()
+            alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
+            translationY = -p * 64.dp.toPx()
+            scaleX = 1f - 0.06f * p; scaleY = scaleX
+            transformOrigin = TransformOrigin(0.5f, 0f)
+        }.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Opens the profile; the avatar itself flies there (log out lives on the profile now).
+        Box(
+            Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+            else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
+        }
+        // Centre pill: the user's Lightning address (tap to receive) or the logotype; on Onchain, the primary wallet.
+        val address = me?.lightningAddress
+        Box(
+            // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
+            // "charging" (shrinks, dims) up to the long press.
+            Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                .then(if (address != null) Modifier.sharedAddress() else Modifier)
+                .height(44.dp).glass(CircleShape)
+                .combinedClickable(
+                    interactionSource = addressPress, indication = ripple(),
+                    onLongClick = {
+                        if (!HomePager.onchain && address != null) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+                        }
+                    },
+                ) {
+                    when {
+                        HomePager.onchain -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                        address != null -> nav.navigate(R0.RECEIVE)
+                    }
+                }.testTag("home-address"),
+        ) {
+            // A little carousel inside the pill (it clips): the faces slide sideways 1:1 with the pages, Bitcoin
+            // coming in from the left as Lightning leaves to the right, and back.
+            Box(Modifier.matchParentSize().graphicsLayer { val t = HomePager.position.coerceIn(0f, 1f); translationX = (1f - t) * size.width; alpha = smooth(0.15f, 1f, t) }, contentAlignment = Alignment.Center) {
+                if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                    // Username leads; the domain sits a step dimmer and never truncates.
+                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                }
+                else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+            }
+            Row(
+                Modifier.matchParentSize().graphicsLayer { val t = 1f - HomePager.position.coerceIn(0f, 1f); translationX = -(1f - t) * size.width; alpha = smooth(0.15f, 1f, t) }.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+            ) {
+                Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
+                Spacer(Modifier.width(8.dp))
+                Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+        GlassIconButton(
+            L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+            Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
+        )
+    }
+}
+
+/** Under each page's balance: where the fixed dots sit. */
+@Composable
+internal fun DotsSlot(anchors: HomePages, page: Int) =
+    Spacer(Modifier.padding(top = 18.dp).height(DOT).onGloballyPositioned { anchors.y[page] = it.positionInRoot().y + it.size.height / 2f })
+
+private val DOT = 6.dp
+
+/**
+ * Two dots, Onchain (left, orange) and Lightning (right, yellow): the page in front stretches into a lit pill,
+ * scrubbed by the swipe itself. They hold still while the pages slide under them; vertically they follow the
+ * settled page's balance (reveal, sheet), easing over only if the next page's balance sits elsewhere once it
+ * lands (its wallet list open, say). Tap to switch.
+ */
+@Composable
+private fun PageDots(anchors: HomePages, settled: Int, rootTop: Float, modifier: Modifier, onTap: () -> Unit) {
+    val desc = stringResource(R.string.home_pages_hint)
+    val follow = remember { Animatable(settled.toFloat()) }
+    LaunchedEffect(settled) { follow.animateTo(settled.toFloat(), spring(0.9f, Spring.StiffnessMediumLow)) }
+    Box(
+        modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally)
+            .offset {
+                val p = follow.value.coerceIn(0f, 1f)
+                val a = anchors.y[ONCHAIN].takeUnless(Float::isNaN) ?: anchors.y[LIGHTNING]
+                val b = anchors.y[LIGHTNING].takeUnless(Float::isNaN) ?: a
+                IntOffset(0, if (a.isNaN()) 0 else (a + (b - a) * p - rootTop - 16.dp.toPx()).toInt())
+            }
+            .graphicsLayer {
+                alpha = if (anchors.y.all(Float::isNaN)) 0f else (1f - anchors.sheetAt(HomePager.position) * 2.2f).coerceIn(0f, 1f)
+            }
+            .size(64.dp, 32.dp).clip(CircleShape).clickable(onClickLabel = desc, onClick = onTap)
+            .semantics { contentDescription = desc }.testTag("home-pages")
+            .drawBehind {
+                val p = HomePager.position.coerceIn(0f, 1f)
+                val d = DOT.toPx()
+                val long = 22.dp.toPx()
+                val gap = 6.dp.toPx()
+                val w0 = d + (long - d) * (1f - p)
+                val w1 = d + (long - d) * p
+                val y = (size.height - d) / 2f
+                val off = Color.White.copy(alpha = 0.22f)
+                val x = (size.width - (w0 + gap + w1)) / 2f
+                drawRoundRect(lerp(off, Lw.Bitcoin, 1f - p), Offset(x, y), Size(w0, d), CornerRadius(d / 2))
+                drawRoundRect(lerp(off, Lw.Lightning, p), Offset(x + w0 + gap, y), Size(w1, d), CornerRadius(d / 2))
+            },
+    )
+}
+
+/** The Lightning page: the NWC balance, its activity, and the remote wallets above it. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages) {
     val c = LocalContainer.current
     val haptics = LocalHapticFeedback.current
     val balancePress = remember { MutableInteractionSource() }
     val balanceHold = holdProgress(balancePress)
-    val addressPress = remember { MutableInteractionSource() }
-    val addressHold = holdProgress(addressPress)
     val nav = LocalNav.current
-    val brand = LocalBrand.current
     val me by c.session.me.collectAsState()
     val settings by c.session.settings.collectAsState()
     val balance by c.wallet.balance.collectAsState()
@@ -146,9 +506,6 @@ fun HomeScreen() {
     val currencies by c.prefs.currencies.collectAsState()
     val rates by c.rates.rates.collectAsState()
     val scope = rememberCoroutineScope()
-    val accountPubkey by c.session.accountPubkey.collectAsState()
-    val profiles by c.session.profiles.entries.collectAsState()
-    val avatar = accountPubkey?.let { profiles[it]?.picture }
     var bonus by remember { mutableStateOf(c.prefs.bonusSats.takeIf { it > 0 }) }
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -202,7 +559,7 @@ fun HomeScreen() {
         val id = Sweeps.deletePrompt ?: return@LaunchedEffect
         wallets?.find { it.id == id }?.let { deleting = it; Sweeps.deletePrompt = null }
     }
-    BackHandler(open) { if (sweepFrom != null) { Sweeps.deleteAfter = null; sweepFrom = null } else scope.launch { reveal.settleTo(0f) } }
+    BackHandler(open && current) { if (sweepFrom != null) { Sweeps.deleteAfter = null; sweepFrom = null } else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
     val setPrimary: (RemoteWallet) -> Unit = { w ->
         if (promoting == null) scope.launch {
@@ -232,10 +589,6 @@ fun HomeScreen() {
         c.session.refreshProfile()
     }
 
-    // First entry into Home plays the intro (staggered rise + balance rolling up from 0); coming back
-    // from another screen doesn't (saved with the back-stack entry).
-    var intro by rememberSaveable { mutableStateOf(true) }
-    LaunchedEffect(balance != null) { if (balance != null) { delay(1600); intro = false } }
     // The odometer rolls the digits; this only tints the figure while a change lands.
     var seenBalance by remember { mutableStateOf(balance) }
     var rolling by remember { mutableStateOf<String?>(null) }
@@ -264,55 +617,19 @@ fun HomeScreen() {
     val shown = heldBalance ?: balance
 
     val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
+    SideEffect { anchors.reveal[LIGHTNING] = reveal; anchors.sheet[LIGHTNING] = sheet }
     reveal.sheetProgress = { sheet.progress }
     Box(
         Modifier.fillMaxSize().onGloballyPositioned { reveal.rootTop = it.positionInRoot().y; reveal.rootH = it.size.height.toFloat() }
-            .nestedScroll(reveal.connection).testTag("home-root"),
+            .nestedScroll(reveal.connection).testTag("home-lightning"),
     ) {
       ActivitySheetLayout(
         sheet,
         header = {
-            Row(Modifier.fillMaxWidth().measureRoot { reveal.headerBottom = it.bottom }.riseIn(0, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Opens the profile; the avatar itself flies there (log out lives on the profile now).
-                Box(
-                    Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                    else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
-                }
-                // Centre pill: the user's Lightning address (tap to receive), or the logotype until there is one.
-                val address = me?.lightningAddress
-                // Tap: receive. Hold: the pill expands into the Lightning addresses screen (with the hold "charge").
-                if (address != null) Row(
-                    Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
-                        .sharedAddress().height(44.dp).glass(CircleShape)
-                        .combinedClickable(
-                            interactionSource = addressPress, indication = ripple(),
-                            onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.ADDRESSES) { launchSingleTop = true } },
-                        ) { nav.navigate(R0.RECEIVE) }.padding(horizontal = 14.dp)
-                        .testTag("home-address").semantics(mergeDescendants = true) {},
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
-                ) {
-                    // Username leads; the domain sits a step dimmer and never truncates.
-                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
-                }
-                else Box(Modifier.weight(1f).height(44.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
-                    BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
-                }
-                // Hiding the balance stays one tap away: tap the figure itself.
-                GlassIconButton(
-                    L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
-                    Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
-                )
-            }
-            // Swipe hint, a short way under the header (not with the balance, which centres itself lower down).
-            // Zero height and drawn past it: the layout below doesn't move.
-            Box(Modifier.fillMaxWidth().height(0.dp).wrapContentHeight(Alignment.Top, unbounded = true), contentAlignment = Alignment.TopCenter) {
-                SwipeHint(reveal, Modifier.padding(top = 20.dp))
-            }
+            // Room for the fixed header and its pull-down arrows (HomeScreen draws them over both pages).
+            Spacer(Modifier.fillMaxWidth().height(HEADER_H).measureRoot { reveal.headerBottom = it.bottom })
         },
+        floor = anchors.need[ONCHAIN], onNeed = { anchors.need[LIGHTNING] = it },
         top = {
             // The balance: free on the prism light (no panel), which blooms green/coral on a payment.
             Box(
@@ -331,33 +648,32 @@ fun HomeScreen() {
                     Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // "Your balance" → "Primary balance" once the wallets show: it is the primary wallet's balance.
-                        val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
-                        RollingLabel(stringResource(R.string.home_yourBalance), stringResource(R.string.home_primaryBalance), primaryLabel, 14.sp, Lw.MutedFg)
-                        if (relayError != null && hasNwc) {
-                            Spacer(Modifier.width(8.dp))
-                            RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } }
-                        }
-                    }
+                    // "Primary balance" once the wallets show: it is the primary wallet's balance.
+                    val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
+                    BalanceLabel(
+                        primaryLabel, Modifier.pinned(anchors, LIGHTNING),
+                        badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
+                    )
                     // Fixed-height slot: cue effects never resize it.
+                    val showLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)
                     Box(
-                        Modifier.fillMaxWidth()
+                        Modifier.fillMaxWidth().pinnedSlot(anchors, LIGHTNING)
                             // Tap the figure to hide/show it, same as the eye button (no ripple: it's the hero number).
                             // Hold it to open the wallet it belongs to (the primary), or the wallet list without one.
-                            .combinedClickable(
+                            // Only on the page in front: the other's pinned copy lies over it and must let taps through.
+                            .then(if (!current) Modifier else Modifier.combinedClickable(
                                 interactionSource = balancePress, indication = null,
-                                onClickLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance),
+                                onClickLabel = showLabel,
                                 onLongClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     val primary = wallets?.firstOrNull { it.isDefault }
                                     nav.navigate(if (primary != null) R0.remoteWallet(primary.id) else R0.REMOTE_WALLETS) { launchSingleTop = true }
                                 },
-                            ) { c.prefs.setHideBalance(!hidden) }
+                            ) { c.prefs.setHideBalance(!hidden) })
                             .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
                             .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
                             // Holding "charges" the figure (shrinks, dims) up to the long press; inside measureRoot so the ghost's start isn't skewed.
-                            .graphicsLayer { val p = balanceHold; scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha = 1f - 0.3f * p },
+                            .graphicsLayer { rollIn(LIGHTNING); val p = balanceHold; scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                         contentAlignment = Alignment.Center,
                     ) {
                         when {
@@ -378,21 +694,24 @@ fun HomeScreen() {
                             ) { cc -> BalanceFigure(shown ?: 0, cc, rates, hidden, motion, fromZero = intro) }
                         }
                     }
-                    bonus?.let { b ->
-                        Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.Top) {
-                            Txt(stringResource(R.string.home_bonusNote, Currencies.formatSats(b)), size = 12.sp, color = Lw.MutedFg)
-                            Spacer(Modifier.width(6.dp))
-                            Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
-                        }
-                    }
                     // Receive / Send live in the bottom bar.
                     if (currencies.active.size >= 2) CurrencyToggle(
-                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro),
+                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinned(anchors, LIGHTNING),
                         onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
+                        enabled = current,
                     )
+                    DotsSlot(anchors, LIGHTNING)
                 }
             }
-
+        },
+        below = {
+            bonus?.let { b ->
+                Row(Modifier.fillMaxWidth().revealAside(reveal).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Top) {
+                    Txt(stringResource(R.string.home_bonusNote, Currencies.formatSats(b)), size = 12.sp, color = Lw.MutedFg)
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
+                }
+            }
             if (me != null && me?.lightningAddress == null) Row(
                     Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
                         .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
@@ -424,7 +743,7 @@ fun HomeScreen() {
                 translationY = reveal.progress * (reveal.range + 160.dp.toPx())
                 alpha = (1f - reveal.progress * 1.6f).coerceIn(0f, 1f)
             }.riseIn(4, intro, rise = 48.dp)) {
-                ActivitySheetContent(sheet, recent, hasNwc, onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
+                ActivitySheetContent(sheet, recent, hasNwc, current, Modifier.pinned(anchors, LIGHTNING), onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
             }
         },
       )
@@ -487,21 +806,21 @@ fun HomeScreen() {
 }
 
 /** Banners under the balance: ride down with it and fade, so the landed balance stands alone. */
-private fun Modifier.revealAside(reveal: HomeReveal) = graphicsLayer {
+internal fun Modifier.revealAside(reveal: HomeReveal) = graphicsLayer {
     translationY = reveal.progress * reveal.range
     alpha = (1f - reveal.progress * 2.5f).coerceIn(0f, 1f)
 }
 
 /** Fades and lifts into place, [index] steps (70ms each) after the first; a no-op unless [play]. */
 @Composable
-private fun Modifier.riseIn(index: Int, play: Boolean, rise: Dp = 24.dp): Modifier {
+internal fun Modifier.riseIn(index: Int, play: Boolean, rise: Dp = 24.dp): Modifier {
     val p = remember { Animatable(if (play) 0f else 1f) }
     LaunchedEffect(Unit) { if (p.value < 1f) { delay(80L + index * 70L); p.animateTo(1f, tween(560, easing = EaseOutCubic)) } }
     return graphicsLayer { alpha = p.value; translationY = (1f - p.value) * rise.toPx() }
 }
 
 @Composable
-private fun BalanceFigure(sats: Long, code: String, rates: io.lawallet.wallet.core.fx.Rates?, hidden: Boolean, motion: String?, fromZero: Boolean) {
+internal fun BalanceFigure(sats: Long, code: String, rates: io.lawallet.wallet.core.fx.Rates?, hidden: Boolean, motion: String?, fromZero: Boolean) {
     val color by animateColorAsState(
         when (motion) { "incoming" -> Lw.Green; "outgoing" -> Lw.Orange; else -> Lw.Foreground }, tween(300), label = "tint",
     )

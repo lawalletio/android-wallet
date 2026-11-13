@@ -8,6 +8,8 @@ import io.lawallet.wallet.core.ln.WithdrawParams
 class FlowStore {
     /** Set after adding a remote wallet: Home opens its wallet list on return, showing the new one. */
     var revealWallets = false
+    /** Same, for the Onchain page after adding or backing up an onchain wallet. */
+    var revealOnchain = false
 
     data class Send(
         val destination: Destination? = null,
