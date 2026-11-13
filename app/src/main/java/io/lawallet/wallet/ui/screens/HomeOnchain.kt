@@ -177,7 +177,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
             header = {
                 Spacer(Modifier.fillMaxWidth().height(HEADER_H).measureRoot { reveal.headerBottom = it.bottom })
             },
-            floor = anchors.need[LIGHTNING], onNeed = { anchors.need[ONCHAIN] = it },
+            floor = anchors.floorFor(ONCHAIN), onNeed = { anchors.need[ONCHAIN] = it },
             top = {
                 Box(
                     Modifier.fillMaxWidth()
@@ -253,7 +253,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                 Box(Modifier.graphicsLayer {
                     translationY = reveal.progress * (reveal.range + 160.dp.toPx())
                     alpha = (1f - reveal.progress * 1.6f).coerceIn(0f, 1f)
-                }) { OnchainActivity(sheet, wallets.isNotEmpty(), Modifier.pinned(anchors, ONCHAIN)) }
+                }) { AssetActivity(sheet, stringResource(if (wallets.isNotEmpty()) R.string.onchain_activity_empty else R.string.onchain_activity_noWallet), Modifier.pinned(anchors, ONCHAIN)) }
             },
         )
         RevealDeck(
@@ -300,9 +300,9 @@ private fun OnchainCta(modifier: Modifier, onCreate: () -> Unit, onImport: () ->
     }
 }
 
-/** The docked activity panel, Lightning's twin; empty until the wallets sync their history. */
+/** The docked activity panel for a page without activity yet (Onchain, USDT): Lightning's twin, with [empty] in it. */
 @Composable
-private fun OnchainActivity(sheet: ActivitySheet, hasWallets: Boolean, pin: Modifier) {
+internal fun AssetActivity(sheet: ActivitySheet, empty: String, pin: Modifier) {
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
         Row(Modifier.fillMaxWidth().then(pin).padding(start = 16.dp, end = 16.dp, top = 6.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -312,7 +312,7 @@ private fun OnchainActivity(sheet: ActivitySheet, hasWallets: Boolean, pin: Modi
             )
         }
         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(vertical = 28.dp, horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            MutedText(stringResource(if (hasWallets) R.string.onchain_activity_empty else R.string.onchain_activity_noWallet), align = TextAlign.Center)
+            MutedText(empty, align = TextAlign.Center)
         }
     }
 }

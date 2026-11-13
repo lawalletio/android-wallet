@@ -35,6 +35,7 @@ object Lw {
     val Gold = Color(0xFFF5A623)
     val Bitcoin = Color(0xFFF7931A)
     val Lightning = Color(0xFF4C8DFF)
+    val Tether = Color(0xFF009393) // Tether brand green (tether.to brand guidelines)
     val Neutral400 = Color(0xFFA3A3A3)
     val Neutral100 = Color(0xFFF5F5F5)
     val Neutral700 = Color(0xFF404040)
