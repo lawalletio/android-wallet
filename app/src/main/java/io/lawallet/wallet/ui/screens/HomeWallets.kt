@@ -576,12 +576,9 @@ internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: Text
     RollingLabel(from, to, { t.value }, size, color, weight)
 }
 
-/**
- * Same wheel, turned by [t] (0 = [from], 1 = [to]) directly: e.g. the Home pager's swipe. [sideways]: the words
- * slide horizontally instead, [from] on the left and [to] on the right, like the pages they name.
- */
+/** Same wheel, turned by [t] (0 = [from], 1 = [to]) directly. */
 @Composable
-internal fun RollingLabel(from: String, to: String, t: () -> Float, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium, sideways: Boolean = false) {
+internal fun RollingLabel(from: String, to: String, t: () -> Float, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium) {
     val fw = from.split(' ')
     val tw = to.split(' ')
     val head = fw.zip(tw).takeWhile { (x, y) -> x == y }.size
@@ -603,17 +600,10 @@ internal fun RollingLabel(from: String, to: String, t: () -> Float, size: TextUn
             val pa = ms[0].measure(c.copy(minWidth = 0))
             val pb = ms[1].measure(c.copy(minWidth = 0))
             val h = maxOf(pa.height, pb.height)
-            val w = (pa.width + (pb.width - pa.width) * t).toInt()
-            layout(w, h) {
-                if (sideways) {
-                    // [from] leaves to the left as [to] comes in from the right (and back), each centred in the slot.
-                    pa.placeWithLayer((w - pa.width) / 2, 0) { translationX = -t * w; alpha = 1f - t }
-                    pb.placeWithLayer((w - pb.width) / 2, 0) { translationX = (1f - t) * w; alpha = t }
-                } else {
-                    // Old face rolls up and out, new face rolls up from below (the odometer's direction).
-                    pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
-                    pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
-                }
+            layout((pa.width + (pb.width - pa.width) * t).toInt(), h) {
+                // Old face rolls up and out, new face rolls up from below (the odometer's direction).
+                pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
+                pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
             }
         }
         if (suf.isNotEmpty()) Txt(suf, size = size, weight = weight, color = color, maxLines = 1)

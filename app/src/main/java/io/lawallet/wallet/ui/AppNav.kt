@@ -257,24 +257,26 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val settings by c.session.settings.collectAsState()
     // Home's activity sheet rising swaps the tabs for search + filters, 1:1 with the finger.
     // Only Lightning has the sheet: swiping to Onchain swaps the search back to the tabs, 1:1 with the pager.
-    val sheet = { if (route == R0.HOME) ActivitySearch.sheet * HomePager.position.coerceIn(0f, 1f) else ActivitySearch.sheet }
+    val sheet = { if (route == R0.HOME) ActivitySearch.sheet * HomePager.weight(LIGHTNING) else ActivitySearch.sheet }
     val tabs by remember(route) { derivedStateOf { sheet() < 1f } }
     val search by remember(route) { derivedStateOf { sheet() > 0f } }
     val context = LocalContext.current
-    val soon = stringResource(R.string.onchain_soon)
-    val onchain = route == R0.HOME && HomePager.onchain
+    val onchainSoon = stringResource(R.string.onchain_soon)
+    val usdtSoon = stringResource(R.string.usdt_soon)
+    // Off Lightning (Onchain, USDT), Home's Receive / Send aren't wired yet.
+    val soon = if (route == R0.HOME && HomePager.page != LIGHTNING) { if (HomePager.page == USDT) usdtSoon else onchainSoon } else null
     // Both tabs composed = switching tabs: the bar stays put.
     Box(modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f }, contentAlignment = Alignment.BottomCenter) {
         if (tabs) NavTabBar(
             // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
-            onReceive = { if (onchain) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
-            onSend = { if (onchain) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
+            onReceive = { if (soon != null) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
+            onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
             onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
             haze = haze,
-            canReceive = onchain || client != null || settings?.lncurlAutoCreate == true,
-            canSend = onchain || client != null,
+            canReceive = soon != null || client != null || settings?.lncurlAutoCreate == true,
+            canSend = soon != null || client != null,
             // Home tints it with the page tone, blending 1:1 with the swipe (Bitcoin orange ⇄ Lightning blue).
-            accent = if (route == R0.HOME) ({ androidx.compose.ui.graphics.lerp(Lw.Bitcoin, Lw.Lightning, HomePager.position.coerceIn(0f, 1f)) }) else null,
+            accent = if (route == R0.HOME) ({ pageTone() }) else null,
             modifier = Modifier.graphicsLayer {
                 val p = sheet()
                 alpha = (1f - p * 2f).coerceIn(0f, 1f)
@@ -415,7 +417,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
             }
             // Home shows payments on its own balance (cue + odometer), so the pill stays away there.
             // …except on its Onchain page, where the Lightning balance is out of sight.
-            AnimatedVisibility(notice != null && (route != R0.HOME || HomePager.onchain), Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+            AnimatedVisibility(notice != null && (route != R0.HOME || HomePager.page != LIGHTNING), Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
         }

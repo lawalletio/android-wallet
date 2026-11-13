@@ -259,7 +259,7 @@
     <string name="onchain_title">Bitcoin</string>
     <string name="home_lightningBalance">Saldo Lightning</string>
     <string name="home_onchainBalance">Saldo onchain</string>
-    <string name="home_pages_hint">Cambiar entre Onchain y Lightning</string>
+    <string name="home_pages_hint">Cambiar entre Onchain, Lightning y USDT</string>
     <string name="onchain_soon_short">Pronto</string>
     <string name="onchain_soon">Enviar y recibir onchain llega pronto</string>
     <string name="onchain_wallets">Billeteras onchain</string>
@@ -334,4 +334,12 @@
         <item quantity="one">%1$d palabra</item>
         <item quantity="other">%1$d palabras</item>
     </plurals>
+
+    <!-- USDT (UI, coming soon) -->
+    <string name="home_usdtBalance">Saldo USDT</string>
+    <string name="usdt_soon">USDT llega pronto</string>
+    <string name="usdt_wallets">Billeteras USDT</string>
+    <string name="usdt_empty">Todavía no hay billeteras USDT</string>
+    <string name="usdt_activity">Tu actividad en USDT va a aparecer acá</string>
+    <string name="usdt_cta_title">Dólares digitales con USDT</string>
 </resources>
