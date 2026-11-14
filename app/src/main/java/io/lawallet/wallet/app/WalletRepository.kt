@@ -125,8 +125,8 @@ class WalletRepository(
     val selectedAddress: StateFlow<String?> = _selected
     fun selectAddress(username: String?) { _selected.value = username; prefs.selectedAddress = username }
 
-    /** Addresses Home can switch between (an alias forwards elsewhere, so it has no wallet to show): primary first. */
-    fun switchable(list: List<WalletAddress> = _addresses.value) = list.filter { it.mode != "ALIAS" }.sortedByDescending { it.isPrimary }
+    /** Addresses Home can switch between, primary first (an alias shows where it forwards; one without a wallet says so). */
+    fun switchable(list: List<WalletAddress> = _addresses.value) = list.sortedByDescending { it.isPrimary }
 
     /** The remote wallet [username] routes to, when it's a non-primary address with one of its own. */
     fun walletOf(username: String?, list: List<WalletAddress>): String? =

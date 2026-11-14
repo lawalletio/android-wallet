@@ -74,6 +74,16 @@
     <string name="open_externally">Open in browser</string>
     <string name="paste">Paste</string>
     <string name="home_primaryBalance">Primary balance</string>
+    <string name="home_unlinked">Unlinked</string>
+    <string name="home_selectWallet">Select a remote wallet</string>
+    <string name="home_setWallet">Set a remote wallet</string>
+    <string name="home_assignWallet">%1$s has no wallet. Pick one above to receive payments.</string>
+    <string name="home_pickWalletAlias">Pick a wallet above to receive on %1$s instead of forwarding.</string>
+    <string name="home_forwardInstead">Forward to another address</string>
+    <string name="home_forwardTitle">Forward to</string>
+    <string name="home_forwardSave">Forward</string>
+    <string name="home_forwardsTo">Forwards to</string>
+    <string name="home_forwardInvalid">Enter a Lightning address, like name@domain.com</string>
     <string name="rw_add">Add wallet</string>
     <string name="rw_add_title">Connect a remote wallet</string>
     <string name="rw_name">Name</string>
