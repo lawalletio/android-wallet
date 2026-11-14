@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.theme.dimBlur
 import androidx.compose.foundation.layout.BoxScope
 import io.lawallet.wallet.app.ensureDomainLogo
 import io.lawallet.wallet.ui.components.BadgedAvatar
@@ -511,6 +512,7 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     // A full-screen layer: the header row on top, and the address drop-down (with its tap-outside catcher) over Home
     // when open. Its empty area has no input, so touches pass through to the pages.
     Box(Modifier.fillMaxSize()) {
+        AddressPickerScrim(picker) { picker = false }
         Row(
             Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
                 val p = sheet()
@@ -556,7 +558,7 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
                     ) {
                         when (HomePager.page) {
                             ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
-                            LIGHTNING -> if (address != null) picker = true
+                            LIGHTNING -> if (address != null) picker = !picker
                             else -> context.toast(usdtSoon)
                         }
                     }.testTag("home-address"),
@@ -622,6 +624,15 @@ private fun AddressKindMark(kind: AddressKind) {
     }
 }
 
+/** Behind the address drop-down (and under the header, which stays sharp): Home blurred and dimmed; a tap closes it. */
+@Composable
+private fun BoxScope.AddressPickerScrim(open: Boolean, onDismiss: () -> Unit) {
+    val haze = LocalHaze.current
+    AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(200)), exit = fadeOut(tween(160))) {
+        Box(Modifier.fillMaxSize().dimBlur(haze).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
+    }
+}
+
 /**
  * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
  * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown, then "Add address".
@@ -637,10 +648,6 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
     // Re-read on open and kept through the closing animation (dropping it there flashed LNCurl marks as NWC).
     val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
     BackHandler(open, onDismiss)
-    // Taps outside close it; the catcher takes them so nothing underneath reacts.
-    AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(180)), exit = fadeOut(tween(160))) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
-    }
     val shape = RoundedCornerShape(24.dp)
     // Under the pill: the header row's 12dp top + 44dp pill + a gap; inset like the pill (avatar and settings beside it).
     AnimatedVisibility(
@@ -689,17 +696,10 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
                         if (sel) { Spacer(Modifier.width(8.dp)); LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) }
                     }
                 }
-                HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = Color.White.copy(alpha = 0.08f))
-                Row(
-                    Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-add"),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(brand.t400.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-                        LwIcon(L.drawable.lucide_ic_plus, size = 18.dp, tint = brand.t400)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Txt(stringResource(R.string.addresses_add), size = 16.sp, weight = FontWeight.SemiBold)
-                }
+                LwButton(
+                    stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp).testTag("address-picker-add"),
+                    BtnVariant.Theme, height = 48.dp, icon = L.drawable.lucide_ic_plus,
+                )
             }
     }
 }
