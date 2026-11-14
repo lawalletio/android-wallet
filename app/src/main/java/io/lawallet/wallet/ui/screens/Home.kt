@@ -263,14 +263,14 @@ internal fun GraphicsLayerScope.rollIn(page: Int) {
  * right without pushing it over, so the label lands on the same spot on every page.
  */
 @Composable
-internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null) {
+internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null) {
     val pt by animateFloatAsState(if (primary) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "primary")
     val labels = listOf(stringResource(R.string.home_onchainBalance), stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
     Layout(
         content = {
             Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
                 Box(Modifier.graphicsLayer { translationY = -pt * size.height; alpha = 1f - pt }) { PagedWords(labels, 14.sp, Lw.MutedFg) }
-                Txt(stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
+                Txt(primaryText ?: stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
             }
             badge?.invoke()
         },
@@ -819,10 +819,11 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // "Primary balance" once the wallets show: it is the primary wallet's balance.
+                    // Once the wallets show, the figure is named after the wallet it belongs to.
                     val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
                     BalanceLabel(
                         primaryLabel, Modifier.pinned(anchors, LIGHTNING),
+                        primaryText = wallets?.let { ws -> if (shownWallet == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
                     )
                     // Fixed-height slot: cue effects never resize it.
