@@ -399,4 +399,6 @@
     <string name="nfc_autopay_max">Less than (sats)</string>
     <string name="nfc_autopay_body">An invoice tapped by NFC for less than this amount pays without swiping. Payment locking still asks when it applies.</string>
     <string name="lock_locked_body">Use your fingerprint, face or screen lock to continue.</string>
+    <string name="receipt_share_text">Share text</string>
+    <string name="receipt_share_image">Share image</string>
 </resources>

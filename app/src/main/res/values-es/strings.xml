@@ -399,4 +399,6 @@
     <string name="nfc_autopay_max">Menos de (sats)</string>
     <string name="nfc_autopay_body">Una factura tocada por NFC por menos de este monto se paga sin deslizar. El bloqueo de pagos igual pide confirmación cuando corresponde.</string>
     <string name="lock_locked_body">Usá tu huella, rostro o bloqueo de pantalla para continuar.</string>
+    <string name="receipt_share_text">Compartir texto</string>
+    <string name="receipt_share_image">Compartir imagen</string>
 </resources>
