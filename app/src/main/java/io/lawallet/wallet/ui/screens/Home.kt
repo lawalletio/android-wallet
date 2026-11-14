@@ -1,5 +1,11 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.layout.onSizeChanged
+import io.lawallet.wallet.core.api.WalletAddress
+import io.lawallet.wallet.ui.components.GroupDivider
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -493,7 +499,11 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
         // Swipe the address sideways to switch between the account's addresses (and their wallets): a local choice.
         val all by c.wallet.addresses.collectAsState()
         val selected by c.wallet.selectedAddress.collectAsState()
-        val users = remember(all) { c.wallet.switchable(all).map { it.username } }
+        val switchable = remember(all) { c.wallet.switchable(all) }
+        val users = remember(switchable) { switchable.map { it.username } }
+        // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
+        var picker by remember { mutableStateOf(false) }
+        var pillWidth by remember { mutableIntStateOf(0) }
         val primaryUser = address?.substringBefore('@')
         var idx by remember { mutableIntStateOf(0) }
         LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
@@ -510,7 +520,7 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             // "charging" (shrinks, dims) up to the long press.
             Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
                 .then(if (address != null) Modifier.sharedAddress() else Modifier)
-                .height(44.dp).glass(CircleShape)
+                .height(44.dp).onSizeChanged { pillWidth = it.width }.glass(CircleShape)
                 .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
                     val dir = if (drag < 0) 1 else -1 // 1 = the next address, coming in from the right
                     val target = idx + dir
@@ -532,7 +542,7 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
                 ) {
                     when (HomePager.page) {
                         ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
-                        LIGHTNING -> if (address != null) nav.navigate(R0.RECEIVE)
+                        LIGHTNING -> if (address != null) picker = true
                         else -> context.toast(usdtSoon)
                     }
                 }.testTag("home-address"),
@@ -554,6 +564,11 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
                 }
                 else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
             }
+            if (address != null) AddressPicker(
+                picker, { picker = false }, switchable, users.getOrNull(idx), address.substringAfter('@'), with(LocalDensity.current) { pillWidth.toDp() },
+                onPick = { i -> picker = false; if (i != idx) { idx = i; c.wallet.selectAddress(users[i].takeIf { it != primaryUser }) } },
+                onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
+            )
             Row(face(USDT).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
@@ -563,6 +578,54 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
         GlassIconButton(
             L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
             Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
+        )
+    }
+}
+
+/** The pill's drop-down: every address (its face, what it does, a check on the one shown), then "Add address". */
+@Composable
+private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, width: Dp, onPick: (Int) -> Unit, onAdd: () -> Unit) {
+    val c = LocalContainer.current
+    val brand = LocalBrand.current
+    val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
+    DropdownMenu(
+        open, onDismiss, Modifier.width(width).heightIn(max = 420.dp).testTag("address-picker"),
+        offset = DpOffset(0.dp, 8.dp), containerColor = Glass.Dialog, shape = RoundedCornerShape(22.dp),
+    ) {
+        list.forEachIndexed { i, a ->
+            val full = "${a.username}@$domain"
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(c.avatars.of(full), null, Modifier.size(32.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Txt(full, size = 15.sp, weight = if (a.username == current) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+                            Txt(
+                                listOfNotNull(
+                                    primaryLabel.takeIf { a.isPrimary },
+                                    when (a.mode) {
+                                        "CUSTOM_NWC" -> stringResource(R.string.addresses_receivesInto, a.remoteWalletName ?: "—")
+                                        "ALIAS", "PROXY_ALIAS" -> stringResource(R.string.addresses_forwardsTo, a.redirect ?: "—")
+                                        else -> stringResource(R.string.addresses_notReceiving)
+                                    },
+                                ).joinToString(" · "),
+                                size = 12.sp, color = if (a.mode == "IDLE") Lw.Orange else Lw.MutedFg, maxLines = 1,
+                            )
+                        }
+                    }
+                },
+                onClick = { onPick(i) },
+                trailingIcon = { if (a.username == current) LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) },
+                modifier = Modifier.testTag("address-picker-${a.username}"),
+            )
+        }
+        GroupDivider()
+        DropdownMenuItem(
+            text = { Txt(stringResource(R.string.addresses_add), size = 15.sp, weight = FontWeight.Medium) },
+            onClick = onAdd,
+            leadingIcon = { Box(Modifier.size(32.dp).glass(CircleShape, GlassLevel.Thin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_plus, size = 16.dp, tint = brand.t400) } },
+            modifier = Modifier.testTag("address-picker-add"),
         )
     }
 }
