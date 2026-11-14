@@ -30,6 +30,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
@@ -325,6 +329,13 @@ internal fun <T> RevealDeck(
             else -> {
                 // Opens scrolled to the end, where the primary sits right above the balance.
                 val listState = rememberLazyListState(items.lastIndex)
+                // Back to the primary on every fresh list, new primary (switching address re-picks it) and close.
+                LaunchedEffect(listState, items.size, key(items.last())) {
+                    listState.scrollToItem(items.lastIndex)
+                    snapshotFlow { reveal.open }.collect { if (!it) listState.scrollToItem(items.lastIndex) }
+                }
+                // Fades the cut edge only while cards run past it; at the end the bottom is just padding.
+                val fade by animateFloatAsState(if (listState.canScrollForward) 1f else 0f, tween(180), label = "deck-fade")
                 LazyColumn(
                     // Shrinks (and scrolls) before it pushes the total out of the room.
                     Modifier.weight(1f, fill = false).fillMaxWidth().nestedScroll(reveal.listConnection).pointerInput(reveal) {
@@ -334,9 +345,16 @@ internal fun <T> RevealDeck(
                             try { do { val e = awaitPointerEvent(PointerEventPass.Initial) } while (e.changes.any { it.pressed }) }
                             finally { reveal.inList = false }
                         }
+                    }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+                        drawContent()
+                        if (fade > 0f) drawRect(
+                            Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = 1f - fade), startY = size.height - 36.dp.toPx(), endY = size.height),
+                            blendMode = BlendMode.DstIn,
+                        )
                     },
                     state = listState,
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
+                    // Bottom room so a bounce or the cards' scale never clips sharply at the edge.
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     itemsIndexed(items, key = { _, w -> key(w) }) { i, w ->
