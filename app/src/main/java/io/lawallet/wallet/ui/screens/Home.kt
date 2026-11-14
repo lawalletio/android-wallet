@@ -1003,12 +1003,14 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     var labelH by remember { mutableIntStateOf(0) }
                     var actionsH by remember { mutableIntStateOf(0) }
                     SideEffect {
-                        reveal.tuckTop = if (detached) ((if (forwardTo != null) markH else 0) + labelH).toFloat() else 0f
+                        reveal.tuckTop = if (detached) (markH + labelH).toFloat() else 0f
                         reveal.tuckBottom = if (detached) actionsH.toFloat() else 0f
                     }
                     if (forwardTo != null) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
                         StateMark(L.drawable.lucide_ic_at_sign, Lw.Lightning)
                     }
+                    // A free address has no mark: some air under the header instead.
+                    else if (unlinked) Spacer(Modifier.height(56.dp).onSizeChanged { markH = it.height })
                     // Once the wallets show, the figure is named after the wallet it belongs to.
                     val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
                     BalanceLabel(
