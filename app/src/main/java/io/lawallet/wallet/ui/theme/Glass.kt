@@ -89,7 +89,7 @@ val LocalHaze = staticCompositionLocalOf<HazeState?> { null }
 /** A floating panel's glass: a heavier blur under a lighter tint, so what's behind melts into colour, not detail. */
 val PanelStyle = HazeStyle(
     backgroundColor = Lw.Background,
-    tint = HazeTint(Color(0xFF0E1012).copy(alpha = 0.48f)),
+    tint = HazeTint(Color(0xFF0E1012).copy(alpha = 0.78f)),
     blurRadius = 48.dp,
     noiseFactor = 0.1f,
     fallbackTint = HazeTint(Color(0xF2141618)),

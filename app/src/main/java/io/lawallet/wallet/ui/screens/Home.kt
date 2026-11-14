@@ -650,18 +650,21 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
     val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
     BackHandler(open, onDismiss)
     val shape = RoundedCornerShape(24.dp)
-    // Under the pill: the header row's 12dp top + 44dp pill + a gap; inset like the pill (avatar and settings beside it).
+    // Under the pill (the header row's 12dp top + 44dp pill + a gap), inset like the pill, and as tall as it needs up to
+    // just above the tab bar (Home's reveal keeps the same 158dp clear).
     AnimatedVisibility(
         open,
-        Modifier.align(Alignment.TopCenter).padding(start = 70.dp, end = 70.dp, top = 64.dp),
+        Modifier.align(Alignment.TopCenter).padding(start = 70.dp, end = 70.dp, top = 64.dp, bottom = 158.dp),
         enter = expandVertically(spring(0.86f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top) + fadeIn(tween(180)) +
             scaleIn(spring(0.86f, Spring.StiffnessMediumLow), initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)),
         exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(160)) +
             scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
     ) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape, PanelStyle).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+                Modifier.fillMaxWidth().frosted(haze, shape, PanelStyle).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
+              // The addresses scroll when they don't fit; "Add address" stays pinned under them.
+              Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
                     Row(
@@ -697,6 +700,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
                         if (sel) { Spacer(Modifier.width(8.dp)); LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) }
                     }
                 }
+              }
                 LwButton(
                     stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp).testTag("address-picker-add"),
                     BtnVariant.Theme, height = 48.dp, icon = L.drawable.lucide_ic_plus,
