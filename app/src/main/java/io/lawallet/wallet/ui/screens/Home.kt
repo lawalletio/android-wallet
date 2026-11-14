@@ -608,7 +608,13 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     }
 }
 
-/** Whether Home's address drop-down is open: AppNav's tab bar steps aside so the drop-down's backdrop is on top. */
+/** What Home's Lightning page shows, for AppNav's tab bar: a free address can't send or receive, an alias can't send. */
+object HomeLightningAddress {
+    var free by mutableStateOf(false)
+    var alias by mutableStateOf(false)
+}
+
+/** Whether Home's address drop-down is open: AppNav's tab bar steps aside so the drop-down is on top. */
 object AddressPickerOverlay {
     var open by mutableStateOf(false)
 }
@@ -718,6 +724,11 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
             }
     }
 }
+
+/** A button's leading mark: its icon on a small light disc, so it reads on any button surface. */
+@Composable
+private fun ActionMark(content: @Composable () -> Unit) =
+    Box(Modifier.size(32.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.9f)), contentAlignment = Alignment.Center) { content() }
 
 /** Above an alias address's label: a glowing round "@" mark. */
 @Composable
@@ -939,6 +950,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
     val unlinked = picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
     val detached = forwardTo != null || unlinked
+    SideEffect { HomeLightningAddress.free = unlinked; HomeLightningAddress.alias = forwardTo != null }
+    DisposableEffect(Unit) { onDispose { HomeLightningAddress.free = false; HomeLightningAddress.alias = false } }
     val linkPicked: (RemoteWallet) -> Unit = { w ->
         picked?.let { a ->
             scope.launch {
@@ -1027,13 +1040,11 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // An address without a balance of its own leads with a mark of what it is: an alias, or unlinked.
-                    // What fades as the wallet list opens (the mark, the label, the buttons) gives the list its room.
+                    // What fades as the wallet list opens (the mark, the label) gives the list its room.
                     var markH by remember { mutableIntStateOf(0) }
                     var labelH by remember { mutableIntStateOf(0) }
-                    var actionsH by remember { mutableIntStateOf(0) }
                     SideEffect {
                         reveal.tuckTop = if (detached) (markH + labelH).toFloat() else 0f
-                        reveal.tuckBottom = if (detached) actionsH.toFloat() else 0f
                     }
                     if (forwardTo != null) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
                         StateMark(L.drawable.lucide_ic_at_sign, Lw.Lightning)
@@ -1099,21 +1110,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         enabled = current,
                     )
                     DotsSlot(anchors, LIGHTNING)
-                    // Under the dots, in the lower half: buttons to pick a wallet (it opens the list) or, for a free address, to forward it. Open: the
-                    // list is the choice, so they fade away.
-                    if (detached) Column(
-                        Modifier.onSizeChanged { actionsH = it.height }.padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 8.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        LwButton(
-                            stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
-                            Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_wallet,
-                        )
-                        if (unlinked) LwButton(
-                            stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } },
-                            Modifier.fillMaxWidth().testTag("home-forward"), BtnVariant.Secondary, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_forward,
-                        )
-                    }
                 }
             }
         },
@@ -1160,6 +1156,23 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
             }
         },
       )
+      // A free or alias address's way forward, down by the thumb just above the tab bar; it fades as the wallet list
+      // opens (the list is the choice then).
+      if (detached) Column(
+          Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 98.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+          LwButton(
+              stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
+              Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 58.dp,
+              leading = { ActionMark { WalletMark(lncurl = false, size = 20.dp) } },
+          )
+          if (unlinked) LwButton(
+              stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } },
+              Modifier.fillMaxWidth().testTag("home-forward"), BtnVariant.Secondary, enabled = current && !open, height = 58.dp,
+              leading = { ActionMark { LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = Lw.Lightning) } },
+          )
+      }
       WalletsReveal(
           reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },

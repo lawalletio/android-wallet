@@ -296,8 +296,9 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
             onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
             onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
             haze = haze,
-            canReceive = soon != null || client != null || settings?.lncurlAutoCreate == true,
-            canSend = soon != null || client != null,
+            // On Lightning, a free address has nothing to receive into or send from; an alias only forwards.
+            canReceive = soon != null || (!(route == R0.HOME && HomeLightningAddress.free) && (client != null || settings?.lncurlAutoCreate == true)),
+            canSend = soon != null || (!(route == R0.HOME && (HomeLightningAddress.free || HomeLightningAddress.alias)) && client != null),
             // Home tints it with the page tone, blending 1:1 with the swipe (Bitcoin orange ⇄ Lightning blue).
             accent = if (route == R0.HOME) ({ pageTone() }) else null,
             modifier = Modifier.graphicsLayer {
