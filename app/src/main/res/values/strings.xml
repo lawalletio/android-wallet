@@ -98,6 +98,11 @@
     <string name="rw_import_nwc">Import NWC</string>
     <string name="rw_create_disposable">Create disposable LNCurl</string>
     <string name="rw_lncurl_body">A free, custodial LNCurl wallet is created for you. Treat it as disposable: keep small amounts only.</string>
+    <string name="rw_lncurl_provider">LNCurl provider</string>
+    <string name="rw_lncurl_via">via %1$s</string>
+    <string name="rw_lncurl_add_custom">Add custom provider</string>
+    <string name="rw_lncurl_use">Use provider</string>
+    <string name="rw_lncurl_invalid">Enter an https:// provider address</string>
     <string name="rw_connection">Connection URI</string>
     <string name="rw_name_optional">Name (optional)</string>
     <string name="rw_total_balance">Total balance</string>

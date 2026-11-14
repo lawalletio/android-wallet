@@ -134,6 +134,7 @@ fun LwButton(
     height: Dp = 48.dp,
     @DrawableRes icon: Int? = null,
     shape: Shape? = null,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val brand = LocalBrand.current
     val interaction = remember { MutableInteractionSource() }
@@ -169,7 +170,8 @@ fun LwButton(
     ) {
         if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = fg, strokeWidth = 2.dp)
         else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-            if (icon != null) { LwIcon(icon, size = 18.dp, tint = fg); Spacer(Modifier.width(8.dp)) }
+            if (leading != null) { leading(); Spacer(Modifier.width(10.dp)) }
+            else if (icon != null) { LwIcon(icon, size = 18.dp, tint = fg); Spacer(Modifier.width(8.dp)) }
             Txt(text, size = 15.sp, weight = FontWeight.SemiBold, color = fg, maxLines = 1)
         }
     }
