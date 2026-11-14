@@ -148,6 +148,11 @@ class WalletRepository(
         scope.launch {
             session.me.filterNotNull().distinctUntilChanged { a, b -> a.userId == b.userId && a.lightningAddress == b.lightningAddress }.collect { refreshAddresses() }
         }
+        // Logout or an instance switch (the account goes away): its addresses and pick go too, not just from disk.
+        scope.launch {
+            var had = false
+            session.me.collect { m -> if (had && m == null) { _addresses.value = emptyList(); _selected.value = null }; had = m != null }
+        }
         scope.launch { active.filter { it }.collect { refreshBalance() } }
     }
 

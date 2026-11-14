@@ -1,10 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.foundation.layout.BoxScope
 import io.lawallet.wallet.app.ensureDomainLogo
 import io.lawallet.wallet.ui.components.BadgedAvatar
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -490,108 +488,111 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     val sheet = { pages.sheetAt(HomePager.position) }
     val gone by remember { derivedStateOf { sheet() > 0.45f } }
     if (gone) return
-    Row(
-        Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
-            val p = sheet()
-            alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
-            translationY = -p * 64.dp.toPx()
-            scaleX = 1f - 0.06f * p; scaleY = scaleX
-            transformOrigin = TransformOrigin(0.5f, 0f)
-        }.padding(start = 16.dp, end = 16.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Opens the profile; the avatar itself flies there (log out lives on the profile now).
-        Box(
-            Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
-            contentAlignment = Alignment.Center,
+    // Centre pill: the user's Lightning address (tap to receive) or the logotype; the onchain primary; USDT.
+    val address = me?.lightningAddress
+    // Swipe the address sideways to switch between the account's addresses (and their wallets): a local choice.
+    val all by c.wallet.addresses.collectAsState()
+    val selected by c.wallet.selectedAddress.collectAsState()
+    val switchable = remember(all) { c.wallet.switchable(all) }
+    val users = remember(switchable) { switchable.map { it.username } }
+    // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
+    var picker by remember { mutableStateOf(false) }
+    val primaryUser = address?.substringBefore('@')
+    var idx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
+    val span = with(LocalDensity.current) { 72.dp.toPx() }
+    var drag by remember { mutableFloatStateOf(0f) }
+    val canSwipe = address != null && users.size > 1 && HomePager.page == LIGHTNING
+    val dragState = rememberDraggableState { d ->
+        val next = drag + d
+        // Past the first or last address it only gives a little.
+        drag = (if ((if (next < 0) idx + 1 else idx - 1) in users.indices) next else drag + d * 0.25f).coerceIn(-span, span)
+    }
+    // A full-screen layer: the header row on top, and the address drop-down (with its tap-outside catcher) over Home
+    // when open. Its empty area has no input, so touches pass through to the pages.
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
+                val p = sheet()
+                alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
+                translationY = -p * 64.dp.toPx()
+                scaleX = 1f - 0.06f * p; scaleY = scaleX
+                transformOrigin = TransformOrigin(0.5f, 0f)
+            }.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-            else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
-        }
-        // Centre pill: the user's Lightning address (tap to receive) or the logotype; the onchain primary; USDT.
-        val address = me?.lightningAddress
-        // Swipe the address sideways to switch between the account's addresses (and their wallets): a local choice.
-        val all by c.wallet.addresses.collectAsState()
-        val selected by c.wallet.selectedAddress.collectAsState()
-        val switchable = remember(all) { c.wallet.switchable(all) }
-        val users = remember(switchable) { switchable.map { it.username } }
-        // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
-        var picker by remember { mutableStateOf(false) }
-        var pillWidth by remember { mutableIntStateOf(0) }
-        val primaryUser = address?.substringBefore('@')
-        var idx by remember { mutableIntStateOf(0) }
-        LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
-        val span = with(LocalDensity.current) { 72.dp.toPx() }
-        var drag by remember { mutableFloatStateOf(0f) }
-        val canSwipe = address != null && users.size > 1 && HomePager.page == LIGHTNING
-        val dragState = rememberDraggableState { d ->
-            val next = drag + d
-            // Past the first or last address it only gives a little.
-            drag = (if ((if (next < 0) idx + 1 else idx - 1) in users.indices) next else drag + d * 0.25f).coerceIn(-span, span)
-        }
-        Box(
-            // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
-            // "charging" (shrinks, dims) up to the long press.
-            Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
-                .then(if (address != null) Modifier.sharedAddress() else Modifier)
-                .height(44.dp).onSizeChanged { pillWidth = it.width }.glass(CircleShape)
-                .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
-                    val dir = if (drag < 0) 1 else -1 // 1 = the next address, coming in from the right
-                    val target = idx + dir
-                    if (drag != 0f && target in users.indices && (abs(drag) > span * 0.35f || -dir * v > 600f)) {
-                        animate(drag, -dir * span, animationSpec = tween(160, easing = FastOutSlowInEasing)) { x, _ -> drag = x }
-                        idx = target; drag = 0f
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        c.wallet.selectAddress(users[target].takeIf { it != primaryUser })
-                    } else animate(drag, 0f, animationSpec = spring(0.8f, Spring.StiffnessMedium)) { x, _ -> drag = x }
-                })
-                .combinedClickable(
-                    interactionSource = addressPress, indication = ripple(),
-                    onLongClick = {
-                        if (HomePager.page == LIGHTNING && address != null) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+            // Opens the profile; the avatar itself flies there (log out lives on the profile now).
+            Box(
+                Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
+            }
+            Box(
+                // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
+                // "charging" (shrinks, dims) up to the long press.
+                Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                    .then(if (address != null) Modifier.sharedAddress() else Modifier)
+                    .height(44.dp).glass(CircleShape)
+                    .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
+                        val dir = if (drag < 0) 1 else -1 // 1 = the next address, coming in from the right
+                        val target = idx + dir
+                        if (drag != 0f && target in users.indices && (abs(drag) > span * 0.35f || -dir * v > 600f)) {
+                            animate(drag, -dir * span, animationSpec = tween(160, easing = FastOutSlowInEasing)) { x, _ -> drag = x }
+                            idx = target; drag = 0f
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            c.wallet.selectAddress(users[target].takeIf { it != primaryUser })
+                        } else animate(drag, 0f, animationSpec = spring(0.8f, Spring.StiffnessMedium)) { x, _ -> drag = x }
+                    })
+                    .combinedClickable(
+                        interactionSource = addressPress, indication = ripple(),
+                        onLongClick = {
+                            if (HomePager.page == LIGHTNING && address != null) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+                            }
+                        },
+                    ) {
+                        when (HomePager.page) {
+                            ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                            LIGHTNING -> if (address != null) picker = true
+                            else -> context.toast(usdtSoon)
                         }
-                    },
-                ) {
-                    when (HomePager.page) {
-                        ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
-                        LIGHTNING -> if (address != null) picker = true
-                        else -> context.toast(usdtSoon)
-                    }
-                }.testTag("home-address"),
-        ) {
-            // A little carousel inside the pill (it clips): each page's face sits on its page's side and slides in
-            // 1:1 with the swipe.
-            val face = { page: Int -> Modifier.matchParentSize().graphicsLayer { translationX = (page - HomePager.position) * size.width; alpha = smooth(0.15f, 1f, HomePager.weight(page)) } }
-            Row(face(ONCHAIN).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
-                Spacer(Modifier.width(8.dp))
-                Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-            }
-            Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
-                if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-                    // Username leads; the domain sits a step dimmer and never truncates.
-                    if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
-                    else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                    }.testTag("home-address"),
+            ) {
+                // A little carousel inside the pill (it clips): each page's face sits on its page's side and slides in
+                // 1:1 with the swipe.
+                val face = { page: Int -> Modifier.matchParentSize().graphicsLayer { translationX = (page - HomePager.position) * size.width; alpha = smooth(0.15f, 1f, HomePager.weight(page)) } }
+                Row(face(ONCHAIN).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
+                    Spacer(Modifier.width(8.dp))
+                    Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
                 }
-                else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+                Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
+                    if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                        // Username leads; the domain sits a step dimmer and never truncates.
+                        if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
+                        else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                        Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                    }
+                    else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+                }
+                Row(face(USDT).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Txt("USDT", size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                }
             }
-            if (address != null) AddressPicker(
-                picker, { picker = false }, switchable, users.getOrNull(idx), address.substringAfter('@'), with(LocalDensity.current) { pillWidth.toDp() },
-                onPick = { i -> picker = false; if (i != idx) { idx = i; c.wallet.selectAddress(users[i].takeIf { it != primaryUser }) } },
-                onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
+            GlassIconButton(
+                L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+                Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
             )
-            Row(face(USDT).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Txt("USDT", size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-            }
         }
-        GlassIconButton(
-            L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
-            Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
+        if (address != null) AddressPicker(
+            picker, { picker = false }, switchable, users.getOrNull(idx), address.substringAfter('@'),
+            onPick = { i -> picker = false; if (i != idx) { idx = i; c.wallet.selectAddress(users[i].takeIf { it != primaryUser }) } },
+            onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
         )
     }
 }
@@ -624,29 +625,33 @@ private fun AddressKindMark(kind: AddressKind) {
 /**
  * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
  * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown, then "Add address".
+ * Drawn in Home's own window (not a popup): Haze then blurs it like the tab bar, and nothing outlives its closing (a
+ * popup's blur kept the closed window registered with the app's Haze source, leaking each one).
  */
 @Composable
-private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, width: Dp, onPick: (Int) -> Unit, onAdd: () -> Unit) {
+private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, onPick: (Int) -> Unit, onAdd: () -> Unit) {
     val c = LocalContainer.current
     val brand = LocalBrand.current
     val haze = LocalHaze.current
     val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
-    val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
-    val shown = remember { MutableTransitionState(false) }
-    shown.targetState = open
-    if (!shown.currentState && !shown.targetState) return
+    val wallets = remember(open) { if (open) c.prefs.cached("remote-wallets", remoteWalletsSer) else null }
+    BackHandler(open, onDismiss)
+    // Taps outside close it; the catcher takes them so nothing underneath reacts.
+    AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(180)), exit = fadeOut(tween(160))) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
+    }
     val shape = RoundedCornerShape(24.dp)
-    val gap = with(LocalDensity.current) { (44.dp + 8.dp).roundToPx() }
-    Popup(Alignment.TopCenter, IntOffset(0, gap), onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
-        AnimatedVisibility(
-            shown,
-            enter = expandVertically(spring(0.86f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top) + fadeIn(tween(180)) +
-                scaleIn(spring(0.86f, Spring.StiffnessMediumLow), initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)),
-            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(160)) +
-                scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
-        ) {
+    // Under the pill: the header row's 12dp top + 44dp pill + a gap; inset like the pill (avatar and settings beside it).
+    AnimatedVisibility(
+        open,
+        Modifier.align(Alignment.TopCenter).padding(start = 70.dp, end = 70.dp, top = 64.dp),
+        enter = expandVertically(spring(0.86f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top) + fadeIn(tween(180)) +
+            scaleIn(spring(0.86f, Spring.StiffnessMediumLow), initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)),
+        exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(160)) +
+            scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
+    ) {
             Column(
-                Modifier.width(width).heightIn(max = 560.dp).frosted(haze, shape).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
@@ -695,7 +700,6 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                     Txt(stringResource(R.string.addresses_add), size = 16.sp, weight = FontWeight.SemiBold)
                 }
             }
-        }
     }
 }
 
@@ -753,8 +757,10 @@ private fun SwipeUsername(users: List<String>, index: Int, drag: () -> Float, sp
     val width = { i: Int -> measurer.measure(users[i], style, maxLines = 1).size.width.toFloat() }
     val slot = remember { Animatable(width(index)) }
     LaunchedEffect(index, users) { slot.animateTo(width(index), spring(0.85f, Spring.StiffnessMediumLow)) }
-    val d = drag()
-    val neighbor = (if (d < 0) index + 1 else if (d > 0) index - 1 else -1).takeIf { it in users.indices }
+    // Only the drag's direction picks the neighbour: composition reruns when that flips, not on every frame (the
+    // offsets themselves are read at placement).
+    val dir by remember { derivedStateOf { sign(drag()).toInt() } }
+    val neighbor = (if (dir < 0) index + 1 else if (dir > 0) index - 1 else -1).takeIf { it in users.indices }
     Layout(
         content = {
             Txt(users[index], size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)

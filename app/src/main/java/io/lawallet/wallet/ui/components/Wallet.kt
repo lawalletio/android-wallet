@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.components
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.annotation.DrawableRes
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.app.AddressProfile
@@ -808,10 +809,12 @@ private fun Modifier.freshEntrance(tx: Tx): Modifier {
 @Composable
 fun rememberAddressProfile(address: String, debounceMs: Long = 0): AddressProfile? {
     val c = LocalContainer.current
-    val profiles by c.avatars.profiles.collectAsState()
+    val profiles = c.avatars.profiles.collectAsState()
     c.avatars.domainTick.collectAsState().value // a domain's favicon landing repaints the fallback face
     LaunchedEffect(address) { delay(debounceMs); c.refreshAddressProfile(address, ttlMs = 0) }
-    return profiles[c.avatars.key(address)]
+    // Only this address's entry: another address's lookup landing doesn't recompose every chip on screen.
+    val key = c.avatars.key(address)
+    return remember(key) { derivedStateOf { profiles.value[key] } }.value
 }
 
 /** A paid Lightning address: its face and display name (cached, refreshed live), plus the address. Tappable when [onClick] is set. */

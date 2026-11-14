@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** A Lightning address's Nostr face (via its NIP-05): display name (or name) and picture. */
 @Serializable data class AddressProfile(val name: String? = null, val picture: String? = null, val fetchedAt: Long = 0)
 
+private const val FAVICON_MAX = 512_000
 private val DOMAIN = Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}$")
 
 fun domainAvatar(domain: String) = "https://raw.githubusercontent.com/lawalletio/static/main/public/img/domains/${if (domain == "lawallet.io") "lawallet.ar" else domain}.png"
@@ -101,9 +102,15 @@ class Avatars(context: Context) {
             dir.mkdirs()
             if (known == 200) { File(dir, "@$d.static").createNewFile(); saved += "@$d.static"; return@withContext }
             for (path in listOf("/favicon.ico", "/apple-touch-icon.png")) {
+                // Read at most the cap (+1 to spot a bigger one), never a whole oversized body.
                 val bytes = runCatching {
-                    http.newCall(Request.Builder().url("https://$d$path").build()).execute().use { r -> if (r.isSuccessful) r.body.bytes() else null }
-                }.getOrNull()?.takeIf { it.size in 1..512_000 } ?: continue
+                    http.newCall(Request.Builder().url("https://$d$path").build()).execute().use { r ->
+                        if (!r.isSuccessful) return@use null
+                        val src = r.body.source()
+                        src.request(FAVICON_MAX + 1L)
+                        if (src.buffer.size > FAVICON_MAX) null else src.buffer.readByteArray()
+                    }
+                }.getOrNull()?.takeIf { it.isNotEmpty() } ?: continue
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
                 if (o.outWidth <= 0) continue
