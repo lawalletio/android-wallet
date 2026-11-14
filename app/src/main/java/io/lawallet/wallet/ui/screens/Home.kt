@@ -1,5 +1,32 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.theme.PanelStyle
+import io.lawallet.wallet.ui.theme.dimBlur
+import androidx.compose.foundation.layout.BoxScope
+import io.lawallet.wallet.app.ensureDomainLogo
+import io.lawallet.wallet.ui.components.BadgedAvatar
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material3.HorizontalDivider
+import io.lawallet.wallet.ui.theme.LocalHaze
+import io.lawallet.wallet.ui.theme.frosted
+import io.lawallet.wallet.ui.components.WalletMark
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.annotation.DrawableRes
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.ui.layout.onSizeChanged
+import io.lawallet.wallet.core.api.WalletAddress
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.core.animate
+import kotlin.math.sign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.animation.AnimatedContent
@@ -120,6 +147,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import io.lawallet.wallet.ui.components.rememberAddressProfile
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.core.fx.Currencies
@@ -256,14 +284,14 @@ internal fun GraphicsLayerScope.rollIn(page: Int) {
  * right without pushing it over, so the label lands on the same spot on every page.
  */
 @Composable
-internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null) {
+internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null, lightningText: String? = null) {
     val pt by animateFloatAsState(if (primary) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "primary")
-    val labels = listOf(stringResource(R.string.home_onchainBalance), stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
+    val labels = listOf(stringResource(R.string.home_onchainBalance), lightningText ?: stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
     Layout(
         content = {
             Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
                 Box(Modifier.graphicsLayer { translationY = -pt * size.height; alpha = 1f - pt }) { PagedWords(labels, 14.sp, Lw.MutedFg) }
-                Txt(stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
+                Txt(primaryText ?: stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
             }
             badge?.invoke()
         },
@@ -462,74 +490,296 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     val sheet = { pages.sheetAt(HomePager.position) }
     val gone by remember { derivedStateOf { sheet() > 0.45f } }
     if (gone) return
-    Row(
-        Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
-            val p = sheet()
-            alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
-            translationY = -p * 64.dp.toPx()
-            scaleX = 1f - 0.06f * p; scaleY = scaleX
-            transformOrigin = TransformOrigin(0.5f, 0f)
-        }.padding(start = 16.dp, end = 16.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Opens the profile; the avatar itself flies there (log out lives on the profile now).
-        Box(
-            Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
-            contentAlignment = Alignment.Center,
+    // Centre pill: the user's Lightning address (tap to receive) or the logotype; the onchain primary; USDT.
+    val address = me?.lightningAddress
+    // Swipe the address sideways to switch between the account's addresses (and their wallets): a local choice.
+    val all by c.wallet.addresses.collectAsState()
+    val selected by c.wallet.selectedAddress.collectAsState()
+    val switchable = remember(all) { c.wallet.switchable(all) }
+    val users = remember(switchable) { switchable.map { it.username } }
+    // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
+    var picker by remember { mutableStateOf(false) }
+    val primaryUser = address?.substringBefore('@')
+    var idx by remember { mutableIntStateOf(0) }
+    LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
+    val span = with(LocalDensity.current) { 72.dp.toPx() }
+    var drag by remember { mutableFloatStateOf(0f) }
+    val canSwipe = address != null && users.size > 1 && HomePager.page == LIGHTNING
+    val dragState = rememberDraggableState { d ->
+        val next = drag + d
+        // Past the first or last address it only gives a little.
+        drag = (if ((if (next < 0) idx + 1 else idx - 1) in users.indices) next else drag + d * 0.25f).coerceIn(-span, span)
+    }
+    // A full-screen layer: the header row on top, and the address drop-down (with its tap-outside catcher) over Home
+    // when open. Its empty area has no input, so touches pass through to the pages.
+    Box(Modifier.fillMaxSize()) {
+        AddressPickerScrim(picker) { picker = false }
+        Row(
+            Modifier.fillMaxWidth().riseIn(0, intro).graphicsLayer {
+                val p = sheet()
+                alpha = (1f - p * 2.2f).coerceIn(0f, 1f)
+                translationY = -p * 64.dp.toPx()
+                scaleX = 1f - 0.06f * p; scaleY = scaleX
+                transformOrigin = TransformOrigin(0.5f, 0f)
+            }.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-            else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
-        }
-        // Centre pill: the user's Lightning address (tap to receive) or the logotype; the onchain primary; USDT.
-        val address = me?.lightningAddress
-        Box(
-            // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
-            // "charging" (shrinks, dims) up to the long press.
-            Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
-                .then(if (address != null) Modifier.sharedAddress() else Modifier)
-                .height(44.dp).glass(CircleShape)
-                .combinedClickable(
-                    interactionSource = addressPress, indication = ripple(),
-                    onLongClick = {
-                        if (HomePager.page == LIGHTNING && address != null) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+            // Opens the profile; the avatar itself flies there (log out lives on the profile now).
+            Box(
+                Modifier.sharedAvatar().size(44.dp).glass(CircleShape).clickable(onClickLabel = stringResource(R.string.profile_open)) { nav.navigate(R0.PROFILE) { launchSingleTop = true } }.testTag("avatar"),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (avatar != null) AsyncImage(avatar, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                else BrandImage(brand.isotype, "isotype.svg", Modifier.padding(9.dp).fillMaxSize())
+            }
+            Box(
+                // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
+                // "charging" (shrinks, dims) up to the long press.
+                Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                    .then(if (address != null) Modifier.sharedAddress() else Modifier)
+                    .height(44.dp).glass(CircleShape)
+                    .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
+                        val dir = if (drag < 0) 1 else -1 // 1 = the next address, coming in from the right
+                        val target = idx + dir
+                        if (drag != 0f && target in users.indices && (abs(drag) > span * 0.35f || -dir * v > 600f)) {
+                            animate(drag, -dir * span, animationSpec = tween(160, easing = FastOutSlowInEasing)) { x, _ -> drag = x }
+                            idx = target; drag = 0f
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            c.wallet.selectAddress(users[target].takeIf { it != primaryUser })
+                        } else animate(drag, 0f, animationSpec = spring(0.8f, Spring.StiffnessMedium)) { x, _ -> drag = x }
+                    })
+                    .combinedClickable(
+                        interactionSource = addressPress, indication = ripple(),
+                        onLongClick = {
+                            if (HomePager.page == LIGHTNING && address != null) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                nav.navigate(R0.ADDRESSES) { launchSingleTop = true }
+                            }
+                        },
+                    ) {
+                        when (HomePager.page) {
+                            ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                            LIGHTNING -> if (address != null) picker = !picker
+                            else -> context.toast(usdtSoon)
                         }
-                    },
-                ) {
-                    when (HomePager.page) {
-                        ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
-                        LIGHTNING -> if (address != null) nav.navigate(R0.RECEIVE)
-                        else -> context.toast(usdtSoon)
-                    }
-                }.testTag("home-address"),
-        ) {
-            // A little carousel inside the pill (it clips): each page's face sits on its page's side and slides in
-            // 1:1 with the swipe.
-            val face = { page: Int -> Modifier.matchParentSize().graphicsLayer { translationX = (page - HomePager.position) * size.width; alpha = smooth(0.15f, 1f, HomePager.weight(page)) } }
-            Row(face(ONCHAIN).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
-                Spacer(Modifier.width(8.dp))
-                Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-            }
-            Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
-                if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-                    // Username leads; the domain sits a step dimmer and never truncates.
-                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                    Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                    }.testTag("home-address"),
+            ) {
+                // A little carousel inside the pill (it clips): each page's face sits on its page's side and slides in
+                // 1:1 with the swipe.
+                val face = { page: Int -> Modifier.matchParentSize().graphicsLayer { translationX = (page - HomePager.position) * size.width; alpha = smooth(0.15f, 1f, HomePager.weight(page)) } }
+                Row(face(ONCHAIN).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
+                    Spacer(Modifier.width(8.dp))
+                    Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
                 }
-                else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+                Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
+                    if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                        // Username leads; the domain sits a step dimmer and never truncates.
+                        if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
+                        else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                        Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                    }
+                    else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
+                }
+                Row(face(USDT).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                    Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Txt("USDT", size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                }
             }
-            Row(face(USDT).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Txt("USDT", size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-            }
+            GlassIconButton(
+                L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
+                Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
+            )
         }
-        GlassIconButton(
-            L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
-            Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
+        if (address != null) AddressPicker(
+            picker, { picker = false }, switchable, users.getOrNull(idx), address.substringAfter('@'),
+            onPick = { i -> picker = false; if (i != idx) { idx = i; c.wallet.selectAddress(users[i].takeIf { it != primaryUser }) } },
+            onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
         )
+    }
+}
+
+/** What an address does, for its mark: receives into an NWC or LNCurl wallet, forwards elsewhere, or nothing (unlinked). */
+internal enum class AddressKind { NWC, LNCURL, FORWARD, IDLE }
+
+/** [wallets] null (not loaded yet) trusts the routing; loaded, a wallet that isn't active there (archived) counts as unlinked. */
+internal fun addressKind(a: WalletAddress, wallets: List<RemoteWallet>?): AddressKind = when (a.mode) {
+    "ALIAS", "PROXY_ALIAS" -> AddressKind.FORWARD
+    "CUSTOM_NWC" -> when {
+        wallets == null -> AddressKind.NWC
+        else -> wallets.find { it.id == a.remoteWalletId && it.status == "ACTIVE" }?.let { if (it.provider == "lncurl") AddressKind.LNCURL else AddressKind.NWC } ?: AddressKind.IDLE
+    }
+    else -> AddressKind.IDLE
+}
+
+@Composable
+private fun AddressKindMark(kind: AddressKind) {
+    val tint = when (kind) { AddressKind.NWC -> Lw.NwcPurple; AddressKind.LNCURL -> Lw.LncurlGreen; AddressKind.FORWARD -> Lw.Lightning; AddressKind.IDLE -> Lw.Tether }
+    Box(Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+        when (kind) {
+            AddressKind.NWC, AddressKind.LNCURL -> WalletMark(kind == AddressKind.LNCURL, 18.dp)
+            AddressKind.FORWARD -> LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = tint)
+            AddressKind.IDLE -> LwIcon(L.drawable.lucide_ic_bird, size = 18.dp, tint = tint)
+        }
+    }
+}
+
+/** Behind the address drop-down (and under the header, which stays sharp): Home blurred and dimmed; a tap closes it. */
+@Composable
+private fun BoxScope.AddressPickerScrim(open: Boolean, onDismiss: () -> Unit) {
+    val haze = LocalHaze.current
+    AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(200)), exit = fadeOut(tween(160))) {
+        Box(Modifier.fillMaxSize().dimBlur(haze).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
+    }
+}
+
+/**
+ * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
+ * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown, then "Add address".
+ * Drawn in Home's own window (not a popup): Haze then blurs it like the tab bar, and nothing outlives its closing (a
+ * popup's blur kept the closed window registered with the app's Haze source, leaking each one).
+ */
+@Composable
+private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, onPick: (Int) -> Unit, onAdd: () -> Unit) {
+    val c = LocalContainer.current
+    val brand = LocalBrand.current
+    val haze = LocalHaze.current
+    val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
+    // Re-read on open and kept through the closing animation (dropping it there flashed LNCurl marks as NWC).
+    val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
+    BackHandler(open, onDismiss)
+    val shape = RoundedCornerShape(24.dp)
+    // Under the pill: the header row's 12dp top + 44dp pill + a gap; inset like the pill (avatar and settings beside it).
+    AnimatedVisibility(
+        open,
+        Modifier.align(Alignment.TopCenter).padding(start = 70.dp, end = 70.dp, top = 64.dp),
+        enter = expandVertically(spring(0.86f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top) + fadeIn(tween(180)) +
+            scaleIn(spring(0.86f, Spring.StiffnessMediumLow), initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)),
+        exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(160)) +
+            scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
+    ) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape, PanelStyle).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+            ) {
+                list.forEachIndexed { i, a ->
+                    val sel = a.username == current
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onPick(i) }.padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-${a.username}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val kind = addressKind(a, wallets)
+                        // An alias wears its destination's domain brand, badged with the forward arrow.
+                        if (kind == AddressKind.FORWARD && a.redirect != null) {
+                            val d = a.redirect.substringAfter('@')
+                            c.avatars.domainTick.collectAsState().value // repaint when a favicon lands
+                            LaunchedEffect(d) { c.ensureDomainLogo(d) }
+                            BadgedAvatar(c.avatars.domainLogo(d), L.drawable.lucide_ic_forward, Lw.Lightning, 36.dp)
+                        }
+                        else AddressKindMark(kind)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Row {
+                                Txt(a.username, Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = if (sel) Lw.Foreground else Lw.Foreground.copy(alpha = 0.85f))
+                                Txt("@$domain", size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.5f), maxLines = 1)
+                                if (a.isPrimary) { Spacer(Modifier.width(6.dp)); LwIcon(L.drawable.lucide_ic_star, size = 14.dp, tint = Lw.Gold, contentDescription = primaryLabel, modifier = Modifier.align(Alignment.CenterVertically)) }
+                            }
+                            Txt(
+                                // The mark already says what kind it is: just where payments go.
+                                when (kind) {
+                                    AddressKind.FORWARD -> a.redirect ?: "—"
+                                    AddressKind.NWC, AddressKind.LNCURL -> a.remoteWalletName ?: "—"
+                                    AddressKind.IDLE -> stringResource(R.string.home_unlinked)
+                                },
+                                size = 12.sp, color = Lw.MutedFg, maxLines = 1,
+                            )
+                        }
+                        if (sel) { Spacer(Modifier.width(8.dp)); LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) }
+                    }
+                }
+                LwButton(
+                    stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp).testTag("address-picker-add"),
+                    BtnVariant.Theme, height = 48.dp, icon = L.drawable.lucide_ic_plus,
+                )
+            }
+    }
+}
+
+/** Above an alias address's label: a glowing round "@" mark. */
+@Composable
+private fun StateMark(@DrawableRes icon: Int, tint: Color) {
+    Box(Modifier.padding(bottom = 18.dp).size(112.dp).drawBehind {
+        drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = 0.30f), Color.Transparent), radius = size.minDimension / 2))
+    }, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(76.dp).glass(CircleShape, GlassLevel.Strong, tint = tint.copy(alpha = 0.14f)).border(1.dp, tint.copy(alpha = 0.45f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { LwIcon(icon, size = 34.dp, tint = tint) }
+    }
+}
+
+/** In place of the balance for an alias address: where its payments go, with that address's face and name. Tap to change it. */
+@Composable
+private fun ForwardFace(target: String, onEdit: () -> Unit) {
+    val c = LocalContainer.current
+    val profile = rememberAddressProfile(target)
+    Column(Modifier.testTag("balance-forward"), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LwIcon(L.drawable.lucide_ic_forward, size = 14.dp, tint = Lw.Lightning)
+            Spacer(Modifier.width(6.dp))
+            Txt(stringResource(R.string.home_forwardsTo), size = 13.sp, weight = FontWeight.Medium, color = Lw.Lightning)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.clip(CircleShape).glass(CircleShape, GlassLevel.Thin, tint = Lw.Lightning.copy(alpha = 0.08f)).clickable(onClick = onEdit)
+                .padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 6.dp).testTag("forward-edit"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(profile?.picture ?: c.avatars.of(target), null, Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f, fill = false)) {
+                profile?.name?.let { Txt(it, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+                Txt(target, size = if (profile?.name != null) 13.sp else 17.sp, weight = if (profile?.name != null) FontWeight.Normal else FontWeight.SemiBold, color = if (profile?.name != null) Lw.MutedFg else Lw.Foreground, maxLines = 1)
+            }
+            Spacer(Modifier.width(12.dp))
+            LwIcon(L.drawable.lucide_ic_pencil, size = 16.dp, tint = Lw.MutedFg)
+        }
+    }
+}
+
+/**
+ * The username part of the pill while swiping between addresses: the current one slides and fades with [drag] while
+ * its neighbour slides in from that side (cut at the "@", so the domain holds still). After a switch the slot eases to
+ * the new name's width, which glides the whole address back to centre.
+ */
+@Composable
+private fun SwipeUsername(users: List<String>, index: Int, drag: () -> Float, span: Float, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val style = TextStyle(fontFamily = Inter, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
+    val width = { i: Int -> measurer.measure(users[i], style, maxLines = 1).size.width.toFloat() }
+    val slot = remember { Animatable(width(index)) }
+    LaunchedEffect(index, users) { slot.animateTo(width(index), spring(0.85f, Spring.StiffnessMediumLow)) }
+    // Only the drag's direction picks the neighbour: composition reruns when that flips, not on every frame (the
+    // offsets themselves are read at placement).
+    val dir by remember { derivedStateOf { sign(drag()).toInt() } }
+    val neighbor = (if (dir < 0) index + 1 else if (dir > 0) index - 1 else -1).takeIf { it in users.indices }
+    Layout(
+        content = {
+            Txt(users[index], size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            if (neighbor != null) Txt(users[neighbor], size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+        },
+        // Names may overflow to the left (the pill clips there), never right over the domain.
+        modifier = modifier.drawWithContent { clipRect(left = -size.width * 4, right = size.width) { this@drawWithContent.drawContent() } },
+    ) { ms, cs ->
+        val names = ms.map { it.measure(Constraints(maxWidth = cs.maxWidth)) }
+        val w = slot.value.roundToInt().coerceIn(0, cs.maxWidth)
+        val h = names.maxOf { it.height }
+        layout(w, h) {
+            val x = drag()
+            val p = (abs(x) / span).coerceIn(0f, 1f)
+            names[0].placeWithLayer(w - names[0].width + x.roundToInt(), (h - names[0].height) / 2) { alpha = 1f - p }
+            names.getOrNull(1)?.let { n -> n.placeWithLayer(w - n.width + (x - sign(x) * span).roundToInt(), (h - n.height) / 2) { alpha = p } }
+        }
     }
 }
 
@@ -666,6 +916,23 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     }
     BackHandler(open && current) { if (sweepFrom != null) { Sweeps.deleteAfter = null; sweepFrom = null } else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
+    // A non-primary address picked on the pill: Home shows its wallet, where it forwards (alias), or that it has none.
+    // The list marks its wallet (none when it has no active one), and a tap on a card links the address to that wallet.
+    val addressList by c.wallet.addresses.collectAsState()
+    val selectedAddress by c.wallet.selectedAddress.collectAsState()
+    val picked = addressList.find { it.username == selectedAddress && !it.isPrimary }
+    val forwardTo = picked?.takeIf { it.mode == "ALIAS" || it.mode == "PROXY_ALIAS" }?.redirect
+    val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
+    val unlinked = picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
+    val detached = forwardTo != null || unlinked
+    val linkPicked: (RemoteWallet) -> Unit = { w ->
+        picked?.let { a ->
+            scope.launch {
+                runCatching { c.session.api.value.routeAddressToWallet(a.username, w.id) }
+                    .onSuccess { c.wallet.refreshAddresses() }.onFailure { context.toast(it.message ?: "") }
+            }
+        }
+    }
     val setPrimary: (RemoteWallet) -> Unit = { w ->
         if (promoting == null) scope.launch {
             val before = wallets
@@ -718,7 +985,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
 
     val shown = heldBalance ?: balance
 
-    val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty())
+    val sheet = rememberActivitySheet(enabled = hasNwc && recent.isNotEmpty() && !detached)
     SideEffect { anchors.reveal[LIGHTNING] = reveal; anchors.sheet[LIGHTNING] = sheet }
     reveal.sheetProgress = { sheet.progress }
     Box(
@@ -745,10 +1012,27 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // "Primary balance" once the wallets show: it is the primary wallet's balance.
-                    val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
+                    // An address without a balance of its own leads with a mark of what it is: an alias, or unlinked.
+                    // What fades as the wallet list opens (the mark, the label, the buttons) gives the list its room.
+                    var markH by remember { mutableIntStateOf(0) }
+                    var labelH by remember { mutableIntStateOf(0) }
+                    var actionsH by remember { mutableIntStateOf(0) }
+                    SideEffect {
+                        reveal.tuckTop = if (detached) (markH + labelH).toFloat() else 0f
+                        reveal.tuckBottom = if (detached) actionsH.toFloat() else 0f
+                    }
+                    if (forwardTo != null) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
+                        StateMark(L.drawable.lucide_ic_at_sign, Lw.Lightning)
+                    }
+                    // A free address has no mark: some air under the header instead.
+                    else if (unlinked) Spacer(Modifier.height(56.dp).onSizeChanged { markH = it.height })
+                    // Once the wallets show, the figure is named after the wallet it belongs to.
+                    val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
                     BalanceLabel(
-                        primaryLabel, Modifier.pinned(anchors, LIGHTNING),
+                        // A free or alias address has no balance to name once the wallet list is open.
+                        primaryLabel, Modifier.pinned(anchors, LIGHTNING).onSizeChanged { labelH = it.height }.then(if (detached) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
+                        lightningText = when { forwardTo != null -> stringResource(R.string.home_lightningAlias); unlinked -> stringResource(R.string.home_lightningAddress); else -> null },
+                        primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
                     )
                     // Fixed-height slot: cue effects never resize it.
@@ -775,6 +1059,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     ) {
                         FigureStrut()
                         when {
+                            forwardTo != null -> ForwardFace(forwardTo) { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } }
+                            unlinked -> Txt(stringResource(R.string.home_unlinked), Modifier.testTag("balance-unlinked"), size = 40.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg)
                             shown == null && hasNwc && loadingBalance -> LoadingDots(Modifier.testTag("balance-loading"), dot = 12.dp)
                             shown == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
                             else -> AnimatedContent(
@@ -793,12 +1079,27 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         }
                     }
                     // Receive / Send live in the bottom bar.
-                    if (currencies.active.size >= 2) CurrencyToggle(
+                    if (!detached && currencies.active.size >= 2) CurrencyToggle(
                         currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinnedGlide(anchors, LIGHTNING, anchors.toggleY),
                         onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
                         enabled = current,
                     )
                     DotsSlot(anchors, LIGHTNING)
+                    // Under the dots, in the lower half: buttons to pick a wallet (it opens the list) or, for a free address, to forward it. Open: the
+                    // list is the choice, so they fade away.
+                    if (detached) Column(
+                        Modifier.onSizeChanged { actionsH = it.height }.padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 8.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        LwButton(
+                            stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
+                            Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_wallet,
+                        )
+                        if (unlinked) LwButton(
+                            stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } },
+                            Modifier.fillMaxWidth().testTag("home-forward"), BtnVariant.Secondary, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_forward,
+                        )
+                    }
                 }
             }
         },
@@ -841,14 +1142,14 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                 translationY = reveal.progress * (reveal.range + 160.dp.toPx())
                 alpha = (1f - reveal.progress * 1.6f).coerceIn(0f, 1f)
             }.riseIn(4, intro, rise = 48.dp)) {
-                ActivitySheetContent(sheet, recent, hasNwc, current, Modifier.pinned(anchors, LIGHTNING), onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
+                if (!detached) ActivitySheetContent(sheet, recent, hasNwc, current, Modifier.pinned(anchors, LIGHTNING), onOpen = { tx -> c.flow.activityDetail = tx; nav.navigate(R0.activity(tx.paymentHash)) })
             }
         },
       )
       WalletsReveal(
-          reveal, wallets, walletBalances, code, rates, hidden,
+          reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
-          onSetPrimary = setPrimary,
+          onSetPrimary = { w -> if (picked != null) linkPicked(w) else setPrimary(w) },
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
           newWalletId = newWallet,
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },

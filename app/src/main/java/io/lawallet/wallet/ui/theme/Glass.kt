@@ -72,14 +72,34 @@ private val FrostedStyle = HazeStyle(
     fallbackTint = HazeTint(Color(0xF2141618)),
 )
 
+private val DimStyle = HazeStyle(
+    backgroundColor = Lw.Background,
+    tint = HazeTint(Color.Black.copy(alpha = 0.38f)),
+    blurRadius = 18.dp,
+    fallbackTint = HazeTint(Color.Black.copy(alpha = 0.6f)),
+)
+
+/** A blurred, dimmed backdrop behind a menu or panel (no edge or sheen): what's under it recedes. */
+fun Modifier.dimBlur(state: HazeState?): Modifier =
+    if (state != null) hazeEffect(state, DimStyle) { inputScale = HazeInputScale.Fixed(0.33f) } else background(Color.Black.copy(alpha = 0.6f))
+
 /** Haze source for overlays that float over scrolling content (tab bar, notices). */
 val LocalHaze = staticCompositionLocalOf<HazeState?> { null }
 
+/** A floating panel's glass: a heavier blur under a lighter tint, so what's behind melts into colour, not detail. */
+val PanelStyle = HazeStyle(
+    backgroundColor = Lw.Background,
+    tint = HazeTint(Color(0xFF0E1012).copy(alpha = 0.48f)),
+    blurRadius = 48.dp,
+    noiseFactor = 0.1f,
+    fallbackTint = HazeTint(Color(0xF2141618)),
+)
+
 /** Real backdrop-blur glass for floating overlays; falls back to a dense tint where blur is unavailable. */
-fun Modifier.frosted(state: HazeState?, shape: Shape): Modifier =
+fun Modifier.frosted(state: HazeState?, shape: Shape, style: HazeStyle = FrostedStyle): Modifier =
     clip(shape)
         .then(
-            if (state != null) Modifier.hazeEffect(state, FrostedStyle) { inputScale = HazeInputScale.Fixed(0.4f) } else Modifier.background(Color(0xF2141618)),
+            if (state != null) Modifier.hazeEffect(state, style) { inputScale = HazeInputScale.Fixed(0.4f) } else Modifier.background(Color(0xF2141618)),
         )
         .drawBehind(DrawSheen)
         .border(1.dp, Glass.edge(GlassLevel.Regular), shape)

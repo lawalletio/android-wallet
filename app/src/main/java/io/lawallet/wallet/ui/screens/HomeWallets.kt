@@ -140,12 +140,15 @@ internal class HomeReveal {
     /** Height the wallet list wants (measured even while closed, so the first drag already knows where it lands). */
     var listH by mutableFloatStateOf(0f)
     var minTravel by mutableFloatStateOf(0f)
-    /** Lowest the balance may go: just above the tab bar. */
-    val maxLanding get() = rootTop + rootH - bottomReserve - balanceH
+    /** Px at the balance block's top and bottom that fade out as the list opens: the list may cover the top, the tab bar the bottom. */
+    var tuckTop by mutableFloatStateOf(0f)
+    var tuckBottom by mutableFloatStateOf(0f)
+    /** Lowest the list may reach (the balance's visible top): the balance then sits just above the tab bar. */
+    val maxLanding get() = rootTop + rootH - bottomReserve - balanceH + tuckTop + tuckBottom
     /** The balance tucks right under the list: more wallets, further down (never past [maxLanding]). */
-    val landing get() = (headerBottom + listH).coerceAtMost(maxLanding).coerceAtLeast(balanceTop + minTravel)
+    val landing get() = (headerBottom + listH).coerceAtMost(maxLanding).coerceAtLeast(balanceTop + tuckTop + minTravel)
     /** Px the balance travels: the finger moves it 1:1. */
-    val range get() = (landing - balanceTop).coerceAtLeast(0f)
+    val range get() = (landing - tuckTop - balanceTop).coerceAtLeast(0f)
     val open get() = progress > 0f
 
     private var settling: Job? = null

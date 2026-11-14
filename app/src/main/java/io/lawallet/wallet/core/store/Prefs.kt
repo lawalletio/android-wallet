@@ -186,9 +186,19 @@ class Prefs(context: Context) {
         get() = sp.getString("profile-cache", null)?.let { runCatching { json.decodeFromString(profilesSer, it) }.getOrNull() } ?: emptyMap()
         set(v) = sp.edit { putString("profile-cache", json.encodeToString(profilesSer, v)).remove("profiles") }
 
+    /** Last LNCurl provider picked on Add wallet (an https origin); kept across logout. */
+    var lncurlProvider: String?
+        get() = sp.getString("lncurl-provider", null)
+        set(v) = sp.edit { putString("lncurl-provider", v) }
+
+    /** Home's selected Lightning address (username); local only, never the server's primary. */
+    var selectedAddress: String?
+        get() = sp.getString("selected-address", null)
+        set(v) = sp.edit { if (v == null) remove("selected-address") else putString("selected-address", v) }
+
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "bunker-relays") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "bunker-relays", "lncurl-provider") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep }.forEach { remove(it) } }
         _destinations.value = emptyMap()
         _lock.value = LockPrefs()
@@ -197,7 +207,7 @@ class Prefs(context: Context) {
 
     /** Instance switch: the session and every per-instance cache go; the key stays. */
     fun clearInstanceCaches() {
-        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg", "bunker", "bunker-relays", "lock", "nfc-autopay") + DIAGNOSTICS_KEYS
+        val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "login-method", "signer-secret", "ext-signer-pubkey", "ext-signer-pkg", "bunker", "bunker-relays", "lock", "nfc-autopay", "lncurl-provider") + DIAGNOSTICS_KEYS
         sp.edit { sp.all.keys.filter { it !in keep && !it.startsWith("settings:") }.forEach { remove(it) } }
         _destinations.value = emptyMap()
     }

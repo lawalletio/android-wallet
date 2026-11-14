@@ -74,6 +74,14 @@
     <string name="open_externally">Open in browser</string>
     <string name="paste">Paste</string>
     <string name="home_primaryBalance">Primary balance</string>
+    <string name="home_unlinked">Free</string>
+    <string name="home_selectWallet">Select a remote wallet</string>
+    <string name="home_setWallet">Set a remote wallet</string>
+    <string name="home_forwardInstead">Forward to an address</string>
+    <string name="home_forwardsTo">Forwards to</string>
+    <string name="home_lightningAlias">Lightning alias</string>
+    <string name="home_lightningAddress">Lightning address</string>
+    <string name="home_forwardsFrom">Payments to %1$s go to</string>
     <string name="rw_add">Add wallet</string>
     <string name="rw_add_title">Connect a remote wallet</string>
     <string name="rw_name">Name</string>
@@ -98,6 +106,11 @@
     <string name="rw_import_nwc">Import NWC</string>
     <string name="rw_create_disposable">Create disposable LNCurl</string>
     <string name="rw_lncurl_body">A free, custodial LNCurl wallet is created for you. Treat it as disposable: keep small amounts only.</string>
+    <string name="rw_lncurl_provider">LNCurl provider</string>
+    <string name="rw_lncurl_via">via %1$s</string>
+    <string name="rw_lncurl_add_custom">Add custom provider</string>
+    <string name="rw_lncurl_use">Use provider</string>
+    <string name="rw_lncurl_invalid">Enter an https:// provider address</string>
     <string name="rw_connection">Connection URI</string>
     <string name="rw_name_optional">Name (optional)</string>
     <string name="rw_total_balance">Total balance</string>

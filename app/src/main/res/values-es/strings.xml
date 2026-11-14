@@ -73,6 +73,14 @@
     <string name="open_externally">Abrir en el navegador</string>
     <string name="paste">Pegar</string>
     <string name="home_primaryBalance">Saldo principal</string>
+    <string name="home_unlinked">Libre</string>
+    <string name="home_selectWallet">Elegir billetera remota</string>
+    <string name="home_setWallet">Asignar billetera remota</string>
+    <string name="home_forwardInstead">Reenviar a una dirección</string>
+    <string name="home_forwardsTo">Reenvía a</string>
+    <string name="home_lightningAlias">Alias Lightning</string>
+    <string name="home_lightningAddress">Dirección Lightning</string>
+    <string name="home_forwardsFrom">Los pagos a %1$s van a</string>
     <string name="rw_add">Agregar billetera</string>
     <string name="rw_add_title">Conectar una billetera remota</string>
     <string name="rw_name">Nombre</string>
@@ -97,6 +105,11 @@
     <string name="rw_import_nwc">Importar NWC</string>
     <string name="rw_create_disposable">Crear LNCurl descartable</string>
     <string name="rw_lncurl_body">Se crea para vos una billetera LNCurl gratuita y custodial. Tratala como descartable: guardá solo montos chicos.</string>
+    <string name="rw_lncurl_provider">Proveedor LNCurl</string>
+    <string name="rw_lncurl_via">vía %1$s</string>
+    <string name="rw_lncurl_add_custom">Agregar proveedor propio</string>
+    <string name="rw_lncurl_use">Usar proveedor</string>
+    <string name="rw_lncurl_invalid">Ingresá una dirección https:// del proveedor</string>
     <string name="rw_connection">URI de conexión</string>
     <string name="rw_name_optional">Nombre (opcional)</string>
     <string name="rw_total_balance">Saldo total</string>
