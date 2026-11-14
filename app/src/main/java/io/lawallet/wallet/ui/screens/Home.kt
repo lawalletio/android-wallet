@@ -1064,10 +1064,16 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         }
                     }
                     // Receive / Send live in the bottom bar.
-                    // Closed: buttons to pick a wallet (it opens the list) or, for a free address, to forward it. Open: the
+                    if (!detached && currencies.active.size >= 2) CurrencyToggle(
+                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinnedGlide(anchors, LIGHTNING, anchors.toggleY),
+                        onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
+                        enabled = current,
+                    )
+                    DotsSlot(anchors, LIGHTNING)
+                    // Under the dots, in the lower half: buttons to pick a wallet (it opens the list) or, for a free address, to forward it. Open: the
                     // list is the choice, so they fade away.
                     if (detached) Column(
-                        Modifier.onSizeChanged { actionsH = it.height }.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+                        Modifier.onSizeChanged { actionsH = it.height }.padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 8.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         LwButton(
@@ -1079,12 +1085,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                             Modifier.fillMaxWidth().testTag("home-forward"), BtnVariant.Secondary, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_forward,
                         )
                     }
-                    else if (currencies.active.size >= 2) CurrencyToggle(
-                        currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinnedGlide(anchors, LIGHTNING, anchors.toggleY),
-                        onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } }, // hold: currency settings
-                        enabled = current,
-                    )
-                    DotsSlot(anchors, LIGHTNING)
                 }
             }
         },
