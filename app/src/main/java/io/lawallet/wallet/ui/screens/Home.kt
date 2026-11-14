@@ -690,7 +690,7 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
     }
 }
 
-/** Above the label when the address has no balance of its own: a glowing round mark ("@" for an alias). */
+/** Above an alias address's label: a glowing round "@" mark. */
 @Composable
 private fun StateMark(@DrawableRes icon: Int, tint: Color) {
     Box(Modifier.padding(bottom = 18.dp).size(112.dp).drawBehind {
@@ -1001,11 +1001,11 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     var labelH by remember { mutableIntStateOf(0) }
                     var actionsH by remember { mutableIntStateOf(0) }
                     SideEffect {
-                        reveal.tuckTop = if (detached) (markH + labelH).toFloat() else 0f
+                        reveal.tuckTop = if (detached) ((if (forwardTo != null) markH else 0) + labelH).toFloat() else 0f
                         reveal.tuckBottom = if (detached) actionsH.toFloat() else 0f
                     }
-                    if (detached) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
-                        StateMark(if (forwardTo != null) L.drawable.lucide_ic_at_sign else L.drawable.lucide_ic_bird, if (forwardTo != null) Lw.Lightning else Lw.Tether)
+                    if (forwardTo != null) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
+                        StateMark(L.drawable.lucide_ic_at_sign, Lw.Lightning)
                     }
                     // Once the wallets show, the figure is named after the wallet it belongs to.
                     val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
