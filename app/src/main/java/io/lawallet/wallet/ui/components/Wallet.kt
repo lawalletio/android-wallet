@@ -1,6 +1,11 @@
 package io.lawallet.wallet.ui.components
 
 import io.lawallet.wallet.ui.LocalContainer
+import io.lawallet.wallet.app.AddressProfile
+import io.lawallet.wallet.app.refreshAddressProfile
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
 import io.lawallet.wallet.app.Diagnostics
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.layout.ContentScale
@@ -135,6 +140,12 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.applyCanvas
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.layout.onSizeChanged
 import com.composables.icons.lucide.R as L
 
 /** Floating frosted pill (real backdrop blur over the scrolling screen): Receive · brand scan button · Send. */
@@ -520,6 +531,7 @@ fun PaymentReceiptCard(
     val brand = LocalBrand.current
     val context = LocalContext.current
     val copiedMsg = stringResource(R.string.common_copied)
+    CompositionLocalProvider(LocalReceiptShot provides shot) {
     Column(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth().captureInto(shot.card).glass(RoundedCornerShape(28.dp))
@@ -534,7 +546,7 @@ fun PaymentReceiptCard(
                     Txt(Currencies.unitLabel(currency), Modifier.padding(bottom = 8.dp), size = 18.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg)
                 }
                 if (currency != "SAT") Txt(stringResource(R.string.common_sats, Currencies.formatSats(amountSats)), size = 15.sp, color = Lw.MutedFg)
-                CurrencyToggle(currencies, currency, onCurrency)
+                Box(Modifier.hideInShot()) { CurrencyToggle(currencies, currency, onCurrency) }
             }
             if (rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
                 Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -556,16 +568,19 @@ fun PaymentReceiptCard(
                 stringResource(if (open) R.string.shared_receipt_hideProof else R.string.shared_receipt_displayProof), { shot.proofOpen = !open },
                 Modifier.fillMaxWidth().testTag("proof-toggle"), BtnVariant.Ghost, icon = if (open) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye,
             )
-            AnimatedVisibility(open, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()) {
+            // Opening: the page keeps scrolling to the panel's bottom as it grows, following the expansion.
+            val follow = remember { BringIntoViewRequester() }
+            val scope = rememberCoroutineScope()
+            AnimatedVisibility(open, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(), modifier = Modifier.bringIntoViewRequester(follow).onSizeChanged { if (shot.proofOpen) scope.launch { follow.bringIntoView() } }) {
                 Column(Modifier.padding(top = 8.dp).fillMaxWidth().captureInto(shot.proof).glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
                     Txt(stringResource(R.string.shared_receipt_proofTitle), size = 15.sp, weight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
-                    MutedText(stringResource(R.string.shared_receipt_proofHint))
+                    MutedText(stringResource(R.string.shared_receipt_proofHint), Modifier.hideInShot())
                     proofs.forEach { (label, value) ->
                         Spacer(Modifier.height(16.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                            if (value != null) Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
+                            if (value != null) Box(Modifier.hideInShot().minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
                                 LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
                             }
                         }
@@ -574,6 +589,7 @@ fun PaymentReceiptCard(
                 }
             }
         }
+    }
     }
 }
 
@@ -591,11 +607,19 @@ private fun StatusMark(status: String, size: Dp = 40.dp) {
 /** Proof toggle plus the drawn card and proof panel, kept so the receipt can be shared as an image. */
 class ReceiptShot internal constructor(val card: GraphicsLayer, val proof: GraphicsLayer, open: MutableState<Boolean>) {
     var proofOpen by open
+    /** While true, [hideInShot] controls skip drawing, so the layers re-record without them. Read only at draw time. */
+    internal var exporting by mutableStateOf(false)
 
-    /** The card (and the proof panel when open) on the app background — the screen without its buttons. */
+    /** The card (and the proof panel when open) on the app background — the screen without its controls. */
     suspend fun image(background: Color, pad: Int, gap: Int): Bitmap {
-        val parts = listOfNotNull(card, proof.takeIf { proofOpen })
-            .map { it.toImageBitmap().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false) }
+        val parts = try {
+            exporting = true
+            // ponytail: controls vanish for one redraw (~2 frames) while the layers re-record; an offscreen copy would avoid it.
+            repeat(2) { withFrameNanos { } }
+            listOfNotNull(card, proof.takeIf { proofOpen }).map { it.toImageBitmap().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false) }
+        } finally {
+            exporting = false
+        }
         val w = parts.maxOf { it.width } + pad * 2
         val h = parts.sumOf { it.height } + gap * (parts.size - 1) + pad * 2
         return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).applyCanvas {
@@ -612,6 +636,15 @@ fun rememberReceiptShot(): ReceiptShot {
     val proof = rememberGraphicsLayer()
     val open = rememberSaveable { mutableStateOf(false) }
     return remember(card, proof, open) { ReceiptShot(card, proof, open) }
+}
+
+internal val LocalReceiptShot = staticCompositionLocalOf<ReceiptShot?> { null }
+
+/** Drawn on screen, left out of the shared receipt image (copy/send buttons, currency switcher, hints). */
+@Composable
+fun Modifier.hideInShot(): Modifier {
+    val shot = LocalReceiptShot.current ?: return this
+    return drawWithContent { if (!shot.exporting) drawContent() }
 }
 
 private fun Modifier.captureInto(layer: GraphicsLayer) = drawWithContent {
@@ -760,4 +793,38 @@ private fun Modifier.freshEntrance(tx: Tx): Modifier {
                 drawRoundRect(tint.copy(alpha = 0.16f * g), Offset(inset, 0f), Size(size.width - 2 * inset, size.height), CornerRadius(20.dp.toPx()))
             }
         }
+}
+
+/**
+ * The Nostr profile behind a Lightning address: the cached one on the first frame, then fetched again
+ * while this is on screen (after [debounceMs], to wait out typing) and cached for every other screen.
+ */
+@Composable
+fun rememberAddressProfile(address: String, debounceMs: Long = 0): AddressProfile? {
+    val c = LocalContainer.current
+    val profiles by c.avatars.profiles.collectAsState()
+    LaunchedEffect(address) { delay(debounceMs); c.refreshAddressProfile(address, ttlMs = 0) }
+    return profiles[c.avatars.key(address)]
+}
+
+/** A paid Lightning address: its face and display name (cached, refreshed live), plus the address. Tappable when [onClick] is set. */
+@Composable
+fun RecipientChip(address: String, loading: Boolean = false, onClick: (() -> Unit)? = null) {
+    val c = LocalContainer.current
+    val profile = rememberAddressProfile(address)
+    val desc = stringResource(R.string.activity_detail_sendAgain, address)
+    Row(
+        Modifier.clip(CircleShape).border(1.dp, Lw.Border, CircleShape)
+            .then(if (onClick != null) Modifier.clickable(enabled = !loading, onClick = onClick).semantics { contentDescription = desc } else Modifier)
+            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp).testTag("recipient-chip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AsyncImage(profile?.picture ?: c.avatars.of(address), null, Modifier.size(if (profile?.name != null) 32.dp else 24.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+        Column(Modifier.weight(1f, fill = false)) {
+            profile?.name?.let { Txt(it, size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+            Txt(address, size = if (profile?.name != null) 12.sp else 14.sp, color = if (profile?.name != null) Lw.MutedFg else Lw.Foreground, maxLines = 1)
+        }
+        if (loading) Spinner(size = 14.dp) else if (onClick != null) LwIcon(L.drawable.lucide_ic_send, size = 14.dp, tint = Lw.MutedFg, modifier = Modifier.hideInShot())
+    }
 }

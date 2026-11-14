@@ -355,8 +355,9 @@ fun AddRemoteWalletScreen() {
             when (step) {
                 null -> {
                     MutedText(stringResource(R.string.rw_add_subtitle))
-                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, icon = L.drawable.lucide_ic_link)
-                    if (settings?.lncurlEnabled == true) LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.fillMaxWidth().testTag("add-lncurl"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_zap)
+                    WalletMark(lncurl = false, size = 96.dp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
+                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, icon = L.drawable.lucide_ic_link)
+                    if (settings?.lncurlEnabled == true) LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.fillMaxWidth().testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, icon = L.drawable.lucide_ic_zap)
                 }
                 "nwc" -> {
                     if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->

@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -94,7 +95,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
-import io.lawallet.wallet.core.api.NostrProfile
+import io.lawallet.wallet.app.refreshAddressProfile
+import io.lawallet.wallet.ui.components.RecipientChip
+import io.lawallet.wallet.ui.components.rememberAddressProfile
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -140,6 +143,18 @@ fun SendRecipientScreen() {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val contacts = remember { c.prefs.contacts }
+    // Rows read faces from the cache; observing it repaints them as lookups land.
+    c.avatars.profiles.collectAsState().value
+    LaunchedEffect(Unit) { contacts.forEach { launch { c.refreshAddressProfile(it.address) } } }
+    // A payable clipboard (Lightning address or unexpired invoice) gets its own one-tap row; read again on
+    // every focus, since Android only lets the focused app read it and it may have changed meanwhile.
+    var clip by remember { mutableStateOf<String?>(null) }
+    val focused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(focused) {
+        if (focused) clip = runCatching {
+            context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+        }.getOrNull()?.takeIf(::isPayableClip)
+    }
     val invalid = stringResource(R.string.send_invalidRecipient)
     fun submit(value: String = input) {
         if (loading) return
@@ -178,6 +193,9 @@ fun SendRecipientScreen() {
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
+            clip?.takeIf { it != input.trim() }?.let { value ->
+                ClipboardRow(value) { if (!loading) { input = value; submit(value) } }
+            }
             if (full != null || suggestions.isNotEmpty()) AddressGroup(
                 stringResource(R.string.shared_addressInput_suggestions),
                 listOfNotNull(full).map { it to c.avatars.of(it) } + suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }, expanded = full,
@@ -185,6 +203,30 @@ fun SendRecipientScreen() {
             if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { if (!loading) { input = it; submit(it) } }
         }
         LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
+    }
+}
+
+/** Pasting [text] would go straight through: a Lightning address, or an invoice that hasn't expired. */
+internal fun isPayableClip(text: String, now: Long = System.currentTimeMillis()): Boolean = when (val d = runCatching { DestinationParser.parse(text) }.getOrNull()) {
+    is Destination.Invoice -> d.expiresAtMs?.let { it > now } ?: true
+    is Destination.LnurlPay -> d.address != null
+    else -> false
+}
+
+@Composable
+private fun ClipboardRow(value: String, onPick: () -> Unit) {
+    val shown = value.removePrefix("lightning:").removePrefix("LIGHTNING:").let { if (it.length > 28) it.take(14) + "…" + it.takeLast(8) else it }
+    Row(
+        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("recipient-clipboard"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(32.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 16.dp, tint = Lw.MutedFg) }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(stringResource(R.string.scan_paste), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+            Txt(shown, size = 13.sp, color = Lw.MutedFg, maxLines = 1)
+        }
+        LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
     }
 }
 
@@ -209,9 +251,9 @@ private fun AddressGroup(title: String, items: List<Pair<String, String>>, expan
 @Composable
 private fun ExpandedAddress(address: String, fallbackAvatar: String, onClick: () -> Unit) {
     val profile = rememberAddressProfile(address, debounceMs = 350)
-    val name = profile?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
+    val name = profile?.name
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp).testTag("recipient-match"), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(profile?.picture?.takeIf(String::isNotBlank) ?: fallbackAvatar, null, Modifier.size(52.dp).clip(CircleShape).glass(CircleShape, GlassLevel.Strong), contentScale = ContentScale.Crop)
+        AsyncImage(profile?.picture ?: fallbackAvatar, null, Modifier.size(52.dp).clip(CircleShape).glass(CircleShape, GlassLevel.Strong), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Txt(name ?: address.substringBefore('@'), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
@@ -225,18 +267,6 @@ private fun ExpandedAddress(address: String, fallbackAvatar: String, onClick: ()
     }
 }
 
-/** The Nostr profile behind a Lightning address (its NIP-05), or null; [debounceMs] waits out typing. */
-@Composable
-private fun rememberAddressProfile(address: String, debounceMs: Long = 0): NostrProfile? {
-    val c = LocalContainer.current
-    val profile by produceState<NostrProfile?>(null, address) {
-        value = null
-        delay(debounceMs)
-        value = c.lnurl.nip05Pubkey(address)?.let { pk -> runCatching { c.session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
-    }
-    return profile
-}
-
 private fun kindLabel(d: Destination?) = when (d) {
     is Destination.Invoice -> R.string.send_kind_invoice
     is Destination.Wallet -> R.string.send_kind_wallet
@@ -246,16 +276,18 @@ private fun kindLabel(d: Destination?) = when (d) {
 /** Recipient card used by amount + preview steps. */
 @Composable
 private fun RecipientCard(s: FlowStore.Send) {
+    val profile = (s.destination as? Destination.LnurlPay)?.address?.let { rememberAddressProfile(it) }
     Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
-            val img = s.meta?.imageDataUri
+            val img = profile?.picture ?: s.meta?.imageDataUri
             if (img != null) AsyncImage(img, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
             else LwIcon(when (s.destination) { is Destination.Invoice -> L.drawable.lucide_ic_zap; is Destination.Wallet -> L.drawable.lucide_ic_wallet; else -> L.drawable.lucide_ic_at_sign }, size = 18.dp, tint = Lw.MutedFg)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Txt(stringResource(kindLabel(s.destination)), size = 12.sp, color = Lw.MutedFg)
-            Txt(s.recipientLabel ?: (s.bolt11?.take(18)?.plus("…") ?: ""), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            Txt(profile?.name ?: s.recipientLabel ?: (s.bolt11?.take(18)?.plus("…") ?: ""), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            if (profile?.name != null) s.recipientLabel?.let { Txt(it, size = 13.sp, color = Lw.MutedFg, maxLines = 1) }
         }
     }
 }
@@ -442,8 +474,8 @@ fun SendPreviewScreen() {
 @Composable
 private fun RecipientHeader(address: String, lnurlImage: String?) {
     val profile = rememberAddressProfile(address)
-    val name = profile?.let { it.displayName?.takeIf(String::isNotBlank) ?: it.name?.takeIf(String::isNotBlank) }
-    val picture = profile?.picture?.takeIf(String::isNotBlank) ?: lnurlImage
+    val name = profile?.name
+    val picture = profile?.picture ?: lnurlImage
     AnimatedVisibility(picture != null || name != null, enter = fadeIn() + expandVertically()) {
         Column(Modifier.padding(bottom = 20.dp).testTag("preview-recipient"), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(72.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
@@ -500,6 +532,7 @@ fun SendSummaryScreen() {
     Column(Modifier.fillMaxSize()) {
         PaymentReceipt(title, "settled", r.amountSats, rows,
             listOf(stringResource(R.string.send_summary_paymentHash) to r.paymentHash, stringResource(R.string.send_summary_preimage) to r.preimage),
-            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = { c.flow.resetSend(); nav.goHome() })
+            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = { c.flow.resetSend(); nav.goHome() },
+            valueNodes = if (DestinationParser.isLightningAddress(r.to)) mapOf(stringResource(R.string.send_to) to { RecipientChip(r.to) }) else emptyMap())
     }
 }
