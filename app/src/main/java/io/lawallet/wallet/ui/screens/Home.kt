@@ -609,12 +609,12 @@ internal fun addressKind(a: WalletAddress, wallets: List<RemoteWallet>?): Addres
 
 @Composable
 private fun AddressKindMark(kind: AddressKind) {
-    val tint = when (kind) { AddressKind.NWC -> Lw.NwcPurple; AddressKind.LNCURL -> Lw.LncurlGreen; AddressKind.FORWARD -> Lw.Lightning; AddressKind.IDLE -> Lw.Gold }
+    val tint = when (kind) { AddressKind.NWC -> Lw.NwcPurple; AddressKind.LNCURL -> Lw.LncurlGreen; AddressKind.FORWARD -> Lw.Lightning; AddressKind.IDLE -> Lw.Tether }
     Box(Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
         when (kind) {
             AddressKind.NWC, AddressKind.LNCURL -> WalletMark(kind == AddressKind.LNCURL, 18.dp)
             AddressKind.FORWARD -> LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = tint)
-            AddressKind.IDLE -> LwIcon(L.drawable.lucide_ic_link_2_off, size = 18.dp, tint = tint)
+            AddressKind.IDLE -> LwIcon(L.drawable.lucide_ic_bird, size = 18.dp, tint = tint)
         }
     }
 }
@@ -996,11 +996,12 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // An address without a balance of its own leads with a mark of what it is: an alias, or unlinked.
-                    if (detached) StateMark(if (forwardTo != null) L.drawable.lucide_ic_at_sign else L.drawable.lucide_ic_link_2_off, if (forwardTo != null) Lw.Lightning else Lw.Gold)
+                    if (detached) StateMark(if (forwardTo != null) L.drawable.lucide_ic_at_sign else L.drawable.lucide_ic_bird, if (forwardTo != null) Lw.Lightning else Lw.Tether)
                     // Once the wallets show, the figure is named after the wallet it belongs to.
                     val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
                     BalanceLabel(
-                        primaryLabel, Modifier.pinned(anchors, LIGHTNING),
+                        // A free address has no balance to name once the wallet list is open.
+                        primaryLabel, Modifier.pinned(anchors, LIGHTNING).then(if (unlinked) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
                         lightningText = if (forwardTo != null) stringResource(R.string.home_lightningAlias) else null,
                         primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
@@ -1049,28 +1050,20 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         }
                     }
                     // Receive / Send live in the bottom bar.
-                    if (detached) Box(Modifier.padding(top = 20.dp, bottom = 8.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        // Closed: a button opens the wallet list to pick one. Open: the list is right there, so a note
-                        // asks for a pick instead (and, without a wallet, offers forwarding to another address).
+                    // Closed: buttons to pick a wallet (it opens the list) or, for a free address, to forward it. Open: the
+                    // list is the choice, so they fade away.
+                    if (detached) Column(
+                        Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         LwButton(
                             stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
-                            Modifier.padding(horizontal = 24.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress }.testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_wallet,
+                            Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_wallet,
                         )
-                        Column(
-                            Modifier.graphicsLayer { alpha = reveal.progress }.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin, tint = Lw.Gold.copy(alpha = 0.10f))
-                                .padding(horizontal = 14.dp, vertical = 12.dp).testTag("home-assign-wallet"),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                LwIcon(L.drawable.lucide_ic_circle_alert, size = 16.dp, tint = Lw.Gold)
-                                Spacer(Modifier.width(8.dp))
-                                Txt(stringResource(if (forwardTo != null) R.string.home_pickWalletAlias else R.string.home_assignWallet, picked?.username.orEmpty()), size = 13.sp, color = Lw.Foreground, lineHeight = 18.sp)
-                            }
-                            if (unlinked) LwButton(
-                                stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } }, Modifier.padding(top = 10.dp).testTag("home-forward"),
-                                BtnVariant.Secondary, enabled = current && open, height = 36.dp, icon = L.drawable.lucide_ic_forward,
-                            )
-                        }
+                        if (unlinked) LwButton(
+                            stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } },
+                            Modifier.fillMaxWidth().testTag("home-forward"), BtnVariant.Secondary, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_forward,
+                        )
                     }
                     else if (currencies.active.size >= 2) CurrencyToggle(
                         currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).riseIn(2, intro).pinnedGlide(anchors, LIGHTNING, anchors.toggleY),

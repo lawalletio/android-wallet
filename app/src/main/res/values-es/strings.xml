@@ -73,12 +73,10 @@
     <string name="open_externally">Abrir en el navegador</string>
     <string name="paste">Pegar</string>
     <string name="home_primaryBalance">Saldo principal</string>
-    <string name="home_unlinked">Sin vincular</string>
+    <string name="home_unlinked">Libre</string>
     <string name="home_selectWallet">Elegir billetera remota</string>
     <string name="home_setWallet">Asignar billetera remota</string>
-    <string name="home_assignWallet">%1$s no tiene billetera. Elegí una arriba para recibir pagos.</string>
-    <string name="home_pickWalletAlias">Elegí una billetera arriba para recibir en %1$s en vez de reenviar.</string>
-    <string name="home_forwardInstead">Reenviar a otra dirección</string>
+    <string name="home_forwardInstead">Reenviar a una dirección</string>
     <string name="home_forwardsTo">Reenvía a</string>
     <string name="home_lightningAlias">Alias Lightning</string>
     <string name="home_forwardsFrom">Los pagos a %1$s van a</string>
