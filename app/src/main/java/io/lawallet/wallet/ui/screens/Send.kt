@@ -69,8 +69,8 @@ import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
-import io.lawallet.wallet.ui.components.PaymentReceiptCard
-import io.lawallet.wallet.ui.components.ReceiptFooter
+import io.lawallet.wallet.ui.components.PaymentReceipt
+import androidx.compose.foundation.layout.PaddingValues
 import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.SwipeButton
@@ -530,15 +530,9 @@ fun SendSummaryScreen() {
     }
     val title = stringResource(R.string.send_summary_title)
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 32.dp)) {
-            val toLabel = stringResource(R.string.send_to)
-            PaymentReceiptCard(title, "settled", r.amountSats, code, currencies.active, rates, { code = it }, rows,
-                listOf(stringResource(R.string.send_summary_paymentHash) to r.paymentHash, stringResource(R.string.send_summary_preimage) to r.preimage),
-                if (DestinationParser.isLightningAddress(r.to)) mapOf(toLabel to { RecipientChip(r.to) }) else emptyMap())
-        }
-        ReceiptFooter(
-            onShare = { context.shareText("$title: ${Currencies.formatSats(r.amountSats)} sats → ${r.to}\n${r.paymentHash ?: ""}") },
-            onDone = { c.flow.resetSend(); nav.goHome() },
-        )
+        PaymentReceipt(title, "settled", r.amountSats, rows,
+            listOf(stringResource(R.string.send_summary_paymentHash) to r.paymentHash, stringResource(R.string.send_summary_preimage) to r.preimage),
+            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = { c.flow.resetSend(); nav.goHome() },
+            valueNodes = if (DestinationParser.isLightningAddress(r.to)) mapOf(stringResource(R.string.send_to) to { RecipientChip(r.to) }) else emptyMap())
     }
 }

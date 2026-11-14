@@ -59,9 +59,9 @@ import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.MutedText
-import io.lawallet.wallet.ui.components.PaymentReceiptCard
+import io.lawallet.wallet.ui.components.PaymentReceipt
+import androidx.compose.foundation.layout.PaddingValues
 import io.lawallet.wallet.ui.components.RecipientChip
-import io.lawallet.wallet.ui.components.ReceiptFooter
 import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.TransactionRow
@@ -341,16 +341,10 @@ fun ActivityDetailScreen(hash: String) {
                 (if (t.incoming) describedComment ?: label.ifEmpty { null } else dest?.comment ?: describedComment)?.let { add(stringResource(R.string.activity_detail_note) to it) }
                 add(stringResource(R.string.activity_detail_time) to DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(t.settledAt ?: t.createdAt)))
             }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
-                PaymentReceiptCard(title, t.state, t.amountSats, code, currencies.active, rates, { code = it }, rows,
-                    listOf(stringResource(R.string.shared_receipt_text_paymentHash) to t.paymentHash.ifEmpty { null }, stringResource(R.string.shared_receipt_text_preimage) to t.preimage),
-                    if (recipient == null) emptyMap() else mapOf(toLabel to { RecipientChip(recipient, opening) { payAgain(recipient) } }))
-            }
-            val shareTitle = stringResource(R.string.shared_receipt_text_title)
-            ReceiptFooter(
-                onShare = { context.shareText("$shareTitle\n$title: ${Currencies.formatSats(t.amountSats)} sats\n${rows.joinToString("\n") { "${it.first}: ${it.second}" }}\nHash: ${t.paymentHash}") },
-                onDone = { nav.popBackStack() }, // same as the close button: back to where it was opened
-            )
+            PaymentReceipt(title, t.state, t.amountSats, rows,
+                listOf(stringResource(R.string.shared_receipt_text_paymentHash) to t.paymentHash.ifEmpty { null }, stringResource(R.string.shared_receipt_text_preimage) to t.preimage),
+                PaddingValues(16.dp), onDone = { nav.popBackStack() }, // same as the close button: back to where it was opened
+                valueNodes = if (recipient == null) emptyMap() else mapOf(toLabel to { RecipientChip(recipient, opening) { payAgain(recipient) } }))
         }
     }
 }

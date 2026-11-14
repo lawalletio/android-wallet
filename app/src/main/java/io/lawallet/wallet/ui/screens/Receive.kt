@@ -60,9 +60,9 @@ import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
-import io.lawallet.wallet.ui.components.PaymentReceiptCard
+import io.lawallet.wallet.ui.components.PaymentReceipt
+import androidx.compose.foundation.layout.PaddingValues
 import io.lawallet.wallet.ui.components.QrDisplay
-import io.lawallet.wallet.ui.components.ReceiptFooter
 import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
@@ -270,13 +270,8 @@ fun ReceiveSummaryScreen() {
         add(stringResource(R.string.receive_summary_time) to DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(tx.settledAt ?: System.currentTimeMillis())))
     }
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 32.dp)) {
-            PaymentReceiptCard(title, "settled", tx.amountSats.takeIf { it > 0 } ?: (c.flow.receive.amountSats ?: 0), code, currencies.active, rates, { code = it }, rows,
-                listOf(stringResource(R.string.receive_summary_paymentHash) to tx.paymentHash.ifEmpty { null }, stringResource(R.string.receive_summary_preimage) to tx.preimage))
-        }
-        ReceiptFooter(
-            onShare = { context.shareText("$title: ${Currencies.formatSats(tx.amountSats)} sats\n${tx.paymentHash}") },
-            onDone = { c.flow.resetReceive(); nav.goHome() },
-        )
+        PaymentReceipt(title, "settled", tx.amountSats.takeIf { it > 0 } ?: (c.flow.receive.amountSats ?: 0), rows,
+            listOf(stringResource(R.string.receive_summary_paymentHash) to tx.paymentHash.ifEmpty { null }, stringResource(R.string.receive_summary_preimage) to tx.preimage),
+            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = { c.flow.resetReceive(); nav.goHome() })
     }
 }

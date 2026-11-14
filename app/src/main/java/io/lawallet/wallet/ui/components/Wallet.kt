@@ -6,6 +6,7 @@ import io.lawallet.wallet.app.refreshAddressProfile
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
+import io.lawallet.wallet.app.Diagnostics
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
@@ -128,6 +129,17 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.MutableState
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.applyCanvas
+import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 import com.composables.icons.lucide.R as L
 
 /** Floating frosted pill (real backdrop blur over the scrolling screen): Receive · brand scan button · Send. */
@@ -508,13 +520,14 @@ fun PaymentReceiptCard(
     proofs: List<Pair<String, String?>>,
     /** Replaces a row's plain value, keyed by its label — e.g. a tappable recipient. */
     valueNodes: Map<String, @Composable () -> Unit> = emptyMap(),
+    shot: ReceiptShot = rememberReceiptShot(),
 ) {
     val brand = LocalBrand.current
     val context = LocalContext.current
     val copiedMsg = stringResource(R.string.common_copied)
     Column(Modifier.fillMaxWidth()) {
         Column(
-            Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))
+            Modifier.fillMaxWidth().captureInto(shot.card).glass(RoundedCornerShape(28.dp))
                 .drawBehind { drawRect(Brush.horizontalGradient(listOf(Color.Transparent, brand.t400, Color.Transparent)), size = size.copy(height = 1.5.dp.toPx())) },
         ) {
             Column(Modifier.fillMaxWidth().heightIn(min = 300.dp).padding(start = 20.dp, end = 20.dp, top = 36.dp, bottom = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
@@ -542,14 +555,14 @@ fun PaymentReceiptCard(
             }
         }
         if (proofs.isNotEmpty()) {
-            var open by rememberSaveable { mutableStateOf(false) }
+            val open = shot.proofOpen
             Spacer(Modifier.height(16.dp))
             LwButton(
-                stringResource(if (open) R.string.shared_receipt_hideProof else R.string.shared_receipt_displayProof), { open = !open },
+                stringResource(if (open) R.string.shared_receipt_hideProof else R.string.shared_receipt_displayProof), { shot.proofOpen = !open },
                 Modifier.fillMaxWidth().testTag("proof-toggle"), BtnVariant.Ghost, icon = if (open) L.drawable.lucide_ic_eye_off else L.drawable.lucide_ic_eye,
             )
             AnimatedVisibility(open, enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()) {
-                Column(Modifier.padding(top = 8.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
+                Column(Modifier.padding(top = 8.dp).fillMaxWidth().captureInto(shot.proof).glass(RoundedCornerShape(24.dp)).padding(16.dp)) {
                     Txt(stringResource(R.string.shared_receipt_proofTitle), size = 15.sp, weight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     MutedText(stringResource(R.string.shared_receipt_proofHint))
@@ -580,11 +593,87 @@ private fun StatusMark(status: String, size: Dp = 40.dp) {
     Box(Modifier.size(size).glass(CircleShape, GlassLevel.Regular, tint = bg), contentAlignment = Alignment.Center) { LwIcon(icon, size = size / 2, tint = tint) }
 }
 
-/** Receipt footer: Share, then Done. */
+/** Proof toggle plus the drawn card and proof panel, kept so the receipt can be shared as an image. */
+class ReceiptShot internal constructor(val card: GraphicsLayer, val proof: GraphicsLayer, open: MutableState<Boolean>) {
+    var proofOpen by open
+
+    /** The card (and the proof panel when open) on the app background — the screen without its buttons. */
+    suspend fun image(background: Color, pad: Int, gap: Int): Bitmap {
+        val parts = listOfNotNull(card, proof.takeIf { proofOpen })
+            .map { it.toImageBitmap().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false) }
+        val w = parts.maxOf { it.width } + pad * 2
+        val h = parts.sumOf { it.height } + gap * (parts.size - 1) + pad * 2
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).applyCanvas {
+            drawColor(background.toArgb())
+            var y = pad.toFloat()
+            parts.forEach { drawBitmap(it, pad.toFloat(), y, null); y += it.height + gap }
+        }
+    }
+}
+
 @Composable
-fun ReceiptFooter(onShare: () -> Unit, onDone: () -> Unit) {
+fun rememberReceiptShot(): ReceiptShot {
+    val card = rememberGraphicsLayer()
+    val proof = rememberGraphicsLayer()
+    val open = rememberSaveable { mutableStateOf(false) }
+    return remember(card, proof, open) { ReceiptShot(card, proof, open) }
+}
+
+private fun Modifier.captureInto(layer: GraphicsLayer) = drawWithContent {
+    layer.record { this@drawWithContent.drawContent() }
+    drawLayer(layer)
+}
+
+/** A whole receipt screen body: the scrolling [PaymentReceiptCard], then Share text / Share image, then Done. */
+@Composable
+fun ColumnScope.PaymentReceipt(
+    title: String,
+    status: String,
+    amountSats: Long,
+    rows: List<Pair<String, String>>,
+    proofs: List<Pair<String, String?>>,
+    padding: PaddingValues,
+    onDone: () -> Unit,
+    valueNodes: Map<String, @Composable () -> Unit> = emptyMap(),
+) {
+    val c = LocalContainer.current
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val currencies by c.prefs.currencies.collectAsState()
+    val rates by c.rates.rates.collectAsState()
+    var code by remember { mutableStateOf(currencies.selected) }
+    val shot = rememberReceiptShot()
+    val receiptTitle = stringResource(R.string.shared_receipt_text_title)
+    val amountLabel = stringResource(R.string.shared_receipt_text_amount)
+    val failed = stringResource(R.string.shared_receipt_shareFailed)
+    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(padding)) {
+        PaymentReceiptCard(title, status, amountSats, code, currencies.active, rates, { code = it }, rows, proofs, valueNodes, shot)
+    }
     Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Lw.Background.copy(alpha = 0.85f)))).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        LwButton(stringResource(R.string.common_share), onShare, Modifier.fillMaxWidth(), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LwButton(stringResource(R.string.receipt_share_text), {
+                context.shareText(buildString {
+                    append(receiptTitle).append('\n').append(title).append('\n')
+                    append("$amountLabel: ${Currencies.formatSats(amountSats)} sats")
+                    if (code != "SAT") append(" (${Currencies.format(amountSats, code, rates)} ${Currencies.unitLabel(code)})")
+                    rows.forEach { (k, v) -> append("\n$k: $v") }
+                    if (shot.proofOpen) proofs.forEach { (k, v) -> if (v != null) append("\n$k: $v") }
+                })
+            }, Modifier.weight(1f).testTag("share-text"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
+            LwButton(stringResource(R.string.receipt_share_image), {
+                scope.launch {
+                    try {
+                        context.shareImage(shot.image(Lw.Background, with(density) { 16.dp.roundToPx() }, with(density) { 8.dp.roundToPx() }))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (e !is IOException) Diagnostics.nonFatal(e)
+                        context.toast(failed)
+                    }
+                }
+            }, Modifier.weight(1f).testTag("share-image"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_image)
+        }
         LwButton(stringResource(R.string.common_done), onDone, Modifier.fillMaxWidth().testTag("done"))
     }
 }
