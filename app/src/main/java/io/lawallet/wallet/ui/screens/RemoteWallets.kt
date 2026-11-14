@@ -83,6 +83,7 @@ import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.api.WalletNotification
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.nwc.NwcClient
+import io.lawallet.wallet.core.nwc.Lncurl
 import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.ui.LocalContainer
 import kotlinx.serialization.builtins.ListSerializer
@@ -329,6 +330,7 @@ fun AddRemoteWalletScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
+    var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
     val invalid = "Invalid NWC connection string"
     // Name is optional: default to the URI's lud16, else its first relay host.
     val derivedName = remember(conn) { runCatching { NwcUri.parse(conn) }.getOrNull()?.let { it.lud16 ?: it.relays.firstOrNull()?.substringAfter("://")?.substringBefore('/') } ?: "Wallet" }
@@ -356,8 +358,14 @@ fun AddRemoteWalletScreen() {
                 null -> {
                     MutedText(stringResource(R.string.rw_add_subtitle))
                     WalletMark(lncurl = false, size = 96.dp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
-                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, icon = L.drawable.lucide_ic_link)
-                    if (settings?.lncurlEnabled == true) LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.fillMaxWidth().testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, icon = L.drawable.lucide_ic_zap)
+                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
+                    if (settings?.lncurlEnabled == true) Column {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.weight(1f).testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, leading = { WalletMark(lncurl = true, size = 22.dp) })
+                            LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
+                        }
+                        MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
+                    }
                 }
                 "nwc" -> {
                     if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
@@ -386,9 +394,60 @@ fun AddRemoteWalletScreen() {
                 if (runCatching { NwcUri.parse(conn) }.isFailure) error = invalid
                 else submit { c.session.api.value.createNwcWallet(name.ifBlank { derivedName }, conn, "SEND_RECEIVE", primary) }
             }, Modifier.fillMaxWidth().padding(16.dp).testTag("wallet-connect"), BtnVariant.Theme, enabled = !busy && conn.isNotBlank(), loading = busy)
-            "lncurl" -> LwButton(stringResource(R.string.rw_create), { submit { c.session.api.value.createLncurlWallet(name.ifBlank { null }, primary) } },
+            "lncurl" -> LwButton(stringResource(R.string.rw_create), {
+                submit {
+                    // ponytail: only the server's default provider goes through the server (LNCurl tag, revive); any
+                    // other is minted here and imported as a plain NWC wallet until the server takes a provider.
+                    if (provider == Lncurl.DEFAULT) c.session.api.value.createLncurlWallet(name.ifBlank { null }, primary)
+                    else c.session.api.value.createNwcWallet(name.ifBlank { Lncurl.host(provider) }, Lncurl.mint(c.http, provider), "SEND_RECEIVE", primary)
+                }
+            },
                 Modifier.fillMaxWidth().padding(16.dp).testTag("create-lncurl"), BtnVariant.Theme, enabled = !busy, loading = busy, icon = L.drawable.lucide_ic_zap)
         }
+    }
+}
+
+/** The chevron beside "Create disposable LNCurl": pick lncurl.lol, Masize or a custom provider. */
+@Composable
+private fun LncurlProviderMenu(selected: String, onPick: (String) -> Unit) {
+    val context = LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    val brand = LocalBrand.current
+    val shape = RoundedCornerShape(if (brand.radius == 0.dp) 0.dp else (brand.radius + 4.dp).coerceAtMost(30.dp))
+    val label = stringResource(R.string.rw_lncurl_provider)
+    val options = Lncurl.PRESETS + listOfNotNull((Lncurl.host(selected) to selected).takeIf { Lncurl.PRESETS.none { p -> p.second == selected } })
+    Box {
+        Box(
+            Modifier.size(60.dp).glass(shape).clickable(role = Role.Button) { open = true }.semantics { contentDescription = label }.testTag("lncurl-provider"),
+            contentAlignment = Alignment.Center,
+        ) { LwIcon(L.drawable.lucide_ic_chevron_down, size = 20.dp) }
+        androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Glass.Dialog, shape = RoundedCornerShape(16.dp)) {
+            options.forEach { (name, url) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Column {
+                            Txt(name, size = 15.sp, weight = if (url == selected) FontWeight.SemiBold else FontWeight.Normal)
+                            Txt(Lncurl.host(url), size = 12.sp, color = Lw.MutedFg)
+                        }
+                    },
+                    onClick = { open = false; onPick(url) },
+                    trailingIcon = { if (url == selected) LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) },
+                    modifier = Modifier.testTag("lncurl-provider-${Lncurl.host(url)}"),
+                )
+            }
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Txt(stringResource(R.string.rw_lncurl_add_custom), size = 15.sp) },
+                onClick = { open = false; adding = true },
+                leadingIcon = { LwIcon(L.drawable.lucide_ic_plus, size = 18.dp, tint = Lw.MutedFg) },
+                modifier = Modifier.testTag("lncurl-provider-custom"),
+            )
+        }
+    }
+    val invalid = stringResource(R.string.rw_lncurl_invalid)
+    if (adding) TextPrompt(stringResource(R.string.rw_lncurl_add_custom), "", { adding = false }, saveLabel = stringResource(R.string.rw_lncurl_use), placeholder = "lncurl.example.com", maxLength = 200) { typed ->
+        val origin = Lncurl.normalize(typed)
+        if (origin == null) context.toast(invalid) else { adding = false; onPick(origin) }
     }
 }
 

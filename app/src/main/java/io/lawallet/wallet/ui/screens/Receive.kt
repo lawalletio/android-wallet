@@ -94,7 +94,7 @@ fun ReceiveAddressScreen() {
         ScreenHeader(stringResource(R.string.receive_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
-            val address = me?.lightningAddress
+            val address = c.wallet.shownAddress(me)
             if (address != null) {
                 AddressHero(address)
                 Spacer(Modifier.height(20.dp))

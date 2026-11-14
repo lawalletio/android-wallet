@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.components
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.annotation.DrawableRes
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.app.AddressProfile
 import io.lawallet.wallet.app.refreshAddressProfile
@@ -321,12 +323,8 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
             .background(txWash(tx.incoming)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp).testTag("tx-row"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (dest != null) Box {
-            AsyncImage(c.avatars.of(dest.address), null, Modifier.size(40.dp).glass(CircleShape, GlassLevel.Strong).clip(CircleShape), contentScale = ContentScale.Crop)
-            Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-                LwIcon(icon, size = 10.dp, tint = Lw.Background)
-            }
-        } else Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        if (dest != null) BadgedAvatar(c.avatars.of(dest.address), icon, color)
+        else Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             LwIcon(icon, size = 20.dp, tint = color)
         }
         Spacer(Modifier.width(12.dp))
@@ -344,6 +342,15 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
 }
 
 /** The activity rows' direction wash: very low-opacity green (received) or red (sent). */
+/** A round picture with a small coloured [badge] icon on its bottom-right edge (a payment's direction, an alias's forward). */
+@Composable
+fun BadgedAvatar(url: String, @DrawableRes badge: Int, color: Color, size: Dp = 40.dp) = Box {
+    AsyncImage(url, null, Modifier.size(size).glass(CircleShape, GlassLevel.Strong).clip(CircleShape), contentScale = ContentScale.Crop)
+    Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+        LwIcon(badge, size = 10.dp, tint = Lw.Background)
+    }
+}
+
 private fun txWash(incoming: Boolean) = (if (incoming) Lw.Green else Lw.Red).copy(alpha = 0.06f)
 
 /** The row title: mostly white with a hint of the direction colour. */
@@ -802,9 +809,12 @@ private fun Modifier.freshEntrance(tx: Tx): Modifier {
 @Composable
 fun rememberAddressProfile(address: String, debounceMs: Long = 0): AddressProfile? {
     val c = LocalContainer.current
-    val profiles by c.avatars.profiles.collectAsState()
+    val profiles = c.avatars.profiles.collectAsState()
+    c.avatars.domainTick.collectAsState().value // a domain's favicon landing repaints the fallback face
     LaunchedEffect(address) { delay(debounceMs); c.refreshAddressProfile(address, ttlMs = 0) }
-    return profiles[c.avatars.key(address)]
+    // Only this address's entry: another address's lookup landing doesn't recompose every chip on screen.
+    val key = c.avatars.key(address)
+    return remember(key) { derivedStateOf { profiles.value[key] } }.value
 }
 
 /** A paid Lightning address: its face and display name (cached, refreshed live), plus the address. Tappable when [onClick] is set. */

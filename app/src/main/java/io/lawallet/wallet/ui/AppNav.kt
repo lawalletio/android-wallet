@@ -188,6 +188,7 @@ object R0 {
     fun activate(id: String) = "activate/$id"
     fun emailAuth(token: String, host: String) = "auth/email?token=$token&host=${android.net.Uri.encode(host)}"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
+    fun aliasTarget(username: String) = "addresses/forward/$username"
     fun sweep(from: String, to: String) = "sweep/$from/$to"
     const val ONCHAIN_ADD = "onchain/add"
     const val ONCHAIN_CREATE = "onchain/create"
@@ -285,16 +286,19 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val usdtSoon = stringResource(R.string.usdt_soon)
     // Off Lightning (Onchain, USDT), Home's Receive / Send aren't wired yet.
     val soon = if (route == R0.HOME && HomePager.page != LIGHTNING) { if (HomePager.page == USDT) usdtSoon else onchainSoon } else null
+    // Home's address drop-down covers everything: the bar fades out under it (and leaves once gone, taking no taps).
+    val overlay by animateFloatAsState(if (route == R0.HOME && AddressPickerOverlay.open) 1f else 0f, tween(180), label = "pickerOverlay")
     // Both tabs composed = switching tabs: the bar stays put.
-    Box(modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f }, contentAlignment = Alignment.BottomCenter) {
-        if (tabs) NavTabBar(
+    Box(modifier.graphicsLayer { alpha = (if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f) * (1f - overlay) }, contentAlignment = Alignment.BottomCenter) {
+        if (tabs && overlay < 1f) NavTabBar(
             // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
             onReceive = { if (soon != null) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
             onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
             onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
             haze = haze,
-            canReceive = soon != null || client != null || settings?.lncurlAutoCreate == true,
-            canSend = soon != null || client != null,
+            // On Lightning, a free address has nothing to receive into or send from; an alias only forwards.
+            canReceive = soon != null || (!(route == R0.HOME && HomeLightningAddress.free) && (client != null || settings?.lncurlAutoCreate == true)),
+            canSend = soon != null || (!(route == R0.HOME && (HomeLightningAddress.free || HomeLightningAddress.alias)) && client != null),
             // Home tints it with the page tone, blending 1:1 with the swipe (Bitcoin orange ⇄ Lightning blue).
             accent = if (route == R0.HOME) ({ pageTone() }) else null,
             modifier = Modifier.graphicsLayer {
@@ -420,6 +424,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
                 composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
                 composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }
+                composable("addresses/forward/{username}") { AliasTargetScreen(it.arguments?.getString("username").orEmpty()) }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.ONCHAIN_ADD) { AddOnchainWalletScreen() }
                 composable(R0.ONCHAIN_CREATE) { CreateOnchainWalletScreen() }

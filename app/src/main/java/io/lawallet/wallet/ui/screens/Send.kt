@@ -137,9 +137,32 @@ suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination,
 fun SendRecipientScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
+    AddressEntry(
+        stringResource(R.string.send_title), stringResource(R.string.send_to), stringResource(R.string.common_continue),
+        scan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
+    ) { value -> nav.navigate(startSend(c, DestinationParser.parse(value))) }
+}
+
+/**
+ * Typing a Lightning address (or anything [accepts] takes from the clipboard): domain suggestions, the full address
+ * expanded with its Nostr face and name, saved contacts, a one-tap clipboard row. [onSubmit] gets the value; what it
+ * throws shows under the field. Send's recipient step, and where an alias forwards to.
+ */
+@Composable
+internal fun AddressEntry(
+    title: String,
+    prompt: String,
+    submitLabel: String,
+    initial: String = "",
+    accepts: (String) -> Boolean = ::isPayableClip,
+    scan: (() -> Unit)? = null,
+    onSubmit: suspend (String) -> Unit,
+) {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf(initial) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val contacts = remember { c.prefs.contacts }
@@ -153,16 +176,14 @@ fun SendRecipientScreen() {
     LaunchedEffect(focused) {
         if (focused) clip = runCatching {
             context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
-        }.getOrNull()?.takeIf(::isPayableClip)
+        }.getOrNull()?.takeIf(accepts)
     }
     val invalid = stringResource(R.string.send_invalidRecipient)
     fun submit(value: String = input) {
         if (loading) return
         loading = true; error = null
         scope.launch {
-            runCatching { startSend(c, DestinationParser.parse(value)) }
-                .onSuccess { nav.navigate(it) }
-                .onFailure { error = it.message ?: invalid }
+            runCatching { onSubmit(value.trim()) }.onFailure { error = it.message ?: invalid }
             loading = false
         }
     }
@@ -173,9 +194,9 @@ fun SendRecipientScreen() {
     // Fully written: the address leads the box, expanded with its Nostr face and name.
     val full = input.trim().takeIf { FULL_ADDRESS.matches(it) }
     Column(Modifier.fillMaxSize().imePadding()) {
-        ScreenHeader(stringResource(R.string.send_title), { nav.popBackStack() }, close = true)
+        ScreenHeader(title, { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Txt(stringResource(R.string.send_to), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+            Txt(prompt, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
             OutlinedTextField(
                 input, { input = it; error = null }, Modifier.fillMaxWidth().autoFocus().testTag("recipient-input"), enabled = !loading,
                 placeholder = { Txt("satoshi@lawallet.io", color = Lw.MutedFg) },
@@ -186,23 +207,23 @@ fun SendRecipientScreen() {
                     Row {
                         Box(Modifier.size(40.dp).testTag("recipient-paste").clickable(enabled = !loading) {
                             val clip = context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
-                            if (!clip.isNullOrBlank()) { input = clip; submit(clip) }
+                            if (!clip.isNullOrBlank()) { input = clip; if (accepts(clip)) submit(clip) }
                         }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 20.dp, tint = Lw.MutedFg) }
-                        Box(Modifier.size(40.dp).clickable(enabled = !loading) { nav.navigate(R0.SCAN) { launchSingleTop = true } }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
+                        if (scan != null) Box(Modifier.size(40.dp).clickable(enabled = !loading, onClick = scan), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_scan_qr_code, size = 20.dp, tint = Lw.MutedFg) }
                     }
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
-            clip?.takeIf { it != input.trim() }?.let { value ->
-                ClipboardRow(value) { if (!loading) { input = value; submit(value) } }
-            }
             if (full != null || suggestions.isNotEmpty()) AddressGroup(
                 stringResource(R.string.shared_addressInput_suggestions),
                 listOfNotNull(full).map { it to c.avatars.of(it) } + suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }, expanded = full,
             ) { if (!loading) { input = it; submit(it) } }
             if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { if (!loading) { input = it; submit(it) } }
         }
-        LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
+        clip?.takeIf { it != input.trim() }?.let { value ->
+            ClipboardRow(value, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) { if (!loading) { input = value; submit(value) } }
+        }
+        LwButton(submitLabel, { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
     }
 }
 
@@ -214,10 +235,10 @@ internal fun isPayableClip(text: String, now: Long = System.currentTimeMillis())
 }
 
 @Composable
-private fun ClipboardRow(value: String, onPick: () -> Unit) {
+private fun ClipboardRow(value: String, modifier: Modifier = Modifier, onPick: () -> Unit) {
     val shown = value.removePrefix("lightning:").removePrefix("LIGHTNING:").let { if (it.length > 28) it.take(14) + "…" + it.takeLast(8) else it }
     Row(
-        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("recipient-clipboard"),
+        modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("recipient-clipboard"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 16.dp, tint = Lw.MutedFg) }
