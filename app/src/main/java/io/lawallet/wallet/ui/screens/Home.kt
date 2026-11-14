@@ -1,5 +1,12 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.core.animate
+import kotlin.math.sign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.animation.AnimatedContent
@@ -482,12 +489,37 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
         }
         // Centre pill: the user's Lightning address (tap to receive) or the logotype; the onchain primary; USDT.
         val address = me?.lightningAddress
+        // Swipe the address sideways to switch between the account's addresses (and their wallets): a local choice.
+        val all by c.wallet.addresses.collectAsState()
+        val selected by c.wallet.selectedAddress.collectAsState()
+        val users = remember(all) { c.wallet.switchable(all).map { it.username } }
+        val primaryUser = address?.substringBefore('@')
+        var idx by remember { mutableIntStateOf(0) }
+        LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
+        val span = with(LocalDensity.current) { 72.dp.toPx() }
+        var drag by remember { mutableFloatStateOf(0f) }
+        val canSwipe = address != null && users.size > 1 && HomePager.page == LIGHTNING
+        val dragState = rememberDraggableState { d ->
+            val next = drag + d
+            // Past the first or last address it only gives a little.
+            drag = (if ((if (next < 0) idx + 1 else idx - 1) in users.indices) next else drag + d * 0.25f).coerceIn(-span, span)
+        }
         Box(
             // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
             // "charging" (shrinks, dims) up to the long press.
             Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
                 .then(if (address != null) Modifier.sharedAddress() else Modifier)
                 .height(44.dp).glass(CircleShape)
+                .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
+                    val dir = if (drag < 0) 1 else -1 // 1 = the next address, coming in from the right
+                    val target = idx + dir
+                    if (drag != 0f && target in users.indices && (abs(drag) > span * 0.35f || -dir * v > 600f)) {
+                        animate(drag, -dir * span, animationSpec = tween(160, easing = FastOutSlowInEasing)) { x, _ -> drag = x }
+                        idx = target; drag = 0f
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        c.wallet.selectAddress(users[target].takeIf { it != primaryUser })
+                    } else animate(drag, 0f, animationSpec = spring(0.8f, Spring.StiffnessMedium)) { x, _ -> drag = x }
+                })
                 .combinedClickable(
                     interactionSource = addressPress, indication = ripple(),
                     onLongClick = {
@@ -515,7 +547,8 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
                 if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                     // Username leads; the domain sits a step dimmer and never truncates.
-                    Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                    if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
+                    else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
                     Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
                 }
                 else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
@@ -530,6 +563,40 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             L.drawable.lucide_ic_settings, { nav.navigate(R0.SETTINGS) { popUpTo(R0.HOME); launchSingleTop = true } },
             Modifier.testTag("home-settings"), contentDescription = stringResource(R.string.shared_nav_settings),
         )
+    }
+}
+
+/**
+ * The username part of the pill while swiping between addresses: the current one slides and fades with [drag] while
+ * its neighbour slides in from that side (cut at the "@", so the domain holds still). After a switch the slot eases to
+ * the new name's width, which glides the whole address back to centre.
+ */
+@Composable
+private fun SwipeUsername(users: List<String>, index: Int, drag: () -> Float, span: Float, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val style = TextStyle(fontFamily = Inter, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
+    val width = { i: Int -> measurer.measure(users[i], style, maxLines = 1).size.width.toFloat() }
+    val slot = remember { Animatable(width(index)) }
+    LaunchedEffect(index, users) { slot.animateTo(width(index), spring(0.85f, Spring.StiffnessMediumLow)) }
+    val d = drag()
+    val neighbor = (if (d < 0) index + 1 else if (d > 0) index - 1 else -1).takeIf { it in users.indices }
+    Layout(
+        content = {
+            Txt(users[index], size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            if (neighbor != null) Txt(users[neighbor], size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+        },
+        // Names may overflow to the left (the pill clips there), never right over the domain.
+        modifier = modifier.drawWithContent { clipRect(left = -size.width * 4, right = size.width) { this@drawWithContent.drawContent() } },
+    ) { ms, cs ->
+        val names = ms.map { it.measure(Constraints(maxWidth = cs.maxWidth)) }
+        val w = slot.value.roundToInt().coerceIn(0, cs.maxWidth)
+        val h = names.maxOf { it.height }
+        layout(w, h) {
+            val x = drag()
+            val p = (abs(x) / span).coerceIn(0f, 1f)
+            names[0].placeWithLayer(w - names[0].width + x.roundToInt(), (h - names[0].height) / 2) { alpha = 1f - p }
+            names.getOrNull(1)?.let { n -> n.placeWithLayer(w - n.width + (x - sign(x) * span).roundToInt(), (h - n.height) / 2) { alpha = p } }
+        }
     }
 }
 

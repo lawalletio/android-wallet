@@ -101,7 +101,7 @@ fun LightningAddressesScreen() {
     val copied = stringResource(R.string.common_copied)
     suspend fun load() {
         val api = c.session.api.value
-        runCatching { api.addresses() }.onSuccess { addresses = it; error = null; c.prefs.setCached("addresses", addressesSer, it) }.onFailure { error = it.message }
+        runCatching { api.addresses() }.onSuccess { addresses = it; error = null; c.wallet.setAddresses(it) }.onFailure { error = it.message }
         runCatching { api.remoteWallets() }.onSuccess { wallets = it; c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
     }
     // On every return too: an address added through the claim flow shows up when it pops back here.

@@ -191,6 +191,11 @@ class Prefs(context: Context) {
         get() = sp.getString("lncurl-provider", null)
         set(v) = sp.edit { putString("lncurl-provider", v) }
 
+    /** Home's selected Lightning address (username); local only, never the server's primary. */
+    var selectedAddress: String?
+        get() = sp.getString("selected-address", null)
+        set(v) = sp.edit { if (v == null) remove("selected-address") else putString("selected-address", v) }
+
     /** Logout: wipes everything except the instance and display preferences (session-cache.ts). */
     fun clearSession() {
         val keep = setOf("instance", "payment-sound", "currencies", "bg-listener", "slide-to-pay", "bunker-relays", "lncurl-provider") + DIAGNOSTICS_KEYS

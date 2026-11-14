@@ -14,6 +14,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import io.lawallet.wallet.core.api.CurrentUser
+import io.lawallet.wallet.core.api.WalletAddress
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
@@ -108,9 +113,38 @@ class WalletRepository(
 
     val hasWallet: Boolean get() = _client.value != null
 
+    private val addressesSer = ListSerializer(WalletAddress.serializer())
+    private val _addresses = MutableStateFlow(prefs.cached("addresses", addressesSer).orEmpty())
+    /** The account's Lightning addresses (cached under "addresses", shared with the addresses screen). */
+    val addresses: StateFlow<List<WalletAddress>> = _addresses
+    fun setAddresses(list: List<WalletAddress>) { _addresses.value = list; prefs.setCached("addresses", addressesSer, list) }
+    suspend fun refreshAddresses() { runCatching { session.api.value.addresses() }.onSuccess { setAddresses(it) } }
+
+    private val _selected = MutableStateFlow(prefs.selectedAddress)
+    /** The username picked on Home's address pill: a local view choice (the primary address stays as it is). Null = primary. */
+    val selectedAddress: StateFlow<String?> = _selected
+    fun selectAddress(username: String?) { _selected.value = username; prefs.selectedAddress = username }
+
+    /** Addresses Home can switch between (an alias forwards elsewhere, so it has no wallet to show): primary first. */
+    fun switchable(list: List<WalletAddress> = _addresses.value) = list.filter { it.mode != "ALIAS" }.sortedByDescending { it.isPrimary }
+
+    /** The address in use: the selected one when it still exists, else the primary. */
+    fun shownAddress(me: CurrentUser?): String? {
+        val primary = me?.lightningAddress ?: return null
+        val sel = _selected.value?.takeIf { u -> switchable().any { it.username == u && !it.isPrimary } } ?: return primary
+        return sel + "@" + primary.substringAfter('@')
+    }
+
     init {
         scope.launch {
-            session.me.distinctUntilChanged { a, b -> a?.nwc == b?.nwc && a?.userId == b?.userId }.collect { me -> connect(resolveNwc(me)) }
+            val me = session.me.distinctUntilChanged { a, b -> a?.nwc == b?.nwc && a?.userId == b?.userId }
+            // The selected address's own wallet, when it routes to one; anything else shows the primary's.
+            combine(me, _selected, _addresses) { m, sel, list ->
+                m to list.find { it.username == sel && !it.isPrimary && it.mode == "CUSTOM_NWC" }?.remoteWalletId
+            }.distinctUntilChanged().collectLatest { (m, walletId) -> connect(resolveFor(m, walletId)) }
+        }
+        scope.launch {
+            session.me.filterNotNull().distinctUntilChanged { a, b -> a.userId == b.userId && a.lightningAddress == b.lightningAddress }.collect { refreshAddresses() }
         }
         scope.launch { active.filter { it }.collect { refreshBalance() } }
     }
@@ -133,6 +167,15 @@ class WalletRepository(
             // Offline: keep using the last connection we resolved.
             { withContext(Dispatchers.IO) { prefs.secretCached("nwc") } },
         )
+    }
+
+    /** [walletId]'s connection (cached, so flicking between addresses is instant), else the primary's. */
+    private suspend fun resolveFor(me: CurrentUser?, walletId: String?): String? {
+        if (me == null || walletId == null) return resolveNwc(me)
+        val key = "nwc:$walletId"
+        return withContext(Dispatchers.IO) { prefs.secretCached(key) }
+            ?: runCatching { session.api.value.remoteWalletConnectionString(walletId) }.getOrNull()?.also { withContext(Dispatchers.IO) { prefs.setSecretCached(key, it) } }
+            ?: resolveNwc(me)
     }
 
     /** Idempotent: callers that just refreshed `me` use it to get the client without waiting for the collector. */
