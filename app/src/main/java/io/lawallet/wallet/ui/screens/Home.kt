@@ -996,12 +996,12 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // An address without a balance of its own leads with a mark of what it is: an alias, or unlinked.
-                    // What fades as the wallet list opens (the mark, a free address's label, the buttons) gives the list its room.
+                    // What fades as the wallet list opens (the mark, the label, the buttons) gives the list its room.
                     var markH by remember { mutableIntStateOf(0) }
                     var labelH by remember { mutableIntStateOf(0) }
                     var actionsH by remember { mutableIntStateOf(0) }
                     SideEffect {
-                        reveal.tuckTop = if (detached) (markH + if (unlinked) labelH else 0).toFloat() else 0f
+                        reveal.tuckTop = if (detached) (markH + labelH).toFloat() else 0f
                         reveal.tuckBottom = if (detached) actionsH.toFloat() else 0f
                     }
                     if (detached) Box(Modifier.onSizeChanged { markH = it.height }.graphicsLayer { alpha = 1f - reveal.progress }) {
@@ -1010,8 +1010,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     // Once the wallets show, the figure is named after the wallet it belongs to.
                     val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
                     BalanceLabel(
-                        // A free address has no balance to name once the wallet list is open.
-                        primaryLabel, Modifier.pinned(anchors, LIGHTNING).onSizeChanged { labelH = it.height }.then(if (unlinked) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
+                        // A free or alias address has no balance to name once the wallet list is open.
+                        primaryLabel, Modifier.pinned(anchors, LIGHTNING).onSizeChanged { labelH = it.height }.then(if (detached) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
                         lightningText = if (forwardTo != null) stringResource(R.string.home_lightningAlias) else null,
                         primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
