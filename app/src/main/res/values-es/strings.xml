@@ -79,6 +79,7 @@
     <string name="home_forwardInstead">Reenviar a una dirección</string>
     <string name="home_forwardsTo">Reenvía a</string>
     <string name="home_lightningAlias">Alias Lightning</string>
+    <string name="home_lightningAddress">Dirección Lightning</string>
     <string name="home_forwardsFrom">Los pagos a %1$s van a</string>
     <string name="rw_add">Agregar billetera</string>
     <string name="rw_add_title">Conectar una billetera remota</string>

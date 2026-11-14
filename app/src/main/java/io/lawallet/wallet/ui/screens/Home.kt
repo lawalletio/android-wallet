@@ -1012,7 +1012,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     BalanceLabel(
                         // A free or alias address has no balance to name once the wallet list is open.
                         primaryLabel, Modifier.pinned(anchors, LIGHTNING).onSizeChanged { labelH = it.height }.then(if (detached) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
-                        lightningText = if (forwardTo != null) stringResource(R.string.home_lightningAlias) else null,
+                        lightningText = when { forwardTo != null -> stringResource(R.string.home_lightningAlias); unlinked -> stringResource(R.string.home_lightningAddress); else -> null },
                         primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
                     )
