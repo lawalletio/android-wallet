@@ -128,6 +128,10 @@ class WalletRepository(
     /** Addresses Home can switch between (an alias forwards elsewhere, so it has no wallet to show): primary first. */
     fun switchable(list: List<WalletAddress> = _addresses.value) = list.filter { it.mode != "ALIAS" }.sortedByDescending { it.isPrimary }
 
+    /** The remote wallet [username] routes to, when it's a non-primary address with one of its own. */
+    fun walletOf(username: String?, list: List<WalletAddress>): String? =
+        list.find { it.username == username && !it.isPrimary && it.mode == "CUSTOM_NWC" }?.remoteWalletId
+
     /** The address in use: the selected one when it still exists, else the primary. */
     fun shownAddress(me: CurrentUser?): String? {
         val primary = me?.lightningAddress ?: return null
@@ -139,9 +143,7 @@ class WalletRepository(
         scope.launch {
             val me = session.me.distinctUntilChanged { a, b -> a?.nwc == b?.nwc && a?.userId == b?.userId }
             // The selected address's own wallet, when it routes to one; anything else shows the primary's.
-            combine(me, _selected, _addresses) { m, sel, list ->
-                m to list.find { it.username == sel && !it.isPrimary && it.mode == "CUSTOM_NWC" }?.remoteWalletId
-            }.distinctUntilChanged().collectLatest { (m, walletId) -> connect(resolveFor(m, walletId)) }
+            combine(me, _selected, _addresses) { m, sel, list -> m to walletOf(sel, list) }.distinctUntilChanged().collectLatest { (m, walletId) -> connect(resolveFor(m, walletId)) }
         }
         scope.launch {
             session.me.filterNotNull().distinctUntilChanged { a, b -> a.userId == b.userId && a.lightningAddress == b.lightningAddress }.collect { refreshAddresses() }
