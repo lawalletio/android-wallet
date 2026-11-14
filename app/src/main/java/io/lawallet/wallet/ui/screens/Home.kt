@@ -4,7 +4,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.lawallet.wallet.ui.theme.PanelStyle
-import io.lawallet.wallet.ui.theme.dimBlur
 import androidx.compose.foundation.layout.BoxScope
 import io.lawallet.wallet.app.ensureDomainLogo
 import io.lawallet.wallet.ui.components.BadgedAvatar
@@ -639,13 +638,10 @@ private fun AddressKindMark(kind: AddressKind) {
     }
 }
 
-/** Behind the address drop-down (and under the header, which stays sharp): Home blurred and dimmed; a tap closes it. */
+/** Behind the address drop-down (under the header): no backdrop, just a catcher so a tap outside closes it. */
 @Composable
 private fun BoxScope.AddressPickerScrim(open: Boolean, onDismiss: () -> Unit) {
-    val haze = LocalHaze.current
-    AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(200)), exit = fadeOut(tween(160))) {
-        Box(Modifier.fillMaxSize().dimBlur(haze).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
-    }
+    if (open) Box(Modifier.matchParentSize().clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
 }
 
 /**
