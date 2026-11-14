@@ -408,8 +408,9 @@ fun HomeScreen() {
             { maxOf(smooth(0f, 0.15f, anchors.revealAt(HomePager.position)), anchors.sheetAt(HomePager.position) * 2.2f) },
             Modifier.align(Alignment.TopCenter).padding(top = HEADER_H + 20.dp).riseIn(0, intro),
         )
-        CompositionLocalProvider(LocalHaze provides pagesHaze) { HomeHeader(intro, anchors) }
         PageDots(anchors, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(it) } }
+        // Last, so the address drop-down and its backdrop cover everything on Home (the tab bar steps aside for it).
+        CompositionLocalProvider(LocalHaze provides pagesHaze) { HomeHeader(intro, anchors) }
     }
 }
 
@@ -504,7 +505,9 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     val switchable = remember(all) { c.wallet.switchable(all) }
     val users = remember(switchable) { switchable.map { it.username } }
     // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
-    var picker by remember { mutableStateOf(false) }
+    var picker by AddressPickerOverlay::open
+    // Leaving Home (Add address, Settings…) never leaves it open behind.
+    DisposableEffect(Unit) { onDispose { AddressPickerOverlay.open = false } }
     val primaryUser = address?.substringBefore('@')
     var idx by remember { mutableIntStateOf(0) }
     LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
@@ -604,6 +607,11 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
         )
     }
+}
+
+/** Whether Home's address drop-down is open: AppNav's tab bar steps aside so the drop-down's backdrop is on top. */
+object AddressPickerOverlay {
+    var open by mutableStateOf(false)
 }
 
 /** What an address does, for its mark: receives into an NWC or LNCurl wallet, forwards elsewhere, or nothing (unlinked). */
@@ -1209,7 +1217,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               }, destructive = true) },
           )
       }
-      if (open && wallets.orEmpty().any { it.isDefault } && shown != null) {
+      // The figure flies into its wallet's card; a free or alias address has neither, so nothing flies.
+      if (open && !detached && wallets.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
       }
     }

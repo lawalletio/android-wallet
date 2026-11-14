@@ -286,9 +286,11 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val usdtSoon = stringResource(R.string.usdt_soon)
     // Off Lightning (Onchain, USDT), Home's Receive / Send aren't wired yet.
     val soon = if (route == R0.HOME && HomePager.page != LIGHTNING) { if (HomePager.page == USDT) usdtSoon else onchainSoon } else null
+    // Home's address drop-down covers everything: the bar fades out under it (and leaves once gone, taking no taps).
+    val overlay by animateFloatAsState(if (route == R0.HOME && AddressPickerOverlay.open) 1f else 0f, tween(180), label = "pickerOverlay")
     // Both tabs composed = switching tabs: the bar stays put.
-    Box(modifier.graphicsLayer { alpha = if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f }, contentAlignment = Alignment.BottomCenter) {
-        if (tabs) NavTabBar(
+    Box(modifier.graphicsLayer { alpha = (if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f) * (1f - overlay) }, contentAlignment = Alignment.BottomCenter) {
+        if (tabs && overlay < 1f) NavTabBar(
             // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
             onReceive = { if (soon != null) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
             onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
