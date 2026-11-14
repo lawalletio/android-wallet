@@ -1,0 +1,1022 @@
+# LaWallet Android — UI reference guide (source of the PDF).
+#
+# Each screen:  id (= shots/<id>.png + .xml), name, ref (how to cite it), route (R0 value), source file,
+#               state, reach (how to get there), summary, gestures, components.
+# Component sel: tag:<testTag>[#n] | text:<visible text> | desc:<content description> | box:x1,y1,x2,y2 | [list → union]
+# Gesture arrow: [x1, y1, x2, y2] in screenshot pixels (1080×2400); optional at: [x, y] for the label.
+# Rebuild: docs/ui-guide/.venv/bin/python docs/ui-guide/build.py   (see docs/ui-guide/README.md)
+
+title: LaWallet Android — UI Guide
+subtitle: "Every screen, state and component, named and numbered — so a change can be described in plain words, e.g. **“Home[Lightning·Docked] › BalanceFigure: make it smaller”**."
+generated: "Captured on the LaWallet_API_36 emulator (1080×2400, 420 dpi) against the mock instance in `docs/ui-guide/mock` — every balance, wallet, address and transaction is dummy data. Build: `docs/ui-guide/build.py`."
+
+intro:
+  - title: How to reference things
+    body:
+      - p: "Every screen has a **Name** (PascalCase) and an **id** (the black chip on its page, also the screenshot file name). Every numbered marker on a screenshot is a **Component** with its own Name. Cite them with this grammar:"
+      - pre: |
+          Screen › Component                       Settings › LanguagePicker
+          Screen[State] › Component                Home[Lightning·WalletDeck] › WalletCard
+          Screen › Component › Part                Home › TabBar › ScanButton
+          Screen › Component (gesture)             Home › BalanceFigure (long-press)
+      - p: "The grey monospace text under each component name is its **selector**. `tag:` values are the Compose `testTag` in the source — grep for it to find the exact code (e.g. `grep -rn '\"balance-toggle\"' app/src`). `text:` selectors are the English copy at capture time."
+      - h: Example change requests
+      - ul:
+          - "“Home[Lightning·Docked] › SwipeHint: hide it after the first time the deck is opened.”"
+          - "“Home › TabBar › ScanButton: use the page tone only on Lightning; keep it neutral on Onchain and USDT.”"
+          - "“ActivityDetail › ProofToggle: rename to ‘Show proof’ and open it by default for pending payments.”"
+          - "“Send[Amount] › MaxChip: move it to the right of the AvailableBalance line.”"
+      - h: States vocabulary
+      - table:
+          - [State word, Meaning]
+          - [Docked, "Home's default vertical position: balance in the middle, activity peeking below"]
+          - [WalletDeck, "Home swiped down: the wallet cards fan out above the balance (the balance moves to the bottom)"]
+          - [ActivityRaised, "Home's activity panel dragged up to full height; the TabBar is replaced by search + filters"]
+          - ["Lightning / Onchain / USDT", "Home's three horizontal pages (Lightning in the middle, opens there)"]
+          - [Hidden, "Balance masked with •••••"]
+          - [Empty, "A list with no items (e.g. no onchain wallets)"]
+          - [Filled, "A form with input entered"]
+          - [Sheet, "A bottom sheet over the screen (ActionSheet)"]
+          - [Dialog, "A centered modal (LwAlertDialog)"]
+  - title: Shared components (appear on many screens)
+    body:
+      - p: "Defined once in `ui/components` / `ui/theme` and reused. When a change should apply app-wide, name the shared component instead of a screen."
+      - table:
+          - [Name, Where / tag, What it is]
+          - [BackButton, "`header-back` (ScreenHeader)", "Round glass button top-left; pops the screen (some screens show it as ✕ Close)"]
+          - [ScreenTitle, ScreenHeader, "Large left-aligned title under the BackButton, or centered small title on flow screens (Send, Receive, Amount)"]
+          - [TabBar, "`nav-receive` / `nav-scan` / `nav-send` (NavTabBar)", "Floating glass bar on Home and Settings: Receive · Scan (round, page-tinted) · Send. Hidden while Home's activity is raised"]
+          - [CurrencySwitcher, "`currency-SAT` / `currency-USD` / `currency-ARS`", "Segmented pill under any big amount; switches the display unit (active currencies come from Settings › Currency)"]
+          - [PrimaryButton, "LwButton (Theme variant)", "Full-width bottom action (Continue, Connect, Create wallet…)"]
+          - [GhostButton, "LwButton (Ghost variant)", "Outlined secondary action (Later, Use default…)"]
+          - [SettingsRow, "SettingsRow in Basics.kt", "Glass row with icon, label, optional value and chevron or Toggle"]
+          - [Toggle, "Switch inside a SettingsRow", "On/off preference"]
+          - [Keypad, "`key-0`…`key-9`, `key-backspace`", "Numeric keypad on amount screens (no system keyboard)"]
+          - [ActionSheet, "SheetAction rows", "Bottom sheet with a header card and icon+label actions; red label = destructive"]
+          - [AlertDialog, "LwAlertDialog / ModalAction", "The one modal style app-wide: ✕ top-left, message, one full-width action"]
+          - [Receipt, "PaymentReceipt: `receipt-amount`, `proof-toggle`, `share-text`, `share-image`, `done`", "Shared by ActivityDetail, Send summary and Receive summary"]
+          - [PaymentNotice, "`payment-notice`", "Glass pill at the top (‘Received +5,000 sats’) for ~2.7 s after a payment, on every screen except Home·Lightning (which animates its balance instead)"]
+          - [OfflineBadge, "`offline-badge`", "Small orange ‘Offline’ pill at the top when the instance API is unreachable"]
+          - [PrismBackground, "theme", "Blurred backdrop; on Home it is tinted by the page tone (Onchain orange, Lightning blue, USDT teal)"]
+          - [Glass, "theme", "Frosted translucent surface used by cards, pills, the TabBar and sheets"]
+
+sections:
+  - title: Onboarding (logged out)
+    screens:
+      - id: 01-landing
+        name: Landing
+        ref: Landing
+        route: landing
+        source: ui/screens/Onboarding.kt
+        state: Logged out, first launch
+        reach: Fresh install, or after Log out / Remove wallet
+        summary: Brand isotype and the instance's community name with a one-line pitch; two stacked buttons at the bottom.
+        components:
+          - {name: CommunityName, sel: "text:LaWallet Demo", does: "`community_name` from the instance `/api/settings` (default instance shows ‘La Wallet’)"}
+          - {name: Tagline, sel: "text:Manage and store", does: Static pitch copy}
+          - {name: CreateAccountButton, sel: "tag:landing-create", does: "→ SignupChoice"}
+          - {name: LoginButton, sel: "tag:landing-login", does: "→ Login"}
+      - id: 02-signup
+        name: SignupChoice
+        ref: SignupChoice
+        route: signup
+        source: ui/screens/Onboarding.kt
+        state: Logged out
+        reach: Landing › CreateAccountButton
+        summary: Four ways to create an account, ordered from simplest (passkey) to most technical (existing key).
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back to Landing}
+          - {name: Title, sel: "text:Create your account", does: Screen title + explainer}
+          - {name: PasskeyButton, sel: "text:Create with a passkey", does: "Creates a key from a device passkey (PRF) → CreatePasskey"}
+          - {name: EmailButton, sel: "tag:login-email", does: "→ EmailLogin (magic link)"}
+          - {name: RandomKeyButton, sel: "tag:signup-random", does: "Generates a fresh Nostr key → CreateAccount"}
+          - {name: ExistingKeyButton, sel: "text:I already have a key", does: "→ NostrLogin"}
+      - id: 03-login
+        name: Login
+        ref: Login
+        route: login
+        source: ui/screens/Onboarding.kt
+        state: Logged out
+        reach: Landing › LoginButton
+        summary: Login hub. Passkey is primary; email and Nostr are alternatives; a footer links back to signup.
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back}
+          - {name: PasskeyButton, sel: "text:Continue with passkey", does: Credential Manager passkey sign-in}
+          - {name: OrDivider, sel: "text:or", does: Separator}
+          - {name: EmailButton, sel: "tag:login-email", does: "→ EmailLogin"}
+          - {name: NostrButton, sel: "tag:login-nostr", does: "→ NostrLogin"}
+          - {name: SignupLink, sel: ["text:New to LaWallet?", "text:Create an account"], does: "→ SignupChoice"}
+      - id: 04-login-email
+        name: EmailLogin
+        ref: EmailLogin
+        route: login/email
+        source: ui/screens/EmailLogin.kt
+        state: Empty, keyboard dismissed
+        reach: Login › EmailButton (only when the instance has `email_login_enabled`)
+        summary: Single field that sends a magic link; the link opens `auth/email` which finishes login.
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back}
+          - {name: Title, sel: "text:Continue with email", does: Title + explainer}
+          - {name: EmailField, sel: "tag:email-input", does: Autofocused email input}
+          - {name: SendLinkButton, sel: "tag:email-send", does: "POST /api/auth/email/request; then shows ‘check your inbox’"}
+      - id: 05-login-nostr
+        name: NostrLogin
+        ref: NostrLogin
+        route: login/nostr
+        source: ui/screens/Onboarding.kt
+        state: Empty
+        reach: Login › NostrButton
+        summary: Paste a private key, or delegate signing to Amber (NIP-55) or a remote signer (NIP-46).
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back}
+          - {name: PrivateKeyField, sel: "tag:nsec-input", does: "nsec or hex private key; stored wrapped by the Android Keystore"}
+          - {name: ScanKeyButton, sel: "box:892,651,1018,777", does: Scan an nsec QR}
+          - {name: LoginButton, sel: "tag:nsec-submit", does: "Mints a JWT (NIP-98) and loads `/api/users/me` → Home"}
+          - {name: AmberButton, sel: "text:Continue with Amber", does: External signer app}
+          - {name: BunkerButton, sel: "tag:login-bunker", does: "→ BunkerLogin"}
+      - id: 06-login-bunker
+        name: BunkerLogin
+        ref: BunkerLogin
+        route: login/bunker
+        source: ui/screens/BunkerLogin.kt
+        state: "‘Scan or paste’ tab"
+        reach: NostrLogin › BunkerButton (asks for camera permission the first time)
+        summary: Two tabs — paste/scan a `bunker://` string, or show a `nostrconnect://` QR for the signer to scan.
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back}
+          - {name: ScanOrPasteTab, sel: "tag:bunker-tab-0", does: Selected tab}
+          - {name: ShowQrTab, sel: "tag:bunker-tab-1", does: Shows a nostrconnect QR + relay list}
+          - {name: BunkerField, sel: "tag:bunker-input", does: "bunker:// connection string"}
+          - {name: ScanButton, sel: "tag:bunker-scan", does: Scan a bunker QR}
+          - {name: ConnectButton, sel: "tag:bunker-connect", does: Connects and logs in}
+
+  - title: Home
+    pages:
+      - title: "Home — gesture map"
+        body:
+          - p: "Home is one screen with **3 horizontal pages** and **3 vertical layers**. Swiping horizontally anywhere changes the page (the backdrop tone, header pill, balance label and TabBar tint cross-fade 1:1 with the finger). Swiping down on the balance opens the **WalletDeck**; swiping up on the activity raises it (**ActivityRaised**). The deck stays open when you change page."
+          - home_map: true
+      - title: "Home — gestures, taps and long-presses"
+        body:
+          - p: "Everything Home reacts to, across all pages. Component names refer to the Home pages that follow."
+          - table:
+              - [Gesture, Where, Result]
+              - ["Swipe ← / →", Anywhere on Home, "Lightning ⇄ USDT / Onchain ⇄ Lightning"]
+              - [Tap PageDots, "`home-pages`", Jumps to the tapped page]
+              - ["Swipe ↓", "Balance area (docked)", "WalletDeck: cards slide in above, balance moves down to ‘Primary balance’"]
+              - ["Swipe ↑ / Back", WalletDeck open, Closes the deck]
+              - ["Swipe ↑", Activity list (docked), "ActivityRaised: list fills the screen, TabBar morphs into ActivitySearch + Filters"]
+              - ["Swipe ↓ / Back", ActivityRaised, Docks the activity again]
+              - [Tap BalanceFigure, Docked, "Hide / show the balance (•••••)"]
+              - [Long-press BalanceFigure, Lightning, "Opens the primary remote wallet's detail (RemoteWalletDetail)"]
+              - [Tap AddressPill, Lightning, "→ Receive"]
+              - [Long-press AddressPill, Lightning, "Pill expands into LightningAddresses (shared-element animation)"]
+              - [Tap Avatar, Any page, "Avatar flies into Profile (shared element)"]
+              - [Tap WalletCard, WalletDeck, Makes that wallet primary (optimistic)]
+              - [Long-press WalletCard, WalletDeck, Opens WalletActionSheet]
+    screens:
+      - id: 10-home-lightning
+        name: Home
+        ref: "Home[Lightning·Docked]"
+        route: home
+        source: ui/screens/Home.kt, HomeActivitySheet.kt
+        state: Lightning page, docked, balance visible, SAT
+        reach: App start when logged in; any `goHome()`
+        summary: "The wallet's front page. Header row, balance hero with currency switcher, page dots, then today's activity grouped by day. The Lightning watermark (⚡) and blue tone mark the page."
+        gestures:
+          - {label: "Swipe ↓ wallet deck", arrow: [150, 470, 150, 1000], at: [40, 1060], does: "Opens Home[Lightning·WalletDeck]"}
+          - {label: "Swipe ↑ activity", arrow: [930, 1900, 930, 1380], at: [600, 1960], does: "Raises the activity → Home[Lightning·ActivityRaised]"}
+          - {label: "← Swipe → pages", arrow: [380, 1100, 700, 1100], at: [330, 1170], does: "Right → Onchain page; left → USDT page"}
+        components:
+          - {name: Avatar, sel: "tag:avatar", does: "User picture (community isotype when none). Tap → Profile"}
+          - {name: AddressPill, sel: "tag:home-address", does: "Primary Lightning address. Tap → Receive; long-press → LightningAddresses. On other pages shows the page's wallet name"}
+          - {name: SettingsButton, sel: "tag:home-settings", does: "→ Settings"}
+          - {name: SwipeHint, sel: "tag:home-swipe-hint", does: "Two chevrons hinting the WalletDeck; fade as it opens"}
+          - {name: BalanceLabel, sel: ["text:Lightning", "text: balance"], does: "‘Lightning balance’ — the page word slides with the swipe"}
+          - {name: BalanceFigure, sel: "tag:balance-toggle", does: "Odometer figure (`balance`). Tap hides/shows; long-press → primary wallet detail. Tints green/red while a payment lands"}
+          - {name: CurrencySwitcher, sel: ["tag:currency-SAT", "tag:currency-ARS"], does: Display unit for every amount on Home}
+          - {name: PageDots, sel: "tag:home-pages", does: "Onchain · Lightning · USDT indicator; tap a dot to jump"}
+          - {name: ActivityGrabber, sel: "box:480,1268,600,1300", does: Drag handle of the activity panel}
+          - {name: DayHeader, sel: "text:Today", does: "Group label (Today, Yesterday, weekday, date)"}
+          - {name: TxRow, sel: "tag:tx-row", does: "Icon (↙ in green / ↗ out orange), description or address, relative time, signed amount. Tap → ActivityDetail"}
+          - {name: TabBar, sel: ["tag:nav-receive", "tag:nav-send"], does: "Receive · Scan · Send (see shared components); ScanButton takes the page tone"}
+      - id: 11-home-wallets
+        name: Home
+        ref: "Home[Lightning·WalletDeck]"
+        route: home
+        source: ui/screens/HomeWallets.kt
+        state: Lightning page, deck open (4 remote wallets)
+        reach: "Home[Lightning·Docked] › swipe ↓ on the balance"
+        summary: "Remote wallets fan out above the balance; the balance moves down and is relabelled ‘Primary balance’. A total sums every live wallet. Balances are polled every 10 s while open."
+        gestures:
+          - {label: "Swipe ↑ / Back closes", arrow: [940, 1600, 940, 1300], at: [560, 1360], does: Closes the deck back to Docked}
+          - {label: "Tap = make primary · Hold = menu", does: "On a WalletCard (see WalletActionSheet)"}
+        components:
+          - {name: DeckTitle, sel: "text:Remote wallets", does: "Tap → RemoteWallets (manage list)"}
+          - {name: AddWalletButton, sel: "tag:home-wallets-add", does: "→ AddRemoteWallet"}
+          - {name: WalletCard (paused), sel: "tag:home-wallet-Old phone wallet", does: "DISABLED wallet: ‘Paused’ subtitle, balance shown as —"}
+          - {name: WalletCard, sel: "tag:home-wallet-Alby Hub", does: "Name, kind (NWC / LNCurl), live balance (`home-wallet-balance-<name>`)"}
+          - {name: WalletCard (primary), sel: "tag:home-wallet-LaWallet", does: "The default wallet — the one Home's balance and activity show"}
+          - {name: DeckTotal, sel: "tag:home-wallets-total", does: Sum of all wallet balances}
+          - {name: PrimaryBalance, sel: "tag:balance-toggle", does: "The primary wallet's balance, now at the bottom"}
+      - id: 12-home-wallet-menu
+        name: WalletActionSheet
+        ref: "Home[Lightning·WalletDeck] › WalletActionSheet"
+        route: home
+        source: ui/screens/HomeWallets.kt
+        state: Sheet over the deck
+        reach: Long-press a WalletCard
+        summary: ActionSheet for one remote wallet. Tapping outside or Back closes it.
+        components:
+          - {name: SheetHeader, sel: ["text:Alby Hub", "text:NWC · 1,250,000"], does: "Wallet name, kind and balance"}
+          - {name: SeeDetailsAction, sel: "text:See details", does: "→ RemoteWalletDetail"}
+          - {name: RenameAction, sel: "text:Rename", does: Rename dialog}
+          - {name: TransferAction, sel: "text:Transfer amount", does: Move a chosen amount to another wallet}
+          - {name: SweepAction, sel: "text:Sweep funds", does: "Pick a destination wallet → Sweep (moves everything)"}
+          - {name: DeleteAction, sel: "text:Delete wallet", does: "Destructive (red). A wallet with funds is swept first"}
+      - id: 14-home-activity-raised
+        name: Home
+        ref: "Home[Lightning·ActivityRaised]"
+        route: home
+        source: ui/screens/HomeActivitySheet.kt, ActivitySearch.kt
+        state: Activity raised, no filters
+        reach: "Home[Lightning·Docked] › swipe ↑ on the activity"
+        summary: "The activity takes the whole screen with an ‘Activity’ title. The TabBar is swapped (1:1 with the drag) for the ActivitySearch field and Filters button. Scrolling to the end loads older pages (`list_transactions` with `until`)."
+        gestures:
+          - {label: "Swipe ↓ / Back docks", arrow: [540, 250, 540, 420], at: [580, 330], does: "Back to Home[Lightning·Docked]"}
+        components:
+          - {name: Grabber, sel: "box:480,80,600,110", does: Drag handle}
+          - {name: ActivityTitle, sel: "text:Activity", does: Pinned title while raised}
+          - {name: DayHeader, sel: "text:Yesterday", does: Day group}
+          - {name: TxRow (received), sel: "tag:tx-row#1", does: "Incoming: green ↙ and +amount"}
+          - {name: TxRow (sent), sel: "tag:tx-row#2", does: "Outgoing: orange ↗ and −amount; a Lightning address as title when that's what was paid"}
+          - {name: TxRow (pending), sel: "tag:tx-row#8", does: "‘Pending’ instead of time; faded"}
+          - {name: ActivitySearch, sel: "tag:activity-search", does: Filters rows by description/address as you type}
+          - {name: FiltersButton, sel: "tag:activity-filters", does: "Opens ActivityFilters; a dot marks active filters"}
+      - id: 15-activity-filters
+        name: ActivityFilters
+        ref: "Home[ActivityRaised] › ActivityFilters"
+        route: home
+        source: ui/screens/ActivitySearch.kt
+        state: Filters popover open, none active
+        reach: "Home[ActivityRaised] › FiltersButton"
+        summary: Glass popover above the search bar.
+        components:
+          - {name: SentChip, sel: "tag:filter-sent", does: Only outgoing}
+          - {name: ReceivedChip, sel: "tag:filter-received", does: Only incoming}
+          - {name: AmountToggle, sel: "tag:filter-amount", does: Enables an amount range}
+          - {name: FiltersButton, sel: "tag:activity-filters", does: Closes the popover}
+      - id: 16-activity-filter-received
+        name: ActivityFilters
+        ref: "Home[ActivityRaised·Filtered]"
+        route: home
+        source: ui/screens/ActivitySearch.kt
+        state: "‘Received’ filter active"
+        reach: "ActivityFilters › ReceivedChip"
+        summary: "Active chip is filled green; a Clear link appears; the FiltersButton gets a dot. The list shows only incoming payments."
+        components:
+          - {name: ReceivedChip (active), sel: "tag:filter-received", does: Active state}
+          - {name: ClearLink, sel: "text:Clear", does: Resets every filter}
+          - {name: FilteredList, sel: "tag:tx-row#1", does: Only matching rows}
+          - {name: FiltersButton (active dot), sel: "tag:activity-filters", does: Dot = filters on}
+      - id: 17-activity-search
+        name: ActivitySearch
+        ref: "Home[ActivityRaised·Searching]"
+        route: home
+        source: ui/screens/ActivitySearch.kt
+        state: "Query ‘coffee’, keyboard closed"
+        reach: "Home[ActivityRaised] › ActivitySearch, type"
+        summary: "Matching rows only, then an end-of-list marker."
+        components:
+          - {name: ResultRow, sel: "tag:tx-row", does: Matching transaction}
+          - {name: EndMarker, sel: "text:reached the end", does: No more pages}
+          - {name: SearchField, sel: "tag:activity-search", does: Current query}
+          - {name: ClearSearch, sel: "desc:Clear search", does: Clears the query}
+      - id: 20-home-onchain
+        name: Home
+        ref: "Home[Onchain·Docked]"
+        route: home
+        source: ui/screens/HomeOnchain.kt
+        state: Onchain page, one local wallet, balance ‘Soon’
+        reach: "Home › swipe → (from Lightning)"
+        summary: "Same layout as Lightning with an orange Bitcoin tone and ₿ watermark. Onchain sending/receiving is not wired yet (`ONCHAIN_SOON`): the figure reads ‘Soon’ and Receive/Send toast ‘coming soon’."
+        gestures:
+          - {label: "Swipe ← Lightning", arrow: [900, 1600, 560, 1600], at: [560, 1680], does: "Back to Home[Lightning]"}
+        components:
+          - {name: AddressPill, sel: "tag:home-address", does: "Primary onchain wallet name with ₿ icon"}
+          - {name: BalanceFigure, sel: "tag:onchain-soon", does: "‘Soon’ placeholder"}
+          - {name: PageDots, sel: "tag:home-pages", does: First dot active (orange)}
+          - {name: OnchainActivity, sel: "text:No onchain transactions yet", does: Empty activity card}
+          - {name: TabBar, sel: ["tag:nav-receive", "tag:nav-send"], does: "Orange ScanButton; Receive/Send show a ‘soon’ toast"}
+      - id: 21-home-onchain-wallets
+        name: Home
+        ref: "Home[Onchain·WalletDeck]"
+        route: home
+        source: ui/screens/HomeOnchain.kt, HomeWallets.kt
+        state: Deck open, one wallet
+        reach: "Home[Onchain·Docked] › swipe ↓"
+        summary: Onchain wallets are local (BIP-39 seed on the device). Hold a card for its menu (See details, Rename).
+        components:
+          - {name: DeckTitle, sel: "text:Onchain wallets", does: Section title}
+          - {name: AddWalletButton, sel: "tag:onchain-wallets-add", does: "→ AddOnchainWallet (create / import)"}
+          - {name: OnchainWalletCard, sel: "tag:onchain-wallet-Cold storage", does: "Name, script type, balance; tap = primary, hold = menu"}
+          - {name: PrimaryBalance, sel: "tag:onchain-balance-toggle", does: "‘Soon’"}
+      - id: 27-home-onchain-raised
+        name: Home
+        ref: "Home[Onchain·ActivityRaised]"
+        route: home
+        source: ui/screens/HomeOnchain.kt
+        state: Activity raised, empty
+        reach: "Home[Onchain·Docked] › swipe ↑"
+        summary: Same raise gesture as Lightning, but no search bar — the TabBar stays.
+        components:
+          - {name: ActivityTitle, sel: "text:Activity", does: Title}
+          - {name: EmptyState, sel: "text:No onchain transactions yet", does: Empty card}
+      - id: 22-home-usdt
+        name: Home
+        ref: "Home[USDT·Docked]"
+        route: home
+        source: ui/screens/HomeUsdt.kt
+        state: USDT page (upcoming asset)
+        reach: "Home › swipe ← (from Lightning)"
+        summary: Teal Tether tone. Placeholder for an upcoming asset; everything reads ‘Soon’.
+        components:
+          - {name: AddressPill, sel: "tag:home-address", does: "‘USDT’; tap toasts ‘soon’"}
+          - {name: BalanceFigure, sel: "tag:usdt-soon", does: "‘Soon’"}
+          - {name: UsdtPromo, sel: "text:Digital dollars with USDT", does: "Teaser row with a ‘Soon’ chip"}
+          - {name: UsdtActivity, sel: "text:Your USDT activity", does: Empty activity}
+      - id: 23-home-usdt-wallets
+        name: Home
+        ref: "Home[USDT·WalletDeck]"
+        route: home
+        source: ui/screens/HomeUsdt.kt
+        state: Deck open, empty
+        reach: "Home[USDT·Docked] › swipe ↓ (or arrive with the deck already open)"
+        summary: Empty deck state.
+        components:
+          - {name: DeckTitle, sel: "text:USDT wallets", does: Title}
+          - {name: AddWalletButton, sel: "tag:usdt-wallets-add", does: Disabled for now}
+          - {name: EmptyDeck, sel: "text:No USDT wallets yet", does: Empty state with icon}
+      - id: 28-home-usdt-raised
+        name: Home
+        ref: "Home[USDT·ActivityRaised]"
+        route: home
+        source: ui/screens/HomeUsdt.kt
+        state: Activity raised, empty
+        reach: "Home[USDT·Docked] › swipe ↑"
+        summary: Same as Onchain raised, teal tone.
+        components:
+          - {name: EmptyState, sel: "text:Your USDT activity", does: Empty card}
+      - id: 24-home-usd
+        name: Home
+        ref: "Home[Lightning·Docked·USD]"
+        route: home
+        source: ui/screens/Home.kt
+        state: CurrencySwitcher on USD
+        reach: CurrencySwitcher › USD
+        summary: "The figure converts with Yadio rates; all amounts on Home follow the selected unit."
+        components:
+          - {name: BalanceFigure (USD), sel: "tag:balance", does: Fiat value}
+          - {name: CurrencySwitcher, sel: "tag:currency-USD", does: Selected segment}
+      - id: 25-home-hidden
+        name: Home
+        ref: "Home[Lightning·Docked·Hidden]"
+        route: home
+        source: ui/screens/Home.kt
+        state: Balance hidden
+        reach: Tap BalanceFigure
+        summary: "Figure masked as •••••. Showing it again may ask for the device lock when Settings › Locking › Sensitive data is on."
+        components:
+          - {name: BalanceFigure (hidden), sel: "tag:balance", does: Masked; tap to reveal}
+      - id: 26-payment-notice
+        name: PaymentNotice
+        ref: "PaymentNotice (over Settings)"
+        route: any
+        source: ui/AppNav.kt (PaymentNoticePill)
+        state: Incoming payment just arrived
+        reach: "An NWC `payment_received` notification (debug: `--es devPayment incoming`)"
+        summary: Shared top pill announcing a payment for ~2.7 s. On Home·Lightning the balance odometer + colour cue replace it.
+        components:
+          - {name: PaymentNotice, sel: "tag:payment-notice", does: "‘Received +5,000 sats’ (or ‘Sent −…’)"}
+
+  - title: Activity
+    screens:
+      - id: 18-activity-detail
+        name: ActivityDetail
+        ref: ActivityDetail
+        route: "activity/{hash}"
+        source: ui/screens/Activity.kt
+        state: Sent payment, proof collapsed
+        reach: Tap any TxRow
+        summary: "Receipt for one payment (shared Receipt layout). Calls `lookup_invoice` to refresh state."
+        components:
+          - {name: CloseButton, sel: "tag:header-back", does: Back to where it was opened}
+          - {name: ReceiptTitle, sel: "text:Payment sent", does: "Sent / Received / Pending / Failed"}
+          - {name: ReceiptAmount, sel: "tag:receipt-amount", does: Amount in the selected unit}
+          - {name: CurrencySwitcher, sel: ["tag:currency-SAT", "tag:currency-ARS"], does: Unit for this receipt only}
+          - {name: RecipientChip, sel: "tag:recipient-chip", does: "Lightning address paid; tap = ‘Send again’ (new send to it)"}
+          - {name: DetailRows, sel: ["text:Network fee", "text:Nov 13, 2026"], does: "Fee, note, time"}
+          - {name: ProofToggle, sel: "tag:proof-toggle", does: "Display / Hide proof (payment hash, preimage)"}
+          - {name: ShareTextButton, sel: "tag:share-text", does: Share as text}
+          - {name: ShareImageButton, sel: "tag:share-image", does: "Share the receipt as an image (controls hidden in the image)"}
+          - {name: DoneButton, sel: "tag:done", does: Close}
+      - id: 19-activity-detail-proof
+        name: ActivityDetail
+        ref: "ActivityDetail[ProofOpen]"
+        route: "activity/{hash}"
+        source: ui/screens/Activity.kt
+        state: Proof expanded (content scrolls)
+        reach: ActivityDetail › ProofToggle
+        summary: The receipt scrolls up and a Payment proof card appears with copy buttons.
+        components:
+          - {name: ProofToggle (open), sel: "tag:proof-toggle", does: "‘Hide proof’"}
+          - {name: ProofCard, sel: ["text:Payment proof", "text:Payment hash"], does: "Payment hash and preimage, each with a copy button"}
+
+  - title: Send
+    screens:
+      - id: 70-send-recipient
+        name: Send
+        ref: "Send[Recipient]"
+        route: send
+        source: ui/screens/Send.kt
+        state: Empty input, saved contacts
+        reach: TabBar › Send
+        summary: "Type or paste a Lightning address, LNURL, invoice or wallet. Recent recipients are listed under Saved."
+        components:
+          - {name: CloseButton, sel: "tag:header-back", does: Back}
+          - {name: RecipientField, sel: "tag:recipient-input", does: Autofocused destination input}
+          - {name: PasteButton, sel: "tag:recipient-paste", does: Paste from clipboard}
+          - {name: ScanButton, sel: "box:923,403,1049,529", does: "→ Scan"}
+          - {name: SavedList, sel: ["text:Saved", "text:dave@lawallet.test"], does: "Recent recipients (`prefs.contacts`); tap = pay"}
+          - {name: ContinueButton, sel: "tag:recipient-continue", does: "Resolves the destination → Amount or Preview"}
+      - id: 71-send-recipient-typing
+        name: Send
+        ref: "Send[Recipient·Typing]"
+        route: send
+        source: ui/screens/Send.kt
+        state: "Typed ‘ali’"
+        reach: Type a username
+        summary: Suggestions complete the username with known domains.
+        components:
+          - {name: Suggestions, sel: ["text:Suggestions", "text:ali@walletofsatoshi.com"], does: "user@domain completions; tap = pick"}
+      - id: 72-send-amount
+        name: Send
+        ref: "Send[Amount]"
+        route: send/amount
+        source: ui/screens/Send.kt
+        state: Amountless invoice, 0 entered
+        reach: Recipient without a fixed amount
+        summary: Keypad amount entry with the destination on top and the available balance below.
+        components:
+          - {name: DestinationHeader, sel: ["text:Lightning invoice", "text:Lunch at La Crypta"], does: "Kind of destination + its label"}
+          - {name: AmountFigure, sel: "tag:amount-value", does: Typed amount}
+          - {name: CurrencySwitcher, sel: ["tag:currency-SAT", "tag:currency-ARS"], does: Type in sats or fiat}
+          - {name: AvailableBalance, sel: "text:Available:", does: Wallet balance}
+          - {name: MaxChip, sel: "tag:amount-max", does: Fills the whole balance}
+          - {name: Keypad, sel: ["tag:key-1", "tag:key-backspace"], does: Digits + delete}
+          - {name: ContinueButton, sel: "tag:amount-continue", does: "→ Preview (disabled at 0)"}
+      - id: 73-send-amount-filled
+        name: Send
+        ref: "Send[Amount·Filled]"
+        route: send/amount
+        source: ui/screens/Send.kt
+        state: 2,500 sats entered
+        reach: Keypad input
+        summary: Continue becomes active.
+        components:
+          - {name: AmountFigure, sel: "tag:amount-value", does: "2,500"}
+          - {name: ContinueButton, sel: "tag:amount-continue", does: Enabled}
+      - id: 74-send-preview
+        name: Send
+        ref: "Send[Preview]"
+        route: send/preview
+        source: ui/screens/Send.kt
+        state: Ready to pay, slide-to-pay on
+        reach: Amount › Continue (or a fixed-amount invoice directly)
+        summary: Final check before paying. Slide to pay can be swapped for a Confirm button in Settings › Payments.
+        components:
+          - {name: SendingAmount, sel: "tag:preview-amount", does: Amount to send}
+          - {name: DetailsCard, sel: ["text:Description", "text:Lightning invoice"], does: "Description, destination type"}
+          - {name: QuoteCard, sel: ["text:Quote", "text:2,500 sats + fee"], does: "Amount, network fee, total"}
+          - {name: SlideToPay, sel: "tag:swipe", does: "Drag the knob right to pay (`pay_invoice`)"}
+      - id: 75-send-summary
+        name: Send
+        ref: "Send[Summary]"
+        route: send/summary
+        source: ui/screens/Send.kt
+        state: Payment sent
+        reach: After a successful payment
+        summary: Shared Receipt.
+        components:
+          - {name: ReceiptTitle, sel: "text:Payment sent", does: Result}
+          - {name: ReceiptAmount, sel: "tag:receipt-amount", does: Amount}
+          - {name: DetailRows, sel: ["text:To", "text:Nov 14, 2026"], does: "To, fee, time"}
+          - {name: ProofToggle, sel: "tag:proof-toggle", does: Proof}
+          - {name: ShareButtons, sel: ["tag:share-text", "tag:share-image"], does: Share}
+          - {name: DoneButton, sel: "tag:done", does: "→ Home"}
+
+  - title: Receive
+    screens:
+      - id: 80-receive
+        name: Receive
+        ref: "Receive[Address]"
+        route: receive
+        source: ui/screens/Receive.kt
+        state: Static Lightning address
+        reach: TabBar › Receive, or Home › AddressPill
+        summary: "QR of the primary Lightning address; payers choose the amount."
+        components:
+          - {name: CloseButton, sel: "tag:header-back", does: Back}
+          - {name: AddressLabel, sel: "tag:receive-address", does: Primary address}
+          - {name: AddressQr, sel: "tag:qr", does: "QR (white card)"}
+          - {name: CopyButton, sel: "text:Copy", does: Copy address}
+          - {name: ShareButton, sel: "text:Share", does: System share}
+          - {name: RequestAmountButton, sel: "tag:request-amount", does: "→ Receive[Amount]"}
+      - id: 81-receive-amount
+        name: Receive
+        ref: "Receive[Amount]"
+        route: receive/amount
+        source: ui/screens/Receive.kt
+        state: 1,000 sats entered
+        reach: Receive › RequestAmountButton
+        summary: Keypad + optional note for the invoice description.
+        components:
+          - {name: AmountFigure, sel: "tag:amount-value", does: Requested amount}
+          - {name: CurrencySwitcher, sel: ["tag:currency-SAT", "tag:currency-ARS"], does: Unit}
+          - {name: NoteField, sel: "text:Add a note", does: Invoice description}
+          - {name: ContinueButton, sel: "tag:receive-continue", does: "`make_invoice` → Receive[Invoice]"}
+      - id: 82-receive-invoice
+        name: Receive
+        ref: "Receive[Invoice]"
+        route: receive/invoice
+        source: ui/screens/Receive.kt
+        state: Waiting for payment
+        reach: Receive[Amount] › Continue
+        summary: "Invoice QR. Listens for the payment (NWC notification) and also offers NFC: a LaWallet card tapped on the phone pays it."
+        components:
+          - {name: InvoiceAmount, sel: "text:1,000", does: Amount}
+          - {name: InvoiceQr, sel: "tag:qr", does: bolt11 QR}
+          - {name: CopyButton, sel: "text:Copy", does: Copy invoice}
+          - {name: ShareButton, sel: "text:Share", does: Share invoice}
+          - {name: WaitingStatus, sel: "text:Waiting for payment", does: Live status}
+          - {name: NfcHint, sel: "text:NFC unavailable", does: "NFC card-charge hint (here: unavailable on the emulator)"}
+      - id: 83-receive-summary
+        name: Receive
+        ref: "Receive[Summary]"
+        route: receive/summary
+        source: ui/screens/Receive.kt
+        state: Paid
+        reach: The invoice gets paid
+        summary: Shared Receipt with ‘Payment received’.
+        components:
+          - {name: ReceiptTitle, sel: "text:Payment received", does: Result}
+          - {name: ReceiptAmount, sel: "tag:receipt-amount", does: Amount}
+          - {name: DoneButton, sel: "tag:done", does: "→ Home"}
+
+  - title: Scan & addresses
+    screens:
+      - id: 90-scan
+        name: Scan
+        ref: Scan
+        route: scan
+        source: ui/screens/Scan.kt
+        state: Camera preview (emulator scene is dark)
+        reach: TabBar › ScanButton
+        summary: "Scans invoices, addresses, LNURL (pay / withdraw), card activation links; routes each through ScanRouter."
+        components:
+          - {name: CloseButton, sel: "tag:header-back", does: Back}
+          - {name: Viewfinder, sel: "box:140,500,940,1300", does: Camera preview area}
+          - {name: Hint, sel: "text:Point your camera", does: Instructions}
+          - {name: PasteButton, sel: "text:Paste from clipboard", does: Use clipboard content instead}
+      - id: 61-addresses
+        name: LightningAddresses
+        ref: LightningAddresses
+        route: addresses
+        source: ui/screens/LightningAddresses.kt
+        state: 4 addresses (primary, wallet-routed, alias, idle)
+        reach: Home › AddressPill (long-press)
+        summary: "Hero card for the primary address, then every address with where it receives."
+        components:
+          - {name: AddressHero, sel: "tag:addresses-hero", does: Primary address (shared-element target of the pill)}
+          - {name: CopyButton, sel: "tag:addresses-copy", does: Copy primary}
+          - {name: AddressRow (primary), sel: "tag:address-satoshi", does: "‘Receives into LaWallet’ + Primary chip"}
+          - {name: AddressRow (wallet), sel: "tag:address-shop", does: "CUSTOM_NWC: receives into a chosen wallet"}
+          - {name: AddressRow (alias), sel: "tag:address-tips", does: "ALIAS: forwards to another address"}
+          - {name: AddressRow (idle), sel: "tag:address-old", does: "IDLE: not receiving (orange subtitle)"}
+          - {name: AddAddressButton, sel: "tag:addresses-add", does: "→ ClaimUsername"}
+      - id: 63-address-menu
+        name: AddressActionSheet
+        ref: "LightningAddresses › AddressActionSheet"
+        route: addresses
+        source: ui/screens/LightningAddresses.kt
+        state: Sheet for shop@
+        reach: Tap an AddressRow
+        summary: ActionSheet for one address.
+        components:
+          - {name: SheetHeader, sel: ["text:shop", "text:@lawallet.test"], does: Address + copy}
+          - {name: MakePrimaryAction, sel: "text:Make primary", does: Sets the primary address}
+          - {name: ReceiveIntoAction, sel: "text:Receive into", does: Pick the wallet it pays into}
+          - {name: RedirectAction, sel: "text:Redirect to an address", does: Turn into an alias}
+          - {name: DeleteAction, sel: "text:Delete address", does: Destructive}
+      - id: 91-claim-username
+        name: ClaimUsername
+        ref: ClaimUsername
+        route: "claim-username?from={from}&bonus={bonus}"
+        source: ui/screens/Claim.kt
+        state: Empty
+        reach: LightningAddresses › AddAddressButton (also after card activation)
+        summary: Claim a new address on the instance domain; may require a registration invoice.
+        components:
+          - {name: UsernameField, sel: "tag:username-input", does: "Username with the `@domain` suffix inside the field"}
+          - {name: Rules, sel: "text:Lowercase letters", does: Validation hint}
+          - {name: ClaimButton, sel: "tag:claim-submit", does: Claim}
+      - id: 92-claim-username-filled
+        name: ClaimUsername
+        ref: "ClaimUsername[Available]"
+        route: claim-username
+        source: ui/screens/Claim.kt
+        state: "‘nakamoto’ available"
+        reach: Type a username
+        summary: Live availability check (`/api/lightning-addresses/check`).
+        components:
+          - {name: UsernameField, sel: "tag:username-input", does: Typed username}
+          - {name: Availability, sel: "text:Available", does: "Available / Taken"}
+
+  - title: Profile
+    screens:
+      - id: 60-profile
+        name: Profile
+        ref: Profile
+        route: profile
+        source: ui/screens/Profile.kt
+        state: View mode (no Nostr metadata on public relays for the dummy key)
+        reach: Home › Avatar
+        summary: Nostr profile (kind 0) with cover, avatar, name, address and npub.
+        components:
+          - {name: Cover, sel: "tag:profile-cover", does: Banner image}
+          - {name: BackButton, sel: "tag:profile-back", does: Back}
+          - {name: ProfileAvatar, sel: "tag:profile-avatar", does: Avatar (shared element from Home)}
+          - {name: EditButton, sel: "tag:profile-edit", does: "→ Profile[Edit]"}
+          - {name: DisplayName, sel: "tag:profile-name", does: "Name (falls back to the username)"}
+          - {name: AddressRow, sel: "text:satoshi@lawallet.test", does: Tap to copy}
+          - {name: NpubRow, sel: "text:npub1", does: Tap to copy}
+          - {name: LogoutButton, sel: "tag:profile-logout", does: Log out}
+      - id: 62-profile-edit
+        name: Profile
+        ref: "Profile[Edit]"
+        route: profile
+        source: ui/screens/Profile.kt
+        state: Edit mode with draft values (not saved)
+        reach: Profile › EditButton
+        summary: "Inline edit. Save publishes a new kind-0 to public relays; Cancel discards."
+        components:
+          - {name: ChangeCover, sel: "text:Change cover", does: Pick + crop a cover}
+          - {name: CancelButton, sel: "tag:profile-back", does: Discard}
+          - {name: ChangePhoto, sel: "tag:profile-avatar", does: Pick + crop avatar (Blossom upload)}
+          - {name: SaveButton, sel: "tag:profile-save", does: Publish}
+          - {name: DisplayNameField, sel: "tag:profile-displayName", does: Display name}
+          - {name: UsernameField, sel: "tag:profile-username", does: Name}
+          - {name: AboutField, sel: "tag:profile-aboutField", does: "Bio with 0/500 counter"}
+
+  - title: Settings
+    screens:
+      - id: 30-settings
+        name: Settings
+        ref: Settings
+        route: settings
+        source: ui/screens/Settings.kt
+        state: Top of the list
+        reach: Home › SettingsButton
+        summary: "Grouped SettingsRows (Account, Preferences, Support, Danger Zone). Settings is a tab screen: the TabBar stays."
+        components:
+          - {name: BackButton, sel: "tag:header-back", does: Back}
+          - {name: LanguagePicker, sel: "tag:settings-language", does: "Automatic / English / Español"}
+          - {name: CardsRow, sel: "tag:settings-cards", does: "→ Cards"}
+          - {name: SecurityRow, sel: "tag:settings-security", does: "→ Security"}
+          - {name: LockingRow, sel: "tag:settings-locking", does: "→ Locking"}
+          - {name: PaymentsRow, sel: "tag:settings-payments", does: "→ Payments"}
+          - {name: BackgroundNotificationsToggle, sel: "box:864,1317,1001,1443", does: Foreground payment listener service}
+          - {name: InstanceRow, sel: "tag:settings-instance", does: "→ Instance (shows host)"}
+          - {name: FeedbackRow, sel: "tag:settings-feedback", does: "→ Feedback"}
+          - {name: TabBar, sel: ["tag:nav-receive", "tag:nav-send"], does: Shared TabBar}
+      - id: 31-settings-bottom
+        name: Settings
+        ref: "Settings[Bottom]"
+        route: settings
+        source: ui/screens/Settings.kt
+        state: Scrolled to the end
+        reach: Scroll Settings
+        summary: Support rows, version footer and the Danger Zone.
+        components:
+          - {name: DiagnosticsRow, sel: "tag:settings-diagnostics", does: "→ Diagnostics"}
+          - {name: UpdatesRow, sel: "tag:settings-updates", does: "→ Updates (shows version)"}
+          - {name: VersionFooter, sel: ["text:LaWallet Demo", "text:Version 1.0.0"], does: Community + app version}
+          - {name: RemoveWalletRow, sel: "tag:settings-remove", does: "Red; opens RemoveWalletDialog"}
+      - id: 3B-settings-remove-dialog
+        name: RemoveWalletDialog
+        ref: "Settings › RemoveWalletDialog"
+        route: settings
+        source: ui/screens/Settings.kt
+        state: Dialog
+        reach: Settings › RemoveWalletRow
+        summary: The app-wide AlertDialog style.
+        components:
+          - {name: CloseButton, sel: "desc:Cancel", does: Dismiss}
+          - {name: Message, sel: "text:Remove this wallet", does: Warning copy}
+          - {name: ConfirmButton, sel: "text:Remove Wallet", does: "Logs out and clears local data"}
+      - id: 3C-settings-language
+        name: LanguagePicker
+        ref: "Settings › LanguagePicker"
+        route: settings
+        source: ui/screens/Settings.kt
+        state: Dropdown open
+        reach: Settings › LanguagePicker
+        summary: Per-app language.
+        components:
+          - {name: AutomaticOption, sel: "text:Automatic", does: Follow the system}
+          - {name: EnglishOption, sel: "text:English#2", does: English}
+          - {name: SpanishOption, sel: "text:Español", does: Spanish}
+      - id: 32-settings-cards
+        name: Cards
+        ref: Cards
+        route: settings/cards
+        source: ui/screens/Settings.kt (CardsScreen)
+        state: Two NFC cards (one disabled)
+        reach: Settings › CardsRow
+        summary: "LaWallet NTAG424 cards linked to the account."
+        components:
+          - {name: CardArt, sel: "tag:card-card-1", does: "Card design image, title, status"}
+          - {name: CardStatus, sel: "text:Active", does: "Active / Disabled"}
+          - {name: TapPaymentsToggle, sel: "box:859,1127,996,1253", does: Enable/disable paying with the card}
+          - {name: LinkWalletButton, sel: "text:Link to this wallet", does: Route the card to the default wallet}
+          - {name: DisabledCard, sel: "tag:card-card-2", does: Disabled card}
+      - id: 33-settings-security
+        name: Security
+        ref: Security
+        route: settings/security
+        source: ui/screens/Settings.kt (SecurityScreen)
+        state: Private-key login, one passkey, one connected app
+        reach: Settings › SecurityRow
+        summary: "Identity, key backup, passkeys, OAuth grants and device options."
+        components:
+          - {name: PublicKeyCard, sel: "tag:npub", does: "npub; tap to copy"}
+          - {name: RoleRow, sel: "text:Role", does: Server role}
+          - {name: LoginMethodRow, sel: "text:Login method", does: How this device signs}
+          - {name: RevealSecretButton, sel: "tag:reveal-secret", does: "Shows the nsec (lock-gated)"}
+          - {name: PasskeyRow, sel: "text:Pixel 9 Pro", does: "Passkey (‘Synced’); tap for rename/delete"}
+          - {name: AddPasskeyRow, sel: "text:Add a passkey", does: Registers a passkey}
+          - {name: ConnectedAppRow, sel: ["text:Nostr POS", "text:Revoke"], does: "OAuth grant with spend limit; Revoke"}
+      - id: 34-settings-locking
+        name: Locking
+        ref: Locking
+        route: settings/locking
+        source: ui/screens/Locking.kt
+        state: All off
+        reach: Settings › LockingRow
+        summary: When to require the device lock (biometrics or screen lock).
+        components:
+          - {name: SensitiveDataToggle, sel: "tag:lock-sensitive", does: "Revealing balance, keys"}
+          - {name: StartupToggle, sel: "tag:lock-startup", does: On app start}
+          - {name: OpenToggle, sel: "tag:lock-access", does: Every time the app opens}
+          - {name: PaymentsToggle, sel: "tag:lock-payments", does: Before paying}
+      - id: 35-settings-payments
+        name: Payments
+        ref: PaymentsSettings
+        route: settings/payments
+        source: ui/screens/Settings.kt (PaymentsScreen)
+        state: Defaults
+        reach: Settings › PaymentsRow
+        summary: Payment confirmation, NFC auto-pay and payment sound.
+        components:
+          - {name: SlideToPayToggle, sel: "tag:slide-to-pay", does: "Slide vs Confirm button on Send[Preview]"}
+          - {name: NfcAutoPayToggle, sel: "tag:nfc-autopay", does: Pay small NFC-tapped invoices without asking}
+          - {name: SoundChime, sel: "tag:sound-chime", does: Short tone}
+          - {name: SoundBananero, sel: "tag:sound-bananero", does: "‘Sapeee’ sound"}
+          - {name: SoundOff, sel: "tag:sound-off", does: No sound (selected)}
+      - id: 36-settings-instance
+        name: Instance
+        ref: Instance
+        route: settings/instance
+        source: ui/screens/Settings.kt (InstanceScreen)
+        state: Pointing at the mock server
+        reach: Settings › InstanceRow
+        summary: Switch the LaWallet community server (keeps the key).
+        components:
+          - {name: CurrentRow, sel: "text:Current", does: Current URL}
+          - {name: InstanceField, sel: "tag:instance-input", does: New URL}
+          - {name: UseDefaultButton, sel: "text:Use default", does: Back to beta.lawallet.io}
+          - {name: SwitchButton, sel: "tag:instance-save", does: Validate + switch}
+      - id: 37-settings-currencies
+        name: Currency
+        ref: Currency
+        route: settings/currencies
+        source: ui/screens/Settings.kt (CurrenciesScreen)
+        state: SAT + USD + ARS active
+        reach: CurrencySwitcher (long-press) / route
+        summary: "Which units appear in every CurrencySwitcher."
+        components:
+          - {name: ActiveSat, sel: "tag:active-SAT", does: Always active}
+          - {name: ActiveCurrency, sel: "tag:active-USD", does: "Active fiat; ✕ removes (`remove-USD`)"}
+          - {name: CurrencySearch, sel: "text:Search currency", does: Filter the list}
+          - {name: AvailableCurrency, sel: "tag:add-BTC", does: "Tap to add (`add-<CODE>`)"}
+      - id: 38-settings-diagnostics
+        name: Diagnostics
+        ref: Diagnostics
+        route: settings/diagnostics
+        source: ui/screens/Diagnostics (Settings.kt)
+        state: One recorded exit
+        reach: Settings › DiagnosticsRow
+        summary: Recent app exits from Android, for bug reports.
+        components:
+          - {name: ExitRow, sel: "tag:exit-0", does: Reason + time + memory}
+          - {name: CopyReportButton, sel: "tag:diag-copy", does: Copy a scrubbed report}
+      - id: 39-settings-updates
+        name: Updates
+        ref: Updates
+        route: settings/updates
+        source: ui/screens/Settings.kt (UpdatesScreen)
+        state: Newer version available (debug build)
+        reach: Settings › UpdatesRow
+        summary: "Self-update for GitHub/Zapstore APKs; Play builds defer to Play."
+        components:
+          - {name: UpdateStatus, sel: "tag:update-status", does: Installed vs available}
+          - {name: UpdateButton, sel: "tag:update-start", does: "Download + install, or open the release page"}
+          - {name: CheckButton, sel: "tag:update-check", does: Check now}
+      - id: 3A-settings-feedback
+        name: Feedback
+        ref: Feedback
+        route: settings/feedback
+        source: ui/screens/Settings.kt (FeedbackScreen)
+        state: Empty
+        reach: Settings › FeedbackRow
+        summary: Sends feedback as a Nostr message to the team.
+        components:
+          - {name: FeedbackField, sel: "tag:feedback-input", does: Multiline text}
+          - {name: SendButton, sel: "tag:feedback-send", does: Publish}
+
+  - title: Remote wallets
+    screens:
+      - id: 50-remote-wallets
+        name: RemoteWallets
+        ref: RemoteWallets
+        route: settings/remote-wallets
+        source: ui/screens/RemoteWallets.kt
+        state: 4 wallets
+        reach: "Home[WalletDeck] › DeckTitle"
+        summary: Manage list with total balance.
+        components:
+          - {name: TotalBalance, sel: "tag:wallets-total", does: Sum + wallet count}
+          - {name: WalletRow (primary), sel: "tag:wallet-LaWallet", does: "Primary + LNCurl badges, balance"}
+          - {name: WalletRow, sel: "tag:wallet-Alby Hub", does: "Tap → RemoteWalletDetail"}
+          - {name: WalletRow (paused), sel: "tag:wallet-Old phone wallet", does: Paused}
+          - {name: AddWalletButton, sel: "tag:add-wallet", does: "→ AddRemoteWallet"}
+      - id: 51-remote-wallet-detail
+        name: RemoteWalletDetail
+        ref: RemoteWalletDetail
+        route: "settings/remote-wallets/{id}"
+        source: ui/screens/RemoteWallets.kt
+        state: Live NWC wallet with a forward plan
+        reach: RemoteWallets › WalletRow, or Home › BalanceFigure (long-press)
+        summary: "One wallet: balance, capabilities, connection string, relays, receive actions."
+        components:
+          - {name: StatusToggle, sel: "tag:wallet-status-toggle", does: "Live / Paused"}
+          - {name: WalletName, sel: "text:Alby Hub", does: Title}
+          - {name: RenameButton, sel: "tag:wallet-rename", does: Rename}
+          - {name: KindIcon, sel: "tag:wallet-kind", does: "NWC / LNCurl"}
+          - {name: WalletBalance, sel: "tag:wallet-balance", does: Balance}
+          - {name: CapabilityBadges, sel: ["desc:LUD-21", "desc:NIP-57"], does: "LUD-21 verify / NIP-57 zaps support"}
+          - {name: SetPrimaryRow, sel: "text:Set primary", does: Make default}
+          - {name: ConnectionString, sel: ["text:Connection string", "text:Copy"], does: "Masked NWC URI; Reveal / Copy"}
+          - {name: Relays, sel: "tag:wallet-relays", does: Relay chips}
+          - {name: ForwardPlan, sel: ["text:On receive", "text:Edit plan"], does: "Fee + split of incoming payments to other addresses"}
+      - id: 52-remote-wallet-detail-bottom
+        name: RemoteWalletDetail
+        ref: "RemoteWalletDetail[Bottom]"
+        route: "settings/remote-wallets/{id}"
+        source: ui/screens/RemoteWallets.kt
+        state: Scrolled down
+        reach: Scroll
+        summary: Notifications and deletion.
+        components:
+          - {name: WebhookRow, sel: ["text:Shop webhook", "text:WEBHOOK"], does: "Webhook on payment; toggle enables"}
+          - {name: AddWebhookRow, sel: "text:Add webhook", does: New webhook}
+          - {name: DeleteWalletRow, sel: "text:Delete wallet", does: Destructive}
+      - id: 53-remote-wallet-add
+        name: AddRemoteWallet
+        ref: AddRemoteWallet
+        route: settings/remote-wallets-add
+        source: ui/screens/RemoteWallets.kt
+        state: Choice
+        reach: AddWalletButton (deck or list)
+        summary: Import an existing NWC wallet or create a disposable LNCurl one.
+        components:
+          - {name: ImportNwcButton, sel: "tag:add-nwc", does: "→ ImportNwc"}
+          - {name: CreateLncurlButton, sel: "tag:add-lncurl", does: Creates a hosted LNCurl wallet}
+      - id: 54-remote-wallet-import
+        name: ImportNwc
+        ref: ImportNwc
+        route: settings/remote-wallets-add
+        source: ui/screens/RemoteWallets.kt
+        state: Empty
+        reach: AddRemoteWallet › ImportNwcButton
+        summary: Paste or scan a nostr+walletconnect URI.
+        components:
+          - {name: NwcField, sel: "tag:wallet-nwc", does: Connection URI}
+          - {name: ScanButton, sel: "tag:wallet-scan", does: Scan QR}
+          - {name: NameField, sel: "tag:wallet-name", does: Optional name}
+          - {name: MakePrimaryToggle, sel: "box:864,1957,1001,2083", does: Set as default}
+          - {name: ConnectButton, sel: "tag:wallet-connect", does: Connect}
+
+  - title: Onchain wallets
+    screens:
+      - id: 40-onchain-create
+        name: CreateOnchainWallet
+        ref: CreateOnchainWallet
+        route: onchain/create
+        source: ui/screens/Onchain.kt
+        state: Defaults (Native SegWit, 12 words)
+        reach: "Home[Onchain] › AddWalletButton › Create (gated by ONCHAIN_SOON in release UI)"
+        summary: Generates a local BIP-39 wallet.
+        components:
+          - {name: NameField, sel: "tag:onchain-name", does: Wallet name}
+          - {name: ScriptNativeSegwit, sel: "tag:script-P2WPKH", does: "BIP84, Recommended (selected)"}
+          - {name: ScriptTaproot, sel: "tag:script-P2TR", does: BIP86}
+          - {name: ScriptNested, sel: "tag:script-P2SH_P2WPKH", does: BIP49}
+          - {name: ScriptLegacy, sel: "tag:script-P2PKH", does: BIP44}
+          - {name: PhraseLengthTabs, sel: ["tag:bunker-tab-0", "tag:bunker-tab-1"], does: "12 / 24 words (tag reused from BunkerLogin)"}
+          - {name: AdvancedButton, sel: "tag:onchain-advanced", does: Passphrase / account options}
+          - {name: CreateButton, sel: "tag:onchain-create", does: "→ OnchainBackup"}
+      - id: 41-onchain-backup
+        name: OnchainBackup
+        ref: "OnchainBackup[Hidden]"
+        route: "onchain/backup/{id}"
+        source: ui/screens/Onchain.kt
+        state: Phrase hidden
+        reach: CreateOnchainWallet › CreateButton
+        summary: Blurred phrase until tapped.
+        components:
+          - {name: Warning, sel: "text:Write these words", does: Instructions}
+          - {name: RevealArea, sel: "tag:onchain-reveal", does: Tap to reveal}
+          - {name: WroteItButton, sel: "tag:onchain-written", does: "→ verify"}
+          - {name: LaterButton, sel: "tag:onchain-later", does: Skip (backup reminder stays)}
+      - id: 42-onchain-backup-revealed
+        name: OnchainBackup
+        ref: "OnchainBackup[Revealed]"
+        route: "onchain/backup/{id}"
+        source: ui/screens/Onchain.kt
+        state: Phrase visible (dummy wallet, no funds)
+        reach: Tap RevealArea
+        summary: Two-column numbered word grid.
+        components:
+          - {name: WordGrid, sel: "tag:onchain-words", does: 12 numbered words}
+      - id: 43-onchain-verify
+        name: OnchainBackup
+        ref: "OnchainBackup[Verify]"
+        route: "onchain/backup/{id}"
+        source: ui/screens/Onchain.kt
+        state: Quiz
+        reach: OnchainBackup › WroteItButton
+        summary: Pick the right word for 3 random positions.
+        components:
+          - {name: WordQuestion, sel: ["text:Word #1", "tag:verify-0-north"], does: "Three choices per position (`verify-<i>-<word>`)"}
+          - {name: DoneButton, sel: "tag:onchain-verify", does: "Confirms → Home[Onchain·WalletDeck]"}
+      - id: 45-onchain-wallet-detail
+        name: OnchainWalletDetail
+        ref: OnchainWalletDetail
+        route: "onchain/wallet/{id}"
+        source: ui/screens/Onchain.kt
+        state: Primary, empty
+        reach: "OnchainWalletCard › hold › See details"
+        summary: Balance and wallet facts.
+        components:
+          - {name: Balance, sel: "tag:onchain-wallet-balance", does: Balance + Primary chip}
+          - {name: DetailsCard, sel: ["text:Type", "text:m/84'/0'/0'"], does: "Script type, derivation path"}
+          - {name: RecoveryPhraseRow, sel: "text:Recovery phrase", does: "→ OnchainBackup"}
+          - {name: RenameRow, sel: "text:Rename", does: Rename}
+          - {name: RemoveRow, sel: "text:Remove wallet", does: Destructive}
+
+appendix:
+  - title: Not captured in this edition
+    body:
+      - ul:
+          - "Lock screen (needs a device credential on the emulator), CreateAccount / CreatePasskey / Welcome (new-account flows), EmailAuth, Activate (card activation token), Withdraw (LNURL-w), Sweep and Transfer, OnchainImport, AddOnchainWallet, Profile with real Nostr metadata, error/offline states."
+          - "To add one: capture it (see the next page) and add an entry to `guide.yaml`."
+  - title: How to update this guide
+    body:
+      - p: "Everything is in `docs/ui-guide/`: `mock/server.py` (dummy instance), `ui.py` (emulator driver), `shots/` (PNG + view hierarchy per screen), `guide.yaml` (names, states, markers, prose) and `build.py` (renders this PDF). Full instructions: `docs/ui-guide/README.md`."
+      - pre: |
+          # 1. dummy backend (LaWallet API + relay + NWC wallets) on :8787
+          docs/ui-guide/.venv/bin/python docs/ui-guide/mock/server.py
+          # 2. side-by-side app pointed at it (never touches a real install)
+          ./gradlew assembleDebug -PidSuffix=.guide && adb install -r app/build/outputs/apk/debug/app-debug.apk
+          # 3. drive + capture
+          ui.py route settings/cards ; ui.py shot 32-settings-cards ; ui.py nodes 32-settings-cards
+          # 4. edit guide.yaml (names / selectors / text) and rebuild
+          docs/ui-guide/.venv/bin/python docs/ui-guide/build.py      # WARN lines = selectors that stopped matching
+      - table:
+          - [When the app changes…, Do this]
+          - [A screen looks different, "Re-shoot it with the same id (`ui.py shot <id>`), rebuild"]
+          - [A component was renamed/moved, "Rebuild; fix the `sel:` the WARN line names (`ui.py nodes <id>` lists tags/text/bounds)"]
+          - [A new screen, "Shoot it with a new id, add an entry under the right section"]
+          - [A new state of a screen, "New id with the same name and a different `ref: Name[State]`"]
+          - [New dummy data needed, "Edit WALLETS / TXS / ADDRESSES / CARDS in `mock/server.py`, restart it, pull-to-refresh"]
