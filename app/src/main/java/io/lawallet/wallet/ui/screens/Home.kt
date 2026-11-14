@@ -1,12 +1,23 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material3.HorizontalDivider
+import io.lawallet.wallet.ui.theme.LocalHaze
+import io.lawallet.wallet.ui.theme.frosted
+import io.lawallet.wallet.ui.components.WalletMark
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.annotation.DrawableRes
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.layout.onSizeChanged
 import io.lawallet.wallet.core.api.WalletAddress
-import io.lawallet.wallet.ui.components.GroupDivider
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -583,25 +594,71 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     }
 }
 
-/** The pill's drop-down: every address (its face, what it does, a check on the one shown), then "Add address". */
+/** What an address does, for its mark: receives into an NWC or LNCurl wallet, forwards elsewhere, or nothing (unlinked). */
+internal enum class AddressKind { NWC, LNCURL, FORWARD, IDLE }
+
+/** [wallets] null (not loaded yet) trusts the routing; loaded, a wallet that isn't active there (archived) counts as unlinked. */
+internal fun addressKind(a: WalletAddress, wallets: List<RemoteWallet>?): AddressKind = when (a.mode) {
+    "ALIAS", "PROXY_ALIAS" -> AddressKind.FORWARD
+    "CUSTOM_NWC" -> when {
+        wallets == null -> AddressKind.NWC
+        else -> wallets.find { it.id == a.remoteWalletId && it.status == "ACTIVE" }?.let { if (it.provider == "lncurl") AddressKind.LNCURL else AddressKind.NWC } ?: AddressKind.IDLE
+    }
+    else -> AddressKind.IDLE
+}
+
+@Composable
+private fun AddressKindMark(kind: AddressKind) {
+    val tint = when (kind) { AddressKind.NWC -> Lw.NwcPurple; AddressKind.LNCURL -> Lw.LncurlGreen; AddressKind.FORWARD -> Lw.Lightning; AddressKind.IDLE -> Lw.Gold }
+    Box(Modifier.size(36.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+        when (kind) {
+            AddressKind.NWC, AddressKind.LNCURL -> WalletMark(kind == AddressKind.LNCURL, 18.dp)
+            AddressKind.FORWARD -> LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = tint)
+            AddressKind.IDLE -> LwIcon(L.drawable.lucide_ic_link_2_off, size = 18.dp, tint = tint)
+        }
+    }
+}
+
+/**
+ * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
+ * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown, then "Add address".
+ */
 @Composable
 private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, width: Dp, onPick: (Int) -> Unit, onAdd: () -> Unit) {
     val c = LocalContainer.current
     val brand = LocalBrand.current
+    val haze = LocalHaze.current
     val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
-    DropdownMenu(
-        open, onDismiss, Modifier.width(width).heightIn(max = 560.dp).testTag("address-picker"),
-        offset = DpOffset(0.dp, 8.dp), containerColor = Glass.Dialog, shape = RoundedCornerShape(22.dp),
-    ) {
-        list.forEachIndexed { i, a ->
-            val full = "${a.username}@$domain"
-            DropdownMenuItem(
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(c.avatars.of(full), null, Modifier.size(32.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                        Spacer(Modifier.width(10.dp))
+    val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
+    val shown = remember { MutableTransitionState(false) }
+    shown.targetState = open
+    if (!shown.currentState && !shown.targetState) return
+    val shape = RoundedCornerShape(24.dp)
+    val gap = with(LocalDensity.current) { (44.dp + 8.dp).roundToPx() }
+    Popup(Alignment.TopCenter, IntOffset(0, gap), onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+        AnimatedVisibility(
+            shown,
+            enter = expandVertically(spring(0.86f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top) + fadeIn(tween(180)) +
+                scaleIn(spring(0.86f, Spring.StiffnessMediumLow), initialScale = 0.94f, transformOrigin = TransformOrigin(0.5f, 0f)),
+            exit = shrinkVertically(tween(200, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(160)) +
+                scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
+        ) {
+            Column(
+                Modifier.width(width).heightIn(max = 560.dp).frosted(haze, shape).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+            ) {
+                list.forEachIndexed { i, a ->
+                    val sel = a.username == current
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onPick(i) }.padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-${a.username}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AddressKindMark(addressKind(a, wallets))
+                        Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Txt(full, size = 15.sp, weight = if (a.username == current) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+                            Row {
+                                Txt(a.username, Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = if (sel) Lw.Foreground else Lw.Foreground.copy(alpha = 0.85f))
+                                Txt("@$domain", size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.5f), maxLines = 1)
+                            }
                             Txt(
                                 listOfNotNull(
                                     primaryLabel.takeIf { a.isPrimary },
@@ -611,23 +668,25 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                                         else -> stringResource(R.string.addresses_notReceiving)
                                     },
                                 ).joinToString(" · "),
-                                size = 12.sp, color = if (a.mode == "IDLE") Lw.Orange else Lw.MutedFg, maxLines = 1,
+                                size = 12.sp, color = Lw.MutedFg, maxLines = 1,
                             )
                         }
+                        if (sel) { Spacer(Modifier.width(8.dp)); LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) }
                     }
-                },
-                onClick = { onPick(i) },
-                trailingIcon = { if (a.username == current) LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) },
-                modifier = Modifier.testTag("address-picker-${a.username}"),
-            )
+                }
+                HorizontalDivider(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = Color.White.copy(alpha = 0.08f))
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-add"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(brand.t400.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                        LwIcon(L.drawable.lucide_ic_plus, size = 18.dp, tint = brand.t400)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Txt(stringResource(R.string.addresses_add), size = 16.sp, weight = FontWeight.SemiBold)
+                }
+            }
         }
-        GroupDivider()
-        DropdownMenuItem(
-            text = { Txt(stringResource(R.string.addresses_add), size = 15.sp, weight = FontWeight.Medium) },
-            onClick = onAdd,
-            leadingIcon = { Box(Modifier.size(32.dp).glass(CircleShape, GlassLevel.Thin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_plus, size = 16.dp, tint = brand.t400) } },
-            modifier = Modifier.testTag("address-picker-add"),
-        )
     }
 }
 
@@ -847,7 +906,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val picked = addressList.find { it.username == selectedAddress && !it.isPrimary }
     val forwardTo = picked?.takeIf { it.mode == "ALIAS" || it.mode == "PROXY_ALIAS" }?.redirect
     val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
-    val unlinked = picked != null && forwardTo == null && wallets?.none { it.id == shownWallet && it.status == "ACTIVE" } == true
+    val unlinked = picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
     val detached = forwardTo != null || unlinked
     val linkPicked: (RemoteWallet) -> Unit = { w ->
         picked?.let { a ->
