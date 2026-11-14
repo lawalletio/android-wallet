@@ -634,11 +634,12 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
     val brand = LocalBrand.current
     val haze = LocalHaze.current
     val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
-    val wallets = remember(open) { if (open) c.prefs.cached("remote-wallets", remoteWalletsSer) else null }
+    // Re-read on open and kept through the closing animation (dropping it there flashed LNCurl marks as NWC).
+    val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
     BackHandler(open, onDismiss)
     // Taps outside close it; the catcher takes them so nothing underneath reacts.
     AnimatedVisibility(open, Modifier.matchParentSize(), enter = fadeIn(tween(180)), exit = fadeOut(tween(160))) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)).clickable(interactionSource = null, indication = null, onClick = onDismiss).testTag("address-picker-scrim"))
     }
     val shape = RoundedCornerShape(24.dp)
     // Under the pill: the header row's 12dp top + 44dp pill + a gap; inset like the pill (avatar and settings beside it).
@@ -651,7 +652,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
             scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
     ) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape).background(Lw.Background.copy(alpha = 0.62f)).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
