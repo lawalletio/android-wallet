@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.app.domainAvatar
+import io.lawallet.wallet.ui.components.BadgedAvatar
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.animation.core.MutableTransitionState
@@ -653,23 +655,23 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val kind = addressKind(a, wallets)
-                        AddressKindMark(kind)
+                        // An alias wears its destination's domain brand, badged with the forward arrow.
+                        if (kind == AddressKind.FORWARD && a.redirect != null) BadgedAvatar(domainAvatar(a.redirect.substringAfter('@')), L.drawable.lucide_ic_forward, Lw.Lightning, 36.dp)
+                        else AddressKindMark(kind)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Row {
                                 Txt(a.username, Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = if (sel) Lw.Foreground else Lw.Foreground.copy(alpha = 0.85f))
                                 Txt("@$domain", size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.5f), maxLines = 1)
+                                if (a.isPrimary) { Spacer(Modifier.width(6.dp)); LwIcon(L.drawable.lucide_ic_star, size = 14.dp, tint = Lw.Gold, contentDescription = primaryLabel, modifier = Modifier.align(Alignment.CenterVertically)) }
                             }
                             Txt(
-                                listOfNotNull(
-                                    primaryLabel.takeIf { a.isPrimary },
-                                    // The mark already says what kind it is: just where payments go.
-                                    when (kind) {
-                                        AddressKind.FORWARD -> a.redirect ?: "—"
-                                        AddressKind.NWC, AddressKind.LNCURL -> a.remoteWalletName ?: "—"
-                                        AddressKind.IDLE -> stringResource(R.string.home_unlinked)
-                                    },
-                                ).joinToString(" · "),
+                                // The mark already says what kind it is: just where payments go.
+                                when (kind) {
+                                    AddressKind.FORWARD -> a.redirect ?: "—"
+                                    AddressKind.NWC, AddressKind.LNCURL -> a.remoteWalletName ?: "—"
+                                    AddressKind.IDLE -> stringResource(R.string.home_unlinked)
+                                },
                                 size = 12.sp, color = Lw.MutedFg, maxLines = 1,
                             )
                         }
