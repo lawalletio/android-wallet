@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.annotation.DrawableRes
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.unit.DpOffset
@@ -270,9 +271,9 @@ internal fun GraphicsLayerScope.rollIn(page: Int) {
  * right without pushing it over, so the label lands on the same spot on every page.
  */
 @Composable
-internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null) {
+internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null, lightningText: String? = null) {
     val pt by animateFloatAsState(if (primary) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "primary")
-    val labels = listOf(stringResource(R.string.home_onchainBalance), stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
+    val labels = listOf(stringResource(R.string.home_onchainBalance), lightningText ?: stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
     Layout(
         content = {
             Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
@@ -589,7 +590,7 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
     val brand = LocalBrand.current
     val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
     DropdownMenu(
-        open, onDismiss, Modifier.width(width).heightIn(max = 420.dp).testTag("address-picker"),
+        open, onDismiss, Modifier.width(width).heightIn(max = 560.dp).testTag("address-picker"),
         offset = DpOffset(0.dp, 8.dp), containerColor = Glass.Dialog, shape = RoundedCornerShape(22.dp),
     ) {
         list.forEachIndexed { i, a ->
@@ -630,9 +631,22 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
     }
 }
 
-/** In place of the balance for an alias address: where its payments go, with that address's face and name. */
+/** Above the label when the address has no balance of its own: a glowing round mark ("@" for an alias). */
 @Composable
-private fun ForwardFace(target: String) {
+private fun StateMark(@DrawableRes icon: Int, tint: Color) {
+    Box(Modifier.padding(bottom = 18.dp).size(112.dp).drawBehind {
+        drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = 0.30f), Color.Transparent), radius = size.minDimension / 2))
+    }, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(76.dp).glass(CircleShape, GlassLevel.Strong, tint = tint.copy(alpha = 0.14f)).border(1.dp, tint.copy(alpha = 0.45f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { LwIcon(icon, size = 34.dp, tint = tint) }
+    }
+}
+
+/** In place of the balance for an alias address: where its payments go, with that address's face and name. Tap to change it. */
+@Composable
+private fun ForwardFace(target: String, onEdit: () -> Unit) {
     val c = LocalContainer.current
     val profile = rememberAddressProfile(target)
     Column(Modifier.testTag("balance-forward"), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -641,9 +655,10 @@ private fun ForwardFace(target: String) {
             Spacer(Modifier.width(6.dp))
             Txt(stringResource(R.string.home_forwardsTo), size = 13.sp, weight = FontWeight.Medium, color = Lw.Lightning)
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
-            Modifier.glass(CircleShape, GlassLevel.Thin, tint = Lw.Lightning.copy(alpha = 0.08f)).padding(start = 6.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+            Modifier.clip(CircleShape).glass(CircleShape, GlassLevel.Thin, tint = Lw.Lightning.copy(alpha = 0.08f)).clickable(onClick = onEdit)
+                .padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 6.dp).testTag("forward-edit"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AsyncImage(profile?.picture ?: c.avatars.of(target), null, Modifier.size(44.dp).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -652,6 +667,8 @@ private fun ForwardFace(target: String) {
                 profile?.name?.let { Txt(it, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1) }
                 Txt(target, size = if (profile?.name != null) 13.sp else 17.sp, weight = if (profile?.name != null) FontWeight.Normal else FontWeight.SemiBold, color = if (profile?.name != null) Lw.MutedFg else Lw.Foreground, maxLines = 1)
             }
+            Spacer(Modifier.width(12.dp))
+            LwIcon(L.drawable.lucide_ic_pencil, size = 16.dp, tint = Lw.MutedFg)
         }
     }
 }
@@ -832,7 +849,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
     val unlinked = picked != null && forwardTo == null && wallets?.none { it.id == shownWallet && it.status == "ACTIVE" } == true
     val detached = forwardTo != null || unlinked
-    var forwarding by remember { mutableStateOf(false) }
     val linkPicked: (RemoteWallet) -> Unit = { w ->
         picked?.let { a ->
             scope.launch {
@@ -920,10 +936,13 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // An address without a balance of its own leads with a mark of what it is: an alias, or unlinked.
+                    if (detached) StateMark(if (forwardTo != null) L.drawable.lucide_ic_at_sign else L.drawable.lucide_ic_link_2_off, if (forwardTo != null) Lw.Lightning else Lw.Gold)
                     // Once the wallets show, the figure is named after the wallet it belongs to.
-                    val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
+                    val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f && !detached } }
                     BalanceLabel(
                         primaryLabel, Modifier.pinned(anchors, LIGHTNING),
+                        lightningText = if (forwardTo != null) stringResource(R.string.home_lightningAlias) else null,
                         primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
                     )
@@ -951,7 +970,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     ) {
                         FigureStrut()
                         when {
-                            forwardTo != null -> ForwardFace(forwardTo)
+                            forwardTo != null -> ForwardFace(forwardTo) { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } }
                             unlinked -> Txt(stringResource(R.string.home_unlinked), Modifier.testTag("balance-unlinked"), size = 40.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg)
                             shown == null && hasNwc && loadingBalance -> LoadingDots(Modifier.testTag("balance-loading"), dot = 12.dp)
                             shown == null && relayError != null -> Txt(stringResource(R.string.shared_balance_unavailable), size = 16.sp, color = Lw.Red)
@@ -971,12 +990,12 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         }
                     }
                     // Receive / Send live in the bottom bar.
-                    if (detached) Box(Modifier.padding(top = 12.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (detached) Box(Modifier.padding(top = 20.dp, bottom = 8.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         // Closed: a button opens the wallet list to pick one. Open: the list is right there, so a note
                         // asks for a pick instead (and, without a wallet, offers forwarding to another address).
                         LwButton(
                             stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
-                            Modifier.graphicsLayer { alpha = 1f - reveal.progress }.testTag("home-select-wallet"), BtnVariant.Secondary, enabled = current && !open, height = 44.dp, icon = L.drawable.lucide_ic_wallet,
+                            Modifier.padding(horizontal = 24.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress }.testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 54.dp, icon = L.drawable.lucide_ic_wallet,
                         )
                         Column(
                             Modifier.graphicsLayer { alpha = reveal.progress }.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin, tint = Lw.Gold.copy(alpha = 0.10f))
@@ -989,7 +1008,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                                 Txt(stringResource(if (forwardTo != null) R.string.home_pickWalletAlias else R.string.home_assignWallet, picked?.username.orEmpty()), size = 13.sp, color = Lw.Foreground, lineHeight = 18.sp)
                             }
                             if (unlinked) LwButton(
-                                stringResource(R.string.home_forwardInstead), { forwarding = true }, Modifier.padding(top = 10.dp).testTag("home-forward"),
+                                stringResource(R.string.home_forwardInstead), { picked?.let { nav.navigate(R0.aliasTarget(it.username)) } }, Modifier.padding(top = 10.dp).testTag("home-forward"),
                                 BtnVariant.Secondary, enabled = current && open, height = 36.dp, icon = L.drawable.lucide_ic_forward,
                             )
                         }
@@ -1070,19 +1089,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               }
           },
       )
-      if (forwarding) picked?.let { a ->
-          val invalid = stringResource(R.string.home_forwardInvalid)
-          TextPrompt(stringResource(R.string.home_forwardTitle), "", { forwarding = false }, saveLabel = stringResource(R.string.home_forwardSave), placeholder = "name@domain.com", maxLength = 120) { target ->
-              if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(target)) context.toast(invalid)
-              else {
-                  forwarding = false
-                  scope.launch {
-                      runCatching { c.session.api.value.redirectAddress(a.username, target.lowercase()) }
-                          .onSuccess { c.wallet.refreshAddresses(); reveal.settleTo(0f) }.onFailure { context.toast(it.message ?: "") }
-                  }
-              }
-          }
-      }
       sweepFirst?.let { (w, bal) ->
           LwAlertDialog(
               onDismissRequest = { sweepFirst = null },

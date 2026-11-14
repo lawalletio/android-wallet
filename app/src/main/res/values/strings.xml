@@ -80,10 +80,9 @@
     <string name="home_assignWallet">%1$s has no wallet. Pick one above to receive payments.</string>
     <string name="home_pickWalletAlias">Pick a wallet above to receive on %1$s instead of forwarding.</string>
     <string name="home_forwardInstead">Forward to another address</string>
-    <string name="home_forwardTitle">Forward to</string>
-    <string name="home_forwardSave">Forward</string>
     <string name="home_forwardsTo">Forwards to</string>
-    <string name="home_forwardInvalid">Enter a Lightning address, like name@domain.com</string>
+    <string name="home_lightningAlias">Lightning alias</string>
+    <string name="home_forwardsFrom">Payments to %1$s go to</string>
     <string name="rw_add">Add wallet</string>
     <string name="rw_add_title">Connect a remote wallet</string>
     <string name="rw_name">Name</string>

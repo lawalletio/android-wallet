@@ -96,7 +96,6 @@ fun LightningAddressesScreen() {
     var acting by remember { mutableStateOf<WalletAddress?>(null) }
     var picking by remember { mutableStateOf<WalletAddress?>(null) }
     var deleting by remember { mutableStateOf<WalletAddress?>(null) }
-    var redirecting by remember { mutableStateOf<WalletAddress?>(null) }
     var busy by remember { mutableStateOf<String?>(null) } // the username being changed
     val copied = stringResource(R.string.common_copied)
     suspend fun load() {
@@ -159,19 +158,9 @@ fun LightningAddressesScreen() {
             onCopy = { context.copyToClipboard(full(a), copied) },
             onPrimary = { change(a) { c.session.api.value.setPrimaryAddress(a.username) } },
             onReceiveInto = { picking = a },
-            onRedirect = { redirecting = a },
+            onRedirect = { acting = null; nav.navigate(R0.aliasTarget(a.username)) },
             onDelete = { deleting = a },
         )
-    }
-    val invalid = stringResource(R.string.addresses_redirectInvalid)
-    redirecting?.let { a ->
-        TextPrompt(stringResource(R.string.addresses_redirect), a.redirect.orEmpty(), onDismiss = { redirecting = null }, saveLabel = stringResource(R.string.addresses_redirectSave), placeholder = "name@domain.com", maxLength = 128) { v ->
-            val target = v.lowercase()
-            // Pointing an address at itself would loop; the server also refuses wider cycles.
-            if (!DestinationParser.isLightningAddress(target) || target == full(a)) { context.toast(invalid); return@TextPrompt }
-            redirecting = null
-            change(a) { c.session.api.value.redirectAddress(a.username, target) }
-        }
     }
     picking?.let { a ->
         WalletPickerSheet(wallets.filter { it.status == "ACTIVE" }, a.remoteWalletId.takeIf { a.mode == "CUSTOM_NWC" }, onDismiss = { picking = null }) { w ->
@@ -285,3 +274,26 @@ private fun AppSheet(state: androidx.compose.material3.SheetState, onDismiss: ()
         dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
         modifier = Modifier.testTag(tag),
     ) { content() }
+
+/** Where [username] forwards to: the send recipient entry (suggestions, Nostr faces, contacts, clipboard), then back. */
+@Composable
+fun AliasTargetScreen(username: String) {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val settings by c.session.settings.collectAsState()
+    val me by c.session.me.collectAsState()
+    val domain = settings?.domain ?: me?.lightningAddress?.substringAfter('@', "") ?: c.session.instanceHost
+    val current = remember { c.wallet.addresses.value.find { it.username == username }?.redirect.orEmpty() }
+    val invalid = stringResource(R.string.addresses_redirectInvalid)
+    AddressEntry(
+        stringResource(R.string.addresses_redirect), stringResource(R.string.home_forwardsFrom, "$username@$domain"), stringResource(R.string.addresses_redirectSave),
+        initial = current, accepts = { DestinationParser.isLightningAddress(it.lowercase()) },
+    ) { value ->
+        val target = value.lowercase()
+        // Pointing an address at itself would loop; the server also refuses wider cycles.
+        if (!DestinationParser.isLightningAddress(target) || target == "$username@$domain") throw IllegalArgumentException(invalid)
+        c.session.api.value.redirectAddress(username, target)
+        c.wallet.refreshAddresses()
+        nav.popBackStack()
+    }
+}

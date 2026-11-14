@@ -188,6 +188,7 @@ object R0 {
     fun activate(id: String) = "activate/$id"
     fun emailAuth(token: String, host: String) = "auth/email?token=$token&host=${android.net.Uri.encode(host)}"
     fun remoteWallet(id: String) = "settings/remote-wallets/$id"
+    fun aliasTarget(username: String) = "addresses/forward/$username"
     fun sweep(from: String, to: String) = "sweep/$from/$to"
     const val ONCHAIN_ADD = "onchain/add"
     const val ONCHAIN_CREATE = "onchain/create"
@@ -420,6 +421,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.REMOTE_WALLETS) { RemoteWalletsScreen() }
                 composable(R0.REMOTE_WALLET_ADD) { AddRemoteWalletScreen() }
                 composable("sweep/{from}/{to}") { SweepScreen(it.arguments?.getString("from").orEmpty(), it.arguments?.getString("to").orEmpty()) }
+                composable("addresses/forward/{username}") { AliasTargetScreen(it.arguments?.getString("username").orEmpty()) }
                 composable("settings/remote-wallets/{id}") { RemoteWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.ONCHAIN_ADD) { AddOnchainWalletScreen() }
                 composable(R0.ONCHAIN_CREATE) { CreateOnchainWalletScreen() }
