@@ -1,8 +1,13 @@
 package io.lawallet.wallet.app
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.util.Base64
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** A Lightning address's Nostr face (via its NIP-05): display name (or name) and picture. */
 @Serializable data class AddressProfile(val name: String? = null, val picture: String? = null, val fetchedAt: Long = 0)
+
+private val DOMAIN = Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}$")
 
 fun domainAvatar(domain: String) = "https://raw.githubusercontent.com/lawalletio/static/main/public/img/domains/${if (domain == "lawallet.io") "lawallet.ar" else domain}.png"
 
@@ -68,13 +75,59 @@ class Avatars(context: Context) {
     fun of(address: String, picture: String? = null): String =
         _profiles.value[key(address)]?.picture?.takeIf(String::isNotBlank) ?: picture
             ?: name(address).let { if (it in saved) "file://${File(dir, it).absolutePath}" else null }
-            ?: domainAvatar(address.substringAfter('@'))
+            ?: domainLogo(address.substringAfter('@'))
+
+    // Domain logos: LaWallet's static set, else the domain's own favicon saved here as "@domain" (no address key
+    // starts with "@"). "@domain.static" marks a domain the set has. Bumps [domainTick] when a favicon lands.
+    private val _domainTick = MutableStateFlow(0)
+    val domainTick: StateFlow<Int> = _domainTick
+    private val checking: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** [domain]'s saved favicon when it has one, else its logo in the static set. */
+    fun domainLogo(domain: String): String {
+        val d = domain.trim().lowercase()
+        return if ("@$d" in saved) "file://${File(dir, "@$d").absolutePath}" else domainAvatar(d)
+    }
+
+    /**
+     * Once per domain (and per launch while it fails): the static set has [domain]'s logo, or its favicon
+     * (`/favicon.ico`, then `/apple-touch-icon.png`) is fetched, checked to decode, and kept on disk.
+     */
+    suspend fun ensureDomainLogo(http: OkHttpClient, domain: String) {
+        val d = domain.trim().lowercase().takeIf { DOMAIN.matches(it) } ?: return
+        if ("@$d" in saved || "@$d.static" in saved || !checking.add(d)) return
+        withContext(Dispatchers.IO) {
+            val known = runCatching { http.newCall(Request.Builder().url(domainAvatar(d)).head().build()).execute().use { it.code } }.getOrNull() ?: return@withContext
+            dir.mkdirs()
+            if (known == 200) { File(dir, "@$d.static").createNewFile(); saved += "@$d.static"; return@withContext }
+            for (path in listOf("/favicon.ico", "/apple-touch-icon.png")) {
+                val bytes = runCatching {
+                    http.newCall(Request.Builder().url("https://$d$path").build()).execute().use { r -> if (r.isSuccessful) r.body.bytes() else null }
+                }.getOrNull()?.takeIf { it.size in 1..512_000 } ?: continue
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+                if (o.outWidth <= 0) continue
+                File(dir, "@$d").writeBytes(bytes); saved += "@$d"
+                _domainTick.update { it + 1 }
+                break
+            }
+        }
+    }
 
     fun clear() { saved.clear(); dir.deleteRecursively(); _profiles.value = emptyMap(); profilesFile.delete() }
 }
 
-/** Looks up [address]'s Nostr profile (its NIP-05 → kind 0) into [Avatars]' cache, unless it is younger than [ttlMs]. */
-suspend fun AppContainer.refreshAddressProfile(address: String, ttlMs: Long = 12 * 60 * 60 * 1000L) = avatars.refresh(address, ttlMs) {
-    lnurl.nip05Pubkey(address)?.let { pk -> runCatching { session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
-        ?.let { p -> AddressProfile(p.displayName?.takeIf(String::isNotBlank) ?: p.name?.takeIf(String::isNotBlank), p.picture?.takeIf(String::isNotBlank)) }
+/** Makes sure [domain] has a logo to show: LaWallet's static one, or its own favicon saved on the device. */
+suspend fun AppContainer.ensureDomainLogo(domain: String) = avatars.ensureDomainLogo(http, domain)
+
+/**
+ * Looks up [address]'s Nostr profile (its NIP-05 → kind 0) into [Avatars]' cache, unless it is younger than [ttlMs];
+ * its domain's logo (the fallback face) is made sure of too.
+ */
+suspend fun AppContainer.refreshAddressProfile(address: String, ttlMs: Long = 12 * 60 * 60 * 1000L) = coroutineScope {
+    launch { ensureDomainLogo(address.substringAfter('@')) }
+    avatars.refresh(address, ttlMs) {
+        lnurl.nip05Pubkey(address)?.let { pk -> runCatching { session.api.value.profiles(listOf(pk)).firstOrNull() }.getOrNull() }
+            ?.let { p -> AddressProfile(p.displayName?.takeIf(String::isNotBlank) ?: p.name?.takeIf(String::isNotBlank), p.picture?.takeIf(String::isNotBlank)) }
+    }
 }

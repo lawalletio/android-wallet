@@ -809,6 +809,7 @@ private fun Modifier.freshEntrance(tx: Tx): Modifier {
 fun rememberAddressProfile(address: String, debounceMs: Long = 0): AddressProfile? {
     val c = LocalContainer.current
     val profiles by c.avatars.profiles.collectAsState()
+    c.avatars.domainTick.collectAsState().value // a domain's favicon landing repaints the fallback face
     LaunchedEffect(address) { delay(debounceMs); c.refreshAddressProfile(address, ttlMs = 0) }
     return profiles[c.avatars.key(address)]
 }

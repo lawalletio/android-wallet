@@ -1,6 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
-import io.lawallet.wallet.app.domainAvatar
+import io.lawallet.wallet.app.ensureDomainLogo
 import io.lawallet.wallet.ui.components.BadgedAvatar
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -656,7 +656,12 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                     ) {
                         val kind = addressKind(a, wallets)
                         // An alias wears its destination's domain brand, badged with the forward arrow.
-                        if (kind == AddressKind.FORWARD && a.redirect != null) BadgedAvatar(domainAvatar(a.redirect.substringAfter('@')), L.drawable.lucide_ic_forward, Lw.Lightning, 36.dp)
+                        if (kind == AddressKind.FORWARD && a.redirect != null) {
+                            val d = a.redirect.substringAfter('@')
+                            c.avatars.domainTick.collectAsState().value // repaint when a favicon lands
+                            LaunchedEffect(d) { c.ensureDomainLogo(d) }
+                            BadgedAvatar(c.avatars.domainLogo(d), L.drawable.lucide_ic_forward, Lw.Lightning, 36.dp)
+                        }
                         else AddressKindMark(kind)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
