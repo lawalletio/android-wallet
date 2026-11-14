@@ -193,14 +193,14 @@ fun SendRecipientScreen() {
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
-            clip?.takeIf { it != input.trim() }?.let { value ->
-                ClipboardRow(value) { if (!loading) { input = value; submit(value) } }
-            }
             if (full != null || suggestions.isNotEmpty()) AddressGroup(
                 stringResource(R.string.shared_addressInput_suggestions),
                 listOfNotNull(full).map { it to c.avatars.of(it) } + suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }, expanded = full,
             ) { if (!loading) { input = it; submit(it) } }
             if (contacts.isNotEmpty() && input.isBlank()) AddressGroup(stringResource(R.string.shared_addressInput_saved), contacts.map { it.address to c.avatars.of(it.address, it.picture) }) { if (!loading) { input = it; submit(it) } }
+        }
+        clip?.takeIf { it != input.trim() }?.let { value ->
+            ClipboardRow(value, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) { if (!loading) { input = value; submit(value) } }
         }
         LwButton(stringResource(R.string.common_continue), { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
     }
@@ -214,10 +214,10 @@ internal fun isPayableClip(text: String, now: Long = System.currentTimeMillis())
 }
 
 @Composable
-private fun ClipboardRow(value: String, onPick: () -> Unit) {
+private fun ClipboardRow(value: String, modifier: Modifier = Modifier, onPick: () -> Unit) {
     val shown = value.removePrefix("lightning:").removePrefix("LIGHTNING:").let { if (it.length > 28) it.take(14) + "…" + it.takeLast(8) else it }
     Row(
-        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("recipient-clipboard"),
+        modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp).testTag("recipient-clipboard"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_clipboard, size = 16.dp, tint = Lw.MutedFg) }
