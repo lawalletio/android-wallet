@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.theme.PanelStyle
 import io.lawallet.wallet.ui.theme.dimBlur
 import androidx.compose.foundation.layout.BoxScope
 import io.lawallet.wallet.app.ensureDomainLogo
@@ -659,7 +660,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
             scaleOut(tween(200), targetScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 0f)),
     ) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape).background(Lw.Background.copy(alpha = 0.62f)).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
+                Modifier.fillMaxWidth().heightIn(max = 560.dp).frosted(haze, shape, PanelStyle).verticalScroll(rememberScrollState()).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
