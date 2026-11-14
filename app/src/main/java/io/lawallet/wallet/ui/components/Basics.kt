@@ -4,6 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import androidx.core.content.FileProvider
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
@@ -318,6 +323,18 @@ fun Context.copyToClipboard(text: String, toast: String? = null) {
 
 fun Context.shareText(text: String, title: String? = null) {
     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), title))
+}
+
+/** Shares [bitmap] as a PNG through the app's FileProvider (cache/shared/, overwritten each time). */
+suspend fun Context.shareImage(bitmap: Bitmap, title: String? = null) {
+    val uri = withContext(Dispatchers.IO) {
+        val file = File(cacheDir, "shared/receipt.png").apply { parentFile?.mkdirs() }
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        FileProvider.getUriForFile(this@shareImage, "$packageName.files", file)
+    }
+    val send = Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri(null, uri) }
+    startActivity(Intent.createChooser(send, title))
 }
 
 fun Context.toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
