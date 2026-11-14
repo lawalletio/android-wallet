@@ -733,7 +733,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     }
     BackHandler(open && current) { if (sweepFrom != null) { Sweeps.deleteAfter = null; sweepFrom = null } else scope.launch { reveal.settleTo(0f) } }
     // Optimistic: the tapped card turns primary at once; a failed request puts the old primary back.
-    // The wallet Home is showing: the selected address's own, else the primary. The list marks that one.
+    // The wallet Home is showing: the selected address's own, else the primary. The list marks that one (none when
+    // the address routes to an archived wallet, which the list leaves out).
     val addressList by c.wallet.addresses.collectAsState()
     val selectedAddress by c.wallet.selectedAddress.collectAsState()
     val shownWallet = c.wallet.walletOf(selectedAddress, addressList)
@@ -919,7 +920,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
         },
       )
       WalletsReveal(
-          reveal, wallets?.let { ws -> if (ws.any { it.id == shownWallet }) ws.map { it.copy(isDefault = it.id == shownWallet) } else ws }, walletBalances, code, rates, hidden,
+          reveal, wallets?.let { ws -> if (shownWallet == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
           onSetPrimary = setPrimary,
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
