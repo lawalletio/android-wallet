@@ -16,6 +16,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -122,6 +126,9 @@ internal fun ActivitySearchBar(haze: HazeState?, modifier: Modifier = Modifier) 
     val s = ActivitySearch
     val brand = LocalBrand.current
     val focus = LocalFocusManager.current
+    // The whole pill focuses the field, not just its one line of text.
+    val field = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     BackHandler(s.panel) { s.panel = false }
     Column(modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 12.dp)) {
         AnimatedVisibility(
@@ -135,7 +142,8 @@ internal fun ActivitySearchBar(haze: HazeState?, modifier: Modifier = Modifier) 
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 Modifier.weight(1f).fillMaxHeight().shadow(16.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
-                    .frosted(haze, CircleShape).padding(start = 18.dp, end = 10.dp),
+                    .frosted(haze, CircleShape).clickable(interactionSource = null, indication = null) { field.requestFocus(); keyboard?.show() }
+                    .padding(start = 18.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LwIcon(L.drawable.lucide_ic_search, size = 20.dp, tint = Lw.MutedFg)
@@ -143,7 +151,7 @@ internal fun ActivitySearchBar(haze: HazeState?, modifier: Modifier = Modifier) 
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (s.query.isEmpty()) Txt(stringResource(R.string.activity_search_hint), size = 16.sp, color = Lw.MutedFg, maxLines = 1)
                     BasicTextField(
-                        s.query, { s.query = it }, Modifier.fillMaxWidth().testTag("activity-search"),
+                        s.query, { s.query = it }, Modifier.fillMaxWidth().focusRequester(field).testTag("activity-search"),
                         singleLine = true,
                         textStyle = TextStyle(fontFamily = Inter, fontSize = 16.sp, color = Lw.Foreground),
                         cursorBrush = SolidColor(brand.t300),

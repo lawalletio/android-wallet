@@ -60,6 +60,7 @@ import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.PaymentReceiptCard
+import io.lawallet.wallet.ui.components.RecipientChip
 import io.lawallet.wallet.ui.components.ReceiptFooter
 import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
@@ -343,7 +344,7 @@ fun ActivityDetailScreen(hash: String) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 PaymentReceiptCard(title, t.state, t.amountSats, code, currencies.active, rates, { code = it }, rows,
                     listOf(stringResource(R.string.shared_receipt_text_paymentHash) to t.paymentHash.ifEmpty { null }, stringResource(R.string.shared_receipt_text_preimage) to t.preimage),
-                    if (recipient == null) emptyMap() else mapOf(toLabel to { RecipientChip(recipient, c.avatars.of(recipient), opening) { payAgain(recipient) } }))
+                    if (recipient == null) emptyMap() else mapOf(toLabel to { RecipientChip(recipient, opening) { payAgain(recipient) } }))
             }
             val shareTitle = stringResource(R.string.shared_receipt_text_title)
             ReceiptFooter(
@@ -354,17 +355,3 @@ fun ActivityDetailScreen(hash: String) {
     }
 }
 
-@Composable
-private fun RecipientChip(address: String, avatar: String, loading: Boolean, onClick: () -> Unit) {
-    val desc = stringResource(R.string.activity_detail_sendAgain, address)
-    Row(
-        Modifier.clip(CircleShape).border(1.dp, Lw.Border, CircleShape).clickable(enabled = !loading, onClick = onClick)
-            .semantics { contentDescription = desc }.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp).testTag("recipient-chip"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        AsyncImage(avatar, null, Modifier.size(24.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-        Txt(address, Modifier.weight(1f, fill = false), size = 14.sp, maxLines = 1)
-        if (loading) Spinner(size = 14.dp) else LwIcon(L.drawable.lucide_ic_send, size = 14.dp, tint = Lw.MutedFg)
-    }
-}

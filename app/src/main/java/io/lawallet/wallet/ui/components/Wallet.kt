@@ -1,6 +1,11 @@
 package io.lawallet.wallet.ui.components
 
 import io.lawallet.wallet.ui.LocalContainer
+import io.lawallet.wallet.app.AddressProfile
+import io.lawallet.wallet.app.refreshAddressProfile
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
@@ -671,4 +676,38 @@ private fun Modifier.freshEntrance(tx: Tx): Modifier {
                 drawRoundRect(tint.copy(alpha = 0.16f * g), Offset(inset, 0f), Size(size.width - 2 * inset, size.height), CornerRadius(20.dp.toPx()))
             }
         }
+}
+
+/**
+ * The Nostr profile behind a Lightning address: the cached one on the first frame, then fetched again
+ * while this is on screen (after [debounceMs], to wait out typing) and cached for every other screen.
+ */
+@Composable
+fun rememberAddressProfile(address: String, debounceMs: Long = 0): AddressProfile? {
+    val c = LocalContainer.current
+    val profiles by c.avatars.profiles.collectAsState()
+    LaunchedEffect(address) { delay(debounceMs); c.refreshAddressProfile(address, ttlMs = 0) }
+    return profiles[c.avatars.key(address)]
+}
+
+/** A paid Lightning address: its face and display name (cached, refreshed live), plus the address. Tappable when [onClick] is set. */
+@Composable
+fun RecipientChip(address: String, loading: Boolean = false, onClick: (() -> Unit)? = null) {
+    val c = LocalContainer.current
+    val profile = rememberAddressProfile(address)
+    val desc = stringResource(R.string.activity_detail_sendAgain, address)
+    Row(
+        Modifier.clip(CircleShape).border(1.dp, Lw.Border, CircleShape)
+            .then(if (onClick != null) Modifier.clickable(enabled = !loading, onClick = onClick).semantics { contentDescription = desc } else Modifier)
+            .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp).testTag("recipient-chip"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AsyncImage(profile?.picture ?: c.avatars.of(address), null, Modifier.size(if (profile?.name != null) 32.dp else 24.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+        Column(Modifier.weight(1f, fill = false)) {
+            profile?.name?.let { Txt(it, size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1) }
+            Txt(address, size = if (profile?.name != null) 12.sp else 14.sp, color = if (profile?.name != null) Lw.MutedFg else Lw.Foreground, maxLines = 1)
+        }
+        if (loading) Spinner(size = 14.dp) else if (onClick != null) LwIcon(L.drawable.lucide_ic_send, size = 14.dp, tint = Lw.MutedFg)
+    }
 }
