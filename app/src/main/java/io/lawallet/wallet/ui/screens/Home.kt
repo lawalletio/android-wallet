@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import androidx.compose.runtime.CompositionLocalProvider
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import io.lawallet.wallet.ui.theme.PanelStyle
 import io.lawallet.wallet.ui.theme.dimBlur
 import androidx.compose.foundation.layout.BoxScope
@@ -382,9 +385,12 @@ fun HomeScreen() {
     }
     var rootTop by remember { mutableFloatStateOf(0f) }
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootTop = it.positionInRoot().y; anchors.width = it.size.width.toFloat() }.testTag("home-root")) {
+        // Home's pages are their own Haze source: the header layer (address drop-down, its backdrop) sits beside them,
+        // and Haze never blurs a source an effect is inside of (the app-wide one wraps the header too).
+        val pagesHaze = rememberHazeState()
         HorizontalPager(
             // No edge stretch: it would drag the pinned switcher, grabber and figures off their spots.
-            pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, overscrollEffect = null,
+            pager, Modifier.fillMaxSize().hazeSource(pagesHaze), beyondViewportPageCount = 1, overscrollEffect = null,
             flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = spring(0.86f, Spring.StiffnessMediumLow)),
         ) { page ->
             Box(Modifier.fillMaxSize()) {
@@ -402,7 +408,7 @@ fun HomeScreen() {
             { maxOf(smooth(0f, 0.15f, anchors.revealAt(HomePager.position)), anchors.sheetAt(HomePager.position) * 2.2f) },
             Modifier.align(Alignment.TopCenter).padding(top = HEADER_H + 20.dp).riseIn(0, intro),
         )
-        HomeHeader(intro, anchors)
+        CompositionLocalProvider(LocalHaze provides pagesHaze) { HomeHeader(intro, anchors) }
         PageDots(anchors, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(it) } }
     }
 }
