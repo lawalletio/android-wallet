@@ -652,7 +652,8 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                         Modifier.fillMaxWidth().clickable { onPick(i) }.padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-${a.username}"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        AddressKindMark(addressKind(a, wallets))
+                        val kind = addressKind(a, wallets)
+                        AddressKindMark(kind)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Row {
@@ -662,10 +663,11 @@ private fun AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<Walle
                             Txt(
                                 listOfNotNull(
                                     primaryLabel.takeIf { a.isPrimary },
-                                    when (a.mode) {
-                                        "CUSTOM_NWC" -> stringResource(R.string.addresses_receivesInto, a.remoteWalletName ?: "—")
-                                        "ALIAS", "PROXY_ALIAS" -> stringResource(R.string.addresses_forwardsTo, a.redirect ?: "—")
-                                        else -> stringResource(R.string.addresses_notReceiving)
+                                    // The mark already says what kind it is: just where payments go.
+                                    when (kind) {
+                                        AddressKind.FORWARD -> a.redirect ?: "—"
+                                        AddressKind.NWC, AddressKind.LNCURL -> a.remoteWalletName ?: "—"
+                                        AddressKind.IDLE -> stringResource(R.string.home_unlinked)
                                     },
                                 ).joinToString(" · "),
                                 size = 12.sp, color = Lw.MutedFg, maxLines = 1,
