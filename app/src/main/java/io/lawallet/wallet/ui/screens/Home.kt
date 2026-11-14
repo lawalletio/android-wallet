@@ -1159,7 +1159,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       // A free or alias address's way forward, down by the thumb just above the tab bar; it fades as the wallet list
       // opens (the list is the choice then).
       if (detached) Column(
-          Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 98.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+          Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 118.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
           verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
           LwButton(
