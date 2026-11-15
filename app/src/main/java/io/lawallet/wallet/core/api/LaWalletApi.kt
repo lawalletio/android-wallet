@@ -149,15 +149,22 @@ class LaWalletApi(
     /** Forwards the address to another lightning address (the server probes it on save). */
     suspend fun redirectAddress(username: String, target: String) =
         send("PUT", "/api/wallet/addresses/${enc(username)}", buildJsonObject { put("mode", "ALIAS"); put("redirect", target) }, JsonElement.serializer())
+    /** Frees the address: no wallet, no alias (the server clears both). */
+    suspend fun freeAddress(username: String) =
+        send("PUT", "/api/wallet/addresses/${enc(username)}", buildJsonObject { put("mode", "IDLE") }, JsonElement.serializer())
     suspend fun deleteAddress(username: String) = send("DELETE", "/api/wallet/addresses/${enc(username)}", null, JsonElement.serializer())
 
     suspend fun remoteWallets() = get("/api/remote-wallets", ListSerializer(RemoteWallet.serializer()))
     suspend fun remoteWallet(id: String) = get("/api/remote-wallets/${enc(id)}", RemoteWallet.serializer())
-    suspend fun createNwcWallet(name: String, connectionString: String, mode: String, isDefault: Boolean) =
+    /** [lncurlServerUrl]: the wallet was minted there, tagged LNCurl like the server's own (so it can be regenerated). */
+    suspend fun createNwcWallet(name: String, connectionString: String, mode: String, isDefault: Boolean, lncurlServerUrl: String? = null) =
         send("POST", "/api/remote-wallets", buildJsonObject {
             put("name", name)
             put("type", "NWC")
-            putJsonObject("config") { put("connectionString", connectionString); put("mode", mode) }
+            putJsonObject("config") {
+                put("connectionString", connectionString); put("mode", mode)
+                if (lncurlServerUrl != null) { put("provider", "lncurl"); put("lncurlServerUrl", lncurlServerUrl) }
+            }
             put("isDefault", isDefault)
         }, RemoteWallet.serializer())
     suspend fun createLncurlWallet(name: String? = null, isDefault: Boolean? = null) =
@@ -200,6 +207,8 @@ class LaWalletApi(
     suspend fun cards() = get("/api/wallet/cards", ListSerializer(WalletCard.serializer()))
     suspend fun setCardEnabled(id: String, enabled: Boolean) =
         send("PATCH", "/api/wallet/cards/${enc(id)}", buildJsonObject { put("enabled", enabled) }, WalletCard.serializer())
+    suspend fun bindCardToWallet(id: String, walletId: String) =
+        send("PATCH", "/api/wallet/cards/${enc(id)}", buildJsonObject { put("remoteWalletId", walletId) }, WalletCard.serializer())
     suspend fun linkCardToDefaultWallet(id: String) =
         send("PATCH", "/api/wallet/cards/${enc(id)}", buildJsonObject { put("linkDefaultWallet", true) }, WalletCard.serializer())
     suspend fun claimActivation(id: String, confirmMerge: Boolean? = null) =

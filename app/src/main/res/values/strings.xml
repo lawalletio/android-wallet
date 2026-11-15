@@ -78,6 +78,13 @@
     <string name="home_selectWallet">Select a remote wallet</string>
     <string name="home_setWallet">Set a remote wallet</string>
     <string name="home_forwardInstead">Forward to an address</string>
+    <string name="rw_regen_title">Wallet not responding</string>
+    <string name="rw_regen_text">“%1$s” isn’t answering. LNCurl wallets are disposable, and %2$s may have removed it.\n\nRegenerate it: a new wallet from the same provider, with the same name, and every address and card that used it moves over. Its balance can’t be recovered.</string>
+    <string name="rw_regen">Regenerate</string>
+    <string name="rw_regen_done">Wallet regenerated</string>
+    <string name="home_freeAddress">Clear</string>
+    <string name="home_freeAddress_title">Free %1$s?</string>
+    <string name="home_freeAddress_text">It stops using its remote wallet or alias. You can assign one again any time.</string>
     <string name="home_forwardsTo">Forwards to</string>
     <string name="home_lightningAlias">Lightning alias</string>
     <string name="home_lightningAddress">Lightning address</string>
