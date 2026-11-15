@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Tx
+import io.lawallet.wallet.app.paymentKey
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -134,20 +135,41 @@ internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> =
     }
 }
 
+/**
+ * One LazyColumn key per row. A row is its payment's direction plus [paymentKey] (the identity [mergeActivity]
+ * dedupes on), so a payment between two addresses on one wallet keeps its sent and received rows apart; anything
+ * still equal gets a suffix, since a repeated key crashes the list on its first frame.
+ */
+internal fun activityKeys(rows: List<ActivityRow>): List<Any> {
+    val seen = HashSet<Any>()
+    return rows.map { row ->
+        val base: Any = when (row) {
+            is ActivityRow.Month -> "month-" + row.startMs
+            is ActivityRow.Day -> row.day.first
+            is ActivityRow.Run -> row.txs.first().let { (if (row.txs.size > 1) "group-" else "tx-") + it.type + ":" + paymentKey(it) }
+        }
+        var key = base
+        var n = 1
+        while (!seen.add(key)) key = "$base#${n++}"
+        key
+    }
+}
+
 /** Day-grouped transaction rows plus the paging footer; used by Home's activity sheet. */
 internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>, labels: DayLabels, paging: ActivityPaging, filtering: Boolean = false, onOpen: (Tx) -> Unit) {
+    val keys = activityKeys(rows)
     rows.forEachIndexed { i, row ->
         when (row) {
             // A rule between months (none above the first); the month's name shows in the scroll/scrubber overlays.
-            is ActivityRow.Month -> item("month-" + row.startMs) {
+            is ActivityRow.Month -> item(keys[i]) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp), thickness = 1.dp, color = Lw.Border)
             }
-            is ActivityRow.Day -> item(row.day.first) { Txt(labels.of(row.day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
+            is ActivityRow.Day -> item(keys[i]) { Txt(labels.of(row.day), Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
             is ActivityRow.Run -> {
                 val run = row.txs
                 val first = run.first()
-                if (run.size == 1) item(first.paymentHash + first.createdAt) { TransactionRow(first) { onOpen(first) } }
-                else item("group-" + first.paymentHash + first.createdAt) { TransactionGroup(run, onOpen) }
+                if (run.size == 1) item(keys[i]) { TransactionRow(first) { onOpen(first) } }
+                else item(keys[i]) { TransactionGroup(run, onOpen) }
             }
         }
     }
@@ -322,7 +344,12 @@ fun ActivityDetailScreen(hash: String) {
         }
     }
     LaunchedEffect(hash) {
-        runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()?.let { tx = Tx.from(it).let { l -> tx?.let { o -> l.copy(description = l.description ?: o.description) } ?: l } }
+        // Refreshes the row's state. A payment between two addresses on one wallet has both sides under this hash:
+        // a lookup that answers with the other side never turns the tapped "received" into "sent" (or back).
+        val looked = runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()?.let(Tx::from) ?: return@LaunchedEffect
+        val shown = tx
+        if (shown == null) tx = looked
+        else if (looked.type == shown.type) tx = looked.copy(description = looked.description ?: shown.description)
     }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(null, { nav.popBackStack() }, close = true)

@@ -1,6 +1,9 @@
 package io.lawallet.wallet.ui
 
 import io.lawallet.wallet.app.Tx
+import io.lawallet.wallet.app.mergeActivity
+import io.lawallet.wallet.ui.screens.activityKeys
+import io.lawallet.wallet.ui.screens.activityRows
 import io.lawallet.wallet.ui.screens.groupRuns
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -13,6 +16,18 @@ class ActivityGroupingTest {
         val fee = "LNCurl hosting fee"
         val runs = groupRuns(listOf(tx(fee, n = 1), tx(fee, n = 2), tx(fee, n = 3), tx("Coffee", n = 4), tx(fee, n = 5)))
         assertEquals(listOf(3, 1, 1), runs.map { it.size })
+    }
+
+    /** A payment between two addresses on one wallet: both sides share hash and time. Repeated keys crash the list. */
+    @Test fun selfPaymentRowsGetDistinctKeys() {
+        val sent = Tx("outgoing", 21, 0, "zap", "h1", null, 5, 5, "settled")
+        val rows = activityRows(mergeActivity(listOf(sent, sent.copy(type = "incoming")), emptyList()), months = true)
+        val keys = activityKeys(rows)
+        assertEquals(2, rows.count { it is io.lawallet.wallet.ui.screens.ActivityRow.Run })
+        assertEquals(keys.size, keys.toSet().size)
+        // Even a list nobody merged (the same row twice) can't repeat a key.
+        val dup = activityRows(listOf(sent, sent), months = false)
+        assertEquals(activityKeys(dup).size, activityKeys(dup).toSet().size)
     }
 
     @Test fun directionBlankAndPendingNeverGroup() {
