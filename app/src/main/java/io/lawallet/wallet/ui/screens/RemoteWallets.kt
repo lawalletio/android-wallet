@@ -145,6 +145,29 @@ internal suspend fun ensurePrimary(c: AppContainer) {
     runCatching { ensurePrimary(c, c.session.api.value.remoteWallets()) }.onSuccess { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
 }
 
+/**
+ * Replaces a dead LNCurl wallet: a fresh one from the same provider, under the same name, with every address and
+ * card that used the old one moved over (and primary if it was), then the old one removed. Nothing changes until
+ * the new wallet exists; the old balance is gone with the provider's wallet. Returns the new wallet's id.
+ */
+internal suspend fun regenerateLncurlWallet(c: AppContainer, old: RemoteWallet): String {
+    val api = c.session.api.value
+    val origin = old.lncurlServerUrl ?: error("not an LNCurl wallet")
+    // Under a stand-in name first: the dead wallet still holds its own (names are unique per account).
+    val created = api.createNwcWallet("${old.name} (new)", Lncurl.mint(c.http, origin.trimEnd('/')), "SEND_RECEIVE", isDefault = false, lncurlServerUrl = origin)
+    c.wallet.refreshAddresses()
+    c.wallet.addresses.value.filter { it.remoteWalletId == old.id && it.mode == "CUSTOM_NWC" }.forEach { api.routeAddressToWallet(it.username, created.id) }
+    api.cards().filter { it.remoteWalletId == old.id }.forEach { api.bindCardToWallet(it.id, created.id) }
+    if (old.isDefault) api.updateRemoteWallet(created.id, isDefault = true)
+    // Disable, then remove for good; a tombstone the server must keep (audit records) gives up the name instead.
+    runCatching { api.deleteRemoteWallet(old.id) }
+    if (runCatching { api.deleteRemoteWallet(old.id, permanent = true) }.isFailure) runCatching { api.updateRemoteWallet(old.id, name = "${old.name} (dead)") }
+    runCatching { api.updateRemoteWallet(created.id, name = old.name) }
+    c.wallet.refreshAddresses()
+    runCatching { c.session.refreshMe() }
+    return created.id
+}
+
 internal suspend fun fetchRemoteWallets(c: AppContainer, onList: (List<RemoteWallet>) -> Unit, balances: MutableMap<String, Long?>): Boolean {
     val list = runCatching { ensurePrimary(c, c.session.api.value.remoteWallets()) }.onSuccess { onList(it); c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }.getOrNull()
     coroutineScope {

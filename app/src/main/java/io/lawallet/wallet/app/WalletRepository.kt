@@ -3,6 +3,7 @@ package io.lawallet.wallet.app
 import io.lawallet.wallet.core.nostr.sha256
 import io.lawallet.wallet.core.nostr.toHex
 import io.lawallet.wallet.core.nwc.NwcClient
+import io.lawallet.wallet.core.nwc.NwcException
 import io.lawallet.wallet.core.nwc.NwcTransaction
 import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.core.store.Prefs
@@ -71,6 +72,13 @@ data class PaymentNotice(val id: String, val type: String, val tx: Tx)
 fun paymentKey(tx: Tx): String = tx.paymentHash.ifEmpty { "nohash:${tx.invoice ?: "${tx.type}:${tx.createdAt}:${tx.amountSats}"}" }
 
 /**
+ * Activity rows, newest first: [new] wins over [old] for the same payment. A payment between two addresses on the
+ * same wallet shows up in it twice (sent and received, one hash), so the direction is part of a row's identity.
+ */
+fun mergeActivity(new: List<Tx>, old: List<Tx>, max: Int = 200): List<Tx> =
+    (new + old).distinctBy { it.type + ":" + paymentKey(it) }.sortedByDescending { it.createdAt }.take(max)
+
+/**
  * The single NWC connection for the app (nwc-provider.tsx + use-nwc-balance.ts): balance polling,
  * notification subscription with backoff, gap catch-up via list_transactions, activity cache.
  */
@@ -93,6 +101,13 @@ class WalletRepository(
     val balanceLoading: StateFlow<Boolean> = _balanceLoading
     private val _error = MutableStateFlow<String?>(null)
     val relayError: StateFlow<String?> = _error
+    private var silentStrikes = 0
+    private val _silent = MutableStateFlow(false)
+    /**
+     * The wallet itself stopped answering (two balance reads in a row got no NWC reply, or an error from it), as
+     * opposed to its relay being down. For a disposable LNCurl wallet that usually means the provider removed it.
+     */
+    val walletSilent: StateFlow<Boolean> = _silent
 
     private val _recent = MutableStateFlow<List<Tx>>(emptyList())
     val recent: StateFlow<List<Tx>> = _recent
@@ -128,7 +143,7 @@ class WalletRepository(
     /** Addresses Home can switch between, primary first (an alias shows where it forwards; one without a wallet says so). */
     fun switchable(list: List<WalletAddress> = _addresses.value) = list.sortedByDescending { it.isPrimary }
 
-    /** The remote wallet [username] routes to, when it's a non-primary address with one of its own. */
+    /** The remote wallet [username] routes to, when it's a non-primary address with one of its own (else the primary's is used). */
     fun walletOf(username: String?, list: List<WalletAddress>): String? =
         list.find { it.username == username && !it.isPrimary && it.mode == "CUSTOM_NWC" }?.remoteWalletId
 
@@ -142,7 +157,6 @@ class WalletRepository(
     init {
         scope.launch {
             val me = session.me.distinctUntilChanged { a, b -> a?.nwc == b?.nwc && a?.userId == b?.userId }
-            // The selected address's own wallet, when it routes to one; anything else shows the primary's.
             combine(me, _selected, _addresses) { m, sel, list -> m to walletOf(sel, list) }.distinctUntilChanged().collectLatest { (m, walletId) -> connect(resolveFor(m, walletId)) }
         }
         scope.launch {
@@ -176,14 +190,24 @@ class WalletRepository(
         )
     }
 
-    /** [walletId]'s connection (cached, so flicking between addresses is instant), else the primary's. */
-    private suspend fun resolveFor(me: CurrentUser?, walletId: String?): String? {
+    /**
+     * The one rule for which wallet the app uses (Home, sends, receives): the selected address's own wallet
+     * ([walletId], from [walletOf]) when it routes to one, else the primary's. Cached, so flicking between addresses
+     * is instant; [fresh] re-reads it from the server first. Never falls back to the primary for a [walletId]: Home
+     * would show, and a send would spend, another wallet's sats under the selected address.
+     */
+    private suspend fun resolveFor(me: CurrentUser?, walletId: String?, fresh: Boolean = false): String? {
         if (me == null || walletId == null) return resolveNwc(me)
         val key = "nwc:$walletId"
-        return withContext(Dispatchers.IO) { prefs.secretCached(key) }
-            ?: runCatching { session.api.value.remoteWalletConnectionString(walletId) }.getOrNull()?.also { withContext(Dispatchers.IO) { prefs.setSecretCached(key, it) } }
-            ?: resolveNwc(me)
+        val cached = withContext(Dispatchers.IO) { prefs.secretCached(key) }
+        if (cached != null && !fresh) return cached
+        return runCatching { session.api.value.remoteWalletConnectionString(walletId) }.getOrNull()
+            ?.also { withContext(Dispatchers.IO) { prefs.setSecretCached(key, it) } }
+            ?: cached
     }
+
+    /** [resolveFor] the address selected right now. */
+    private suspend fun resolveSelected(me: CurrentUser?, fresh: Boolean = false) = resolveFor(me, walletOf(_selected.value, _addresses.value), fresh)
 
     /** Idempotent: callers that just refreshed `me` use it to get the client without waiting for the collector. */
     private fun connect(nwc: String?) {
@@ -208,6 +232,7 @@ class WalletRepository(
         _balance.value = prefs.cachedBalance(key)
         _recent.value = prefs.activityCache(key)?.let { runCatching { json.decodeFromString(ListSerializer(Tx.serializer()), it) }.getOrNull() } ?: emptyList()
         val c = NwcClient(uri, http)
+        silentStrikes = 0; _silent.value = false
         _client.value = c
         jobs = listOf(
             scope.launch { delay(settle); pollLoop(c) },
@@ -234,9 +259,12 @@ class WalletRepository(
             val sats = c.getBalanceMsat() / 1000
             _balance.value = sats
             _error.value = null
+            silentStrikes = 0; _silent.value = false
             nwcKey?.let { prefs.setCachedBalance(it, sats) }
         } catch (e: Exception) {
             _error.value = e.message ?: "Wallet relay unavailable"
+            // ponytail: two strikes, so one slow answer doesn't suggest destroying a wallet; tune if it flags live ones.
+            if (e is NwcException && c === _client.value && ++silentStrikes >= 2) _silent.value = true
         } finally {
             _balanceLoading.value = false
         }
@@ -257,7 +285,7 @@ class WalletRepository(
     fun findTx(paymentHash: String) = _recent.value.firstOrNull { it.paymentHash == paymentHash }
 
     private fun merge(txs: List<Tx>) {
-        val merged = (txs + _recent.value).distinctBy { it.paymentHash.ifEmpty { it.createdAt.toString() } }.sortedByDescending { it.createdAt }.take(200)
+        val merged = mergeActivity(txs, _recent.value)
         // Every Home visit refetches the same page: skip re-encoding up to 200 txs on the main thread.
         if (merged == _recent.value) return
         _recent.value = merged
@@ -313,21 +341,24 @@ class WalletRepository(
     }
 
     /**
-     * Re-reads /api/users/me before a send/receive (the server may have swapped a dead
-     * courtesy wallet) and returns the current client — wallet-nwc.ts `getFreshWalletNwc`.
+     * Re-reads the connection before a send/receive (the server may have swapped a dead courtesy wallet, or
+     * rotated the selected address's) and returns the client for the wallet Home shows — wallet-nwc.ts
+     * `getFreshWalletNwc`, per address.
      */
     suspend fun freshClient(): NwcClient? {
-        runCatching { session.refreshMe() }.onSuccess { connect(resolveNwc(it)) }
+        runCatching { session.refreshMe() }.onSuccess { connect(resolveSelected(it, fresh = true)) }
         return _client.value
     }
 
     /** Receive with no wallet + lncurl_auto_create → mint a courtesy wallet (receive/amount-step.tsx). */
     suspend fun ensureWallet(): NwcClient? {
         freshClient()?.let { return it }
+        // The selected address has a wallet of its own that just didn't resolve: not a reason to mint the account a new default.
+        if (walletOf(_selected.value, _addresses.value) != null) return null
         val settings = session.settings.value ?: session.refreshSettings()
         if (settings?.lncurlAutoCreate == true || settings?.lncurlEnabled == true) {
             session.api.value.createLncurlWallet(isDefault = true)
-            connect(resolveNwc(session.refreshMe()))
+            connect(resolveSelected(session.refreshMe()))
         }
         return _client.value
     }

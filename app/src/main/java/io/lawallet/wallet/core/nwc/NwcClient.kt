@@ -38,7 +38,7 @@ import okhttp3.OkHttpClient
  * NIP-47 client — the Kotlin counterpart of @getalby/sdk `NWCClient` the web wallet uses.
  * Talks straight to the wallet's relay; the LaWallet server is never in the payment path.
  */
-class NwcClient(val uri: NwcUri, http: OkHttpClient) {
+class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: Long = 10_000) {
     // ponytail: first relay only (same as the web SDK default); fan out if wallets start listing several.
     // Shared socket (RelayPool): switching wallets swaps subscriptions, never the connection.
     val relay = RelayPool.get(uri.relays.first(), http)
@@ -115,8 +115,12 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient) {
         return json.decodeFromJsonElement(kotlinx.serialization.serializer<T>(), raw)
     }
 
-    /** One NIP-47 round trip, recorded in the [Trail] by method, outcome and duration (balance polls only when slow). */
-    suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = 60_000): JsonElement {
+    /**
+     * One NIP-47 round trip, recorded in the [Trail] by method, outcome and duration (balance polls only when slow).
+     * A payment may take a while to route; anything else a live wallet answers in seconds, so one that stays silent
+     * (offline, or no longer knows this connection) fails while the user is still looking at the spinner.
+     */
+    suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = if (method == "pay_invoice") 60_000 else 20_000): JsonElement {
         val started = System.currentTimeMillis()
         // Child of the current screen's transaction (Diagnostics.screen), if one is open: op + method only.
         val span = Sentry.getSpan()?.startChild("nwc.request", method)
@@ -159,7 +163,11 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient) {
                 })
                 relay.publish(request)
                 val ev = withTimeoutOrNull(timeoutMs) { response.await() }?.event
-                    ?: throw NwcException("TIMEOUT", "The wallet did not answer in time")
+                    ?: run {
+                        // A wallet that ignores us may be one we're speaking the wrong encryption to: ask again next time.
+                        encryptionCache.remove(uri.walletPubkey)
+                        throw NwcException("TIMEOUT", "The wallet did not answer in time")
+                    }
                 val reply = json.decodeFromString(Response.serializer(), decrypt(ev.content, null))
                 reply.error?.let { throw NwcException(it.code, it.message) }
                 reply.result ?: JsonNull
@@ -170,11 +178,16 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient) {
         }
     }
 
-    /** Reads the wallet's kind-13194 info event: nip44 when it advertises `nip44_v2`, else nip04. */
+    /**
+     * Reads the wallet's kind-13194 info event: nip44 when it advertises `nip44_v2`, else nip04. Only an answer is
+     * cached (the event, or the relay's EOSE without one). No answer (relay down or flapping) guesses nip04 for this
+     * request only: cached, that guess would talk nip04 to a nip44-only wallet for the rest of the process, and every
+     * request to it would go unanswered.
+     */
     private suspend fun encryption(): Enc = infoLock.withLock {
         encryptionCache[uri.walletPubkey]?.let { return it }
         val subId = "info-" + randomBytes(6).toHex()
-        val result = kotlinx.coroutines.coroutineScope {
+        val msg = kotlinx.coroutines.coroutineScope {
             val first = async(start = CoroutineStart.UNDISPATCHED) {
                 relay.messages.first { (it is Relay.Msg.Event && it.subId == subId) || (it is Relay.Msg.Eose && it.subId == subId) }
             }
@@ -183,18 +196,16 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient) {
                 putJsonArray("authors") { add(JsonPrimitive(uri.walletPubkey)) }
                 put("limit", 1)
             })
-            val msg = try {
-                withTimeoutOrNull(10_000) { first.await() }
+            try {
+                withTimeoutOrNull(infoTimeoutMs) { first.await() }
             } finally {
                 // Also when a wallet switch cancels us mid-wait: a leaked sub would be replayed forever.
                 first.cancel()
                 relay.unsubscribe(subId)
             }
-            val tag = (msg as? Relay.Msg.Event)?.event?.tag("encryption")
-            if (tag != null && tag.split(' ').contains("nip44_v2")) Enc.NIP44 else Enc.NIP04
-        }
-        encryptionCache[uri.walletPubkey] = result
-        result
+        } ?: return Enc.NIP04.also { Trail.add("nwc", "info lookup unanswered, nip04 for now", error = true) }
+        val tag = (msg as? Relay.Msg.Event)?.event?.tag("encryption")
+        (if (tag != null && tag.split(' ').contains("nip44_v2")) Enc.NIP44 else Enc.NIP04).also { encryptionCache[uri.walletPubkey] = it }
     }
 
     private fun encrypt(plain: String, enc: Enc) =

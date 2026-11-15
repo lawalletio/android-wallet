@@ -30,6 +30,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
@@ -42,6 +46,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.animation.AnimatedVisibility
+import io.lawallet.wallet.ui.components.LwButton
+import io.lawallet.wallet.ui.components.BtnVariant
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -260,6 +269,9 @@ internal fun WalletsReveal(
     onDelete: (RemoteWallet, Long?) -> Unit = { _, _ -> },
     /** Just added: its card plays the entrance once the list is open. */
     newWalletId: String? = null,
+    /** An alias address: the list waits behind a "Set a remote wallet" step, so a stray tap can't replace the alias. */
+    gated: Boolean = false,
+    onUnlock: () -> Unit = {},
 ) {
     val sorted = wallets?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
     RevealDeck(
@@ -278,6 +290,15 @@ internal fun WalletsReveal(
             }
         },
         empty = { DeckEmpty(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle)) },
+        gated = gated,
+        gate = {
+            LwButton(
+                stringResource(R.string.home_setWallet), onUnlock,
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp).testTag("home-wallets-unlock"),
+                BtnVariant.Theme, height = 58.dp,
+                leading = { ActionMark { WalletMark(lncurl = false, size = 20.dp) } },
+            )
+        },
         footer = { if (sorted.orEmpty().size > 1) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal) },
     ) { w ->
         NewWalletEntrance(w.id == newWalletId, RoundedCornerShape(24.dp), start = { snapshotFlow { reveal.progress >= 0.97f }.first { it }; delay(60) }) {
@@ -303,6 +324,9 @@ internal fun <T> RevealDeck(
     header: @Composable () -> Unit,
     empty: @Composable () -> Unit,
     footer: @Composable () -> Unit = {},
+    /** While set, [gate] stands in for the list (a deliberate step before a tap can re-route anything). */
+    gated: Boolean = false,
+    gate: @Composable () -> Unit = {},
     card: @Composable (T) -> Unit,
 ) {
     val top = reveal.headerBottom - reveal.rootTop
@@ -323,8 +347,35 @@ internal fun <T> RevealDeck(
             items == null -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Spinner() }
             items.isEmpty() -> empty()
             else -> {
-                // Opens scrolled to the end, where the primary sits right above the balance.
-                val listState = rememberLazyListState(items.lastIndex)
+                AnimatedVisibility(
+                    gated,
+                    enter = fadeIn(tween(220, 80)) + expandVertically(spring(0.85f, Spring.StiffnessMediumLow), expandFrom = Alignment.Top),
+                    exit = fadeOut(tween(140)) + shrinkVertically(spring(0.9f, Spring.StiffnessMediumLow), shrinkTowards = Alignment.Top),
+                ) {
+                    // Rides down with the deck like the primary card would.
+                    Box(Modifier.graphicsLayer {
+                        val t = smooth(0.12f, 0.7f, reveal.progress)
+                        alpha = t
+                        translationY = -(1f - reveal.progress) * reveal.range
+                        scaleX = 0.92f + 0.08f * t; scaleY = scaleX
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }) { gate() }
+                }
+                AnimatedVisibility(
+                    !gated, Modifier.weight(1f, fill = false),
+                    enter = fadeIn(tween(260, 60)) + expandVertically(spring(0.85f, Spring.StiffnessMediumLow), expandFrom = Alignment.Bottom),
+                    exit = fadeOut(tween(160)) + shrinkVertically(spring(0.9f, Spring.StiffnessMediumLow), shrinkTowards = Alignment.Bottom),
+                ) { Column {
+                // Laid out from the bottom (reverseLayout), so the primary stays right above the balance even when
+                // the room changes (switching address moves the balance); item 0 is the primary.
+                val listState = rememberLazyListState()
+                // Back to the primary on a new list, a new primary (switching address re-picks it) and every close.
+                LaunchedEffect(listState, items.size, key(items.last())) {
+                    listState.scrollToItem(0)
+                    snapshotFlow { reveal.open }.collect { if (!it) listState.scrollToItem(0) }
+                }
+                // Fades the bottom edge only while cards run past it; at the primary the bottom is just padding.
+                val fade by animateFloatAsState(if (listState.canScrollBackward) 1f else 0f, tween(180), label = "deck-fade")
                 LazyColumn(
                     // Shrinks (and scrolls) before it pushes the total out of the room.
                     Modifier.weight(1f, fill = false).fillMaxWidth().nestedScroll(reveal.listConnection).pointerInput(reveal) {
@@ -334,18 +385,26 @@ internal fun <T> RevealDeck(
                             try { do { val e = awaitPointerEvent(PointerEventPass.Initial) } while (e.changes.any { it.pressed }) }
                             finally { reveal.inList = false }
                         }
+                    }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+                        drawContent()
+                        if (fade > 0f) drawRect(
+                            Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = 1f - fade), startY = size.height - 36.dp.toPx(), endY = size.height),
+                            blendMode = BlendMode.DstIn,
+                        )
                     },
                     state = listState,
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 0.dp),
+                    reverseLayout = true,
+                    // Bottom room so a bounce or the cards' scale never clips sharply at the edge.
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    itemsIndexed(items, key = { _, w -> key(w) }) { i, w ->
+                    itemsIndexed(items.asReversed(), key = { _, w -> key(w) }) { d, w ->
                         Box(
                             Modifier.animateItem(placementSpec = spring(0.8f, Spring.StiffnessMediumLow)).graphicsLayer {
                                 // The deck rides down on top of the balance: shifted up by the travel the balance has
                                 // left, so the primary sits right above the moving figure from its first frame and
                                 // the cards slide out from under the header. At rest (open) the shift is zero.
-                                val d = items.size - 1 - i // the primary (nearest the balance) leads
+                                // d: distance from the primary (nearest the balance), which leads
                                 val t = smooth(0.12f + d * 0.06f, 0.7f + d * 0.06f, reveal.progress)
                                 alpha = t
                                 translationY = -(1f - reveal.progress) * reveal.range - (1f - t) * 12.dp.toPx() * d
@@ -357,6 +416,7 @@ internal fun <T> RevealDeck(
                     }
                 }
                 footer()
+                } }
             }
         }
     }

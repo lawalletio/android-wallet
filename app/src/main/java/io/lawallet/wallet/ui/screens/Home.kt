@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.core.nwc.Lncurl
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -727,7 +728,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
 
 /** A button's leading mark: its icon on a small light disc, so it reads on any button surface. */
 @Composable
-private fun ActionMark(content: @Composable () -> Unit) =
+internal fun ActionMark(content: @Composable () -> Unit) =
     Box(Modifier.size(32.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.9f)), contentAlignment = Alignment.Center) { content() }
 
 /** Above an alias address's label: a glowing round "@" mark. */
@@ -935,6 +936,10 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     // Delete: a wallet with funds is swept first (Sweeps.deleteAfter), then the prompt comes back here.
     var deleting by remember { mutableStateOf<RemoteWallet?>(null) }
     var sweepFirst by remember { mutableStateOf<Pair<RemoteWallet, Long>?>(null) }
+    var freeing by remember { mutableStateOf(false) }
+    var regenSkipped by remember { mutableStateOf(setOf<String>()) }
+    var regenerating by remember { mutableStateOf(false) }
+    val regenDone = stringResource(R.string.rw_regen_done)
     LaunchedEffect(wallets) {
         val id = Sweeps.deletePrompt ?: return@LaunchedEffect
         wallets?.find { it.id == id }?.let { deleting = it; Sweeps.deletePrompt = null }
@@ -950,6 +955,9 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
     val unlinked = picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
     val detached = forwardTo != null || unlinked
+    // An alias address keeps the list behind a deliberate tap: back behind it on every switch and every close.
+    var walletsUnlocked by remember(selectedAddress) { mutableStateOf(false) }
+    LaunchedEffect(reveal) { snapshotFlow { reveal.open }.collect { if (!it) walletsUnlocked = false } }
     SideEffect { HomeLightningAddress.free = unlinked; HomeLightningAddress.alias = forwardTo != null }
     DisposableEffect(Unit) { onDispose { HomeLightningAddress.free = false; HomeLightningAddress.alias = false } }
     val linkPicked: (RemoteWallet) -> Unit = { w ->
@@ -1163,7 +1171,10 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
           LwButton(
-              stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
+              stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), {
+                  walletsUnlocked = true // this tap is the deliberate step: the list shows right away, no gate
+                  scope.launch { reveal.settleTo(1f) }
+              },
               Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 58.dp,
               leading = { ActionMark { WalletMark(lncurl = false, size = 20.dp) } },
           )
@@ -1173,6 +1184,27 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               leading = { ActionMark { LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = Lw.Lightning) } },
           )
       }
+      // With the list open, a linked or alias address can be freed: bottom-left, just above the tab bar.
+      if (picked != null && !unlinked && sweepFrom == null) Txt(
+          stringResource(R.string.home_freeAddress),
+          Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 118.dp).graphicsLayer { alpha = smooth(0.6f, 1f, reveal.progress) }
+              .height(32.dp).clip(CircleShape).border(1.dp, Lw.Foreground.copy(alpha = 0.18f), CircleShape)
+              .clickable(enabled = open && current) { freeing = true }
+              .padding(horizontal = 12.dp).wrapContentHeight().testTag("home-free-address"),
+          size = 13.sp, weight = FontWeight.SemiBold,
+      )
+      if (freeing && picked != null) LwAlertDialog(
+          onDismissRequest = { freeing = false },
+          title = { Txt(stringResource(R.string.home_freeAddress_title, picked.username)) },
+          text = { Txt(stringResource(R.string.home_freeAddress_text)) },
+          confirmButton = { ModalAction(stringResource(R.string.home_freeAddress), {
+              freeing = false
+              scope.launch {
+                  runCatching { c.session.api.value.freeAddress(picked.username) }
+                      .onSuccess { c.wallet.refreshAddresses() }.onFailure { context.toast(it.message ?: "") }
+              }
+          }, destructive = true) },
+      )
       WalletsReveal(
           reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
@@ -1180,6 +1212,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
           newWalletId = newWallet,
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
+          gated = forwardTo != null && !walletsUnlocked,
+          onUnlock = { walletsUnlocked = true },
           sweepFrom = sweepFrom,
           onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
           onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
@@ -1203,6 +1237,34 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               title = { Txt(stringResource(R.string.rw_delete)) },
               text = { Txt(stringResource(R.string.rw_delete_sweepFirst, Currencies.formatSats(bal))) },
               confirmButton = { ModalAction(stringResource(R.string.sweep_menu), { sweepFirst = null; Sweeps.deleteAfter = w.id; sweepFrom = w.id }) },
+          )
+      }
+      // The wallet in use is a disposable LNCurl one that stopped answering: offer to regenerate it (once per wallet).
+      val silent by c.wallet.walletSilent.collectAsState()
+      val inUse = wallets?.let { ws -> if (picked != null) ws.find { it.id == shownWallet } else ws.find { it.isDefault } }
+      inUse?.takeIf { silent && current && it.provider == "lncurl" && it.lncurlServerUrl != null && it.id !in regenSkipped }?.let { w ->
+          LwAlertDialog(
+              onDismissRequest = { if (!regenerating) regenSkipped = regenSkipped + w.id },
+              title = { Txt(stringResource(R.string.rw_regen_title)) },
+              text = { Txt(stringResource(R.string.rw_regen_text, w.name, Lncurl.host(w.lncurlServerUrl!!))) },
+              confirmButton = {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                      ModalAction(stringResource(R.string.rw_regen), {
+                          regenerating = true
+                          scope.launch {
+                              runCatching { regenerateLncurlWallet(c, w) }
+                                  .onSuccess { id ->
+                                      regenSkipped = regenSkipped + w.id + id // the new one still reads silent until it connects
+                                      fetchRemoteWallets(c, { wallets = it }, walletBalances)
+                                      context.toast(regenDone)
+                                  }
+                                  .onFailure { context.toast(it.message ?: "") }
+                              regenerating = false
+                          }
+                      }, loading = regenerating, destructive = true)
+                      LwButton(stringResource(R.string.common_cancel), { regenSkipped = regenSkipped + w.id }, Modifier.fillMaxWidth(), BtnVariant.Secondary, enabled = !regenerating, height = 52.dp)
+                  }
+              },
           )
       }
       deleting?.let { w ->

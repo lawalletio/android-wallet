@@ -77,6 +77,13 @@
     <string name="home_selectWallet">Elegir billetera remota</string>
     <string name="home_setWallet">Asignar billetera remota</string>
     <string name="home_forwardInstead">Reenviar a una dirección</string>
+    <string name="rw_regen_title">La billetera no responde</string>
+    <string name="rw_regen_text">“%1$s” no responde. Las billeteras LNCurl son descartables y %2$s puede haberla eliminado.\n\nRegenerala: una billetera nueva del mismo proveedor, con el mismo nombre, y todas las direcciones y tarjetas que la usaban pasan a ella. Su saldo no se puede recuperar.</string>
+    <string name="rw_regen">Regenerar</string>
+    <string name="rw_regen_done">Billetera regenerada</string>
+    <string name="home_freeAddress">Liberar</string>
+    <string name="home_freeAddress_title">¿Liberar %1$s?</string>
+    <string name="home_freeAddress_text">Deja de usar su billetera remota o alias. Podés asignarle una de nuevo cuando quieras.</string>
     <string name="home_forwardsTo">Reenvía a</string>
     <string name="home_lightningAlias">Alias Lightning</string>
     <string name="home_lightningAddress">Dirección Lightning</string>
