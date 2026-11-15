@@ -27,6 +27,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     val walletKeys = Keys.generate()
     val clientKeys = Keys.generate()
     var balanceMsat = 21_000_000L
+    /** False: the relay never answers the kind-13194 info lookup (no event, no EOSE), like one that's flapping. */
+    @Volatile var answerInfo = true
     val requests = CopyOnWriteArrayList<String>()
     private val sockets = CopyOnWriteArrayList<WebSocket>()
     private val subs = java.util.concurrent.ConcurrentHashMap<String, JsonObject>()
@@ -52,7 +54,7 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
                 val subId = msg[1].jsonPrimitive.content
                 val filter = msg[2].jsonObject
                 subs[subId] = filter
-                if (filter["kinds"]!!.jsonArray.any { it.jsonPrimitive.int == 13194 }) {
+                if (answerInfo && filter["kinds"]!!.jsonArray.any { it.jsonPrimitive.int == 13194 }) {
                     val tags = if (nip44) listOf(listOf("encryption", "nip44_v2 nip04")) else emptyList()
                     send(webSocket, subId, NostrEvent.sign(walletKeys, 13194, "pay_invoice get_balance make_invoice lookup_invoice list_transactions notifications", tags))
                     webSocket.send("""["EOSE","$subId"]""")
@@ -71,7 +73,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     private fun encrypt(plain: String) = if (nip44) Nip44.encrypt(plain, walletKeys, clientKeys.pubkey) else Nip04.encrypt(plain, walletKeys, clientKeys.pubkey)
 
     private fun handleRequest(ws: WebSocket, ev: NostrEvent) {
-        check(nip44 == (ev.tag("encryption") == "nip44_v2")) { "client used the wrong encryption" }
+        // A real wallet can't read the wrong encryption and just stays silent.
+        if (nip44 != (ev.tag("encryption") == "nip44_v2")) { requests += "wrong-encryption"; return }
         val req = NostrEvent.json.parseToJsonElement(decrypt(ev.content)).jsonObject
         val method = req["method"]!!.jsonPrimitive.content
         val params = req["params"]!!.jsonObject

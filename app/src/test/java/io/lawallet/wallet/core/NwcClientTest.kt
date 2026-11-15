@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,6 +54,19 @@ class NwcClientTest {
         assertEquals(1000L, nwc.payInvoice("lnbc1x").feesPaid)
         wallet.balanceMsat = 0
         assertEquals("INSUFFICIENT_BALANCE", assertThrows(NwcException::class.java) { runBlocking { nwc.payInvoice("lnbc1x") } }.code)
+    }
+
+    /** A relay that misses the info lookup once must not pin a nip44 wallet to nip04 for good. */
+    @Test fun unansweredInfoLookupIsRetried() = runBlocking {
+        withTimeout(20_000) {
+            val w = FakeNwcWallet(nip44 = true).apply { answerInfo = false }.start().also { wallets += it }
+            val nwc = NwcClient(NwcUri.parse(w.connectionString), http, infoTimeoutMs = 300)
+            val e = assertThrows(NwcException::class.java) { runBlocking { nwc.requestRaw("get_balance", JsonObject(emptyMap()), timeoutMs = 1_000) } }
+            assertEquals("TIMEOUT", e.code)
+            assertEquals(listOf("wrong-encryption"), w.requests.toList())
+            w.answerInfo = true
+            assertEquals(21_000_000L, nwc.getBalanceMsat())
+        }
     }
 
     @Test fun notificationsSurviveReconnect() = runBlocking {
