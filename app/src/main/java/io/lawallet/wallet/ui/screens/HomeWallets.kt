@@ -257,7 +257,8 @@ internal fun WalletsReveal(
     hidden: Boolean,
     onOpen: (RemoteWallet) -> Unit,
     onSetPrimary: (RemoteWallet) -> Unit,
-    onAdd: () -> Unit,
+    /** "nwc" or "lncurl", picked in the add sheet. */
+    onAdd: (String) -> Unit,
     onManage: () -> Unit,
     /** Set while picking where to sweep this wallet's funds: the list turns into a destination picker. */
     sweepFrom: String? = null,
@@ -274,6 +275,8 @@ internal fun WalletsReveal(
     onUnlock: () -> Unit = {},
 ) {
     val sorted = wallets?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" }) // primary last: right above the balance
+    var adding by remember { mutableStateOf(false) }
+    if (adding) AddWalletSheet({ adding = false }, onAdd)
     RevealDeck(
         reveal, sorted, { it.id }, Modifier.testTag("home-wallets"),
         header = {
@@ -286,7 +289,7 @@ internal fun WalletsReveal(
                 label = "sweepBanner",
             ) { picking ->
                 if (picking) SweepPickBanner(onSweepCancel)
-                else DeckTitle(reveal, stringResource(R.string.settings_remoteWallets), onManage, onAdd)
+                else DeckTitle(reveal, stringResource(R.string.settings_remoteWallets), onManage, { adding = true })
             }
         },
         empty = { DeckEmpty(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle)) },
@@ -739,6 +742,28 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
         if (canSweep) SheetAction(L.drawable.lucide_ic_arrow_right_left, stringResource(R.string.sweep_menu), brand.t400, "home-wallet-menu-sweep") { then(onSweep) }
         SheetAction(L.drawable.lucide_ic_trash_2, stringResource(R.string.rw_delete), Lw.Red, "home-wallet-menu-delete", Lw.Red) { then(onDelete) }
         Spacer(Modifier.height(16.dp).navigationBarsPadding())
+    }
+}
+
+/** The deck's Add: the same two choices as "Connect a remote wallet", in a sheet; it slides away before the form opens. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddWalletSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    fun then(step: String) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); onPick(step) } }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
+        modifier = Modifier.testTag("home-wallets-add-sheet"),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Txt(stringResource(R.string.rw_add_title), size = 17.sp, weight = FontWeight.SemiBold)
+            MutedText(stringResource(R.string.rw_add_subtitle))
+            Spacer(Modifier.height(4.dp))
+            AddWalletChoices(onNwc = { then("nwc") }, onLncurl = { then("lncurl") })
+        }
     }
 }
 

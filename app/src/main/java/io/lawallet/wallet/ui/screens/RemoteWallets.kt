@@ -338,12 +338,12 @@ internal fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
 
 /** Add a remote wallet: pick a source first (import NWC / disposable LNCurl), then fill its form. */
 @Composable
-fun AddRemoteWalletScreen() {
+fun AddRemoteWalletScreen(initialStep: String? = null) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
-    val settings by c.session.settings.collectAsState()
-    var step by remember { mutableStateOf<String?>(null) } // null = choose, "nwc", "lncurl"
+    val start = initialStep?.takeIf { it == "nwc" || it == "lncurl" } // opened from Home's add sheet: the choice is made
+    var step by remember { mutableStateOf(start) } // null = choose, "nwc", "lncurl"
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
     // Primary is opt-in, except for the first wallet (it has to be the primary). Cached list first, then the server's.
@@ -352,13 +352,13 @@ fun AddRemoteWalletScreen() {
     LaunchedEffect(Unit) { runCatching { c.session.api.value.remoteWallets() }.onSuccess { if (!primaryTouched) primary = it.isEmpty() } }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var scanning by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(start == "nwc") }
     var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
     val invalid = "Invalid NWC connection string"
     // Name is optional: default to the URI's lud16, else its first relay host.
     val derivedName = remember(conn) { runCatching { NwcUri.parse(conn) }.getOrNull()?.let { it.lud16 ?: it.relays.firstOrNull()?.substringAfter("://")?.substringBefore('/') } ?: "Wallet" }
-    val back = { if (step != null) { step = null; error = null; scanning = false } else nav.popBackStack() }
-    androidx.activity.compose.BackHandler(step != null) { back() }
+    val back = { if (step != null && start == null) { step = null; error = null; scanning = false } else nav.popBackStack() }
+    androidx.activity.compose.BackHandler(step != null && start == null) { back() }
     fun submit(create: suspend () -> RemoteWallet) {
         busy = true; error = null
         scope.launch {
@@ -381,14 +381,7 @@ fun AddRemoteWalletScreen() {
                 null -> {
                     MutedText(stringResource(R.string.rw_add_subtitle))
                     WalletMark(lncurl = false, size = 96.dp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
-                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
-                    if (settings?.lncurlEnabled == true) Column {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.weight(1f).testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, leading = { WalletMark(lncurl = true, size = 22.dp) })
-                            LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
-                        }
-                        MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
-                    }
+                    AddWalletChoices(onNwc = { step = "nwc"; scanning = true }, onLncurl = { provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT; step = "lncurl" })
                 }
                 "nwc" -> {
                     if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
@@ -426,6 +419,24 @@ fun AddRemoteWalletScreen() {
                 }
             },
                 Modifier.fillMaxWidth().padding(16.dp).testTag("create-lncurl"), BtnVariant.Theme, enabled = !busy, loading = busy, icon = L.drawable.lucide_ic_zap)
+        }
+    }
+}
+
+/** The two ways to add a wallet: import an NWC connection, or a disposable LNCurl one (when the instance runs LNCurl). */
+@Composable
+internal fun AddWalletChoices(onNwc: () -> Unit, onLncurl: () -> Unit) {
+    val c = LocalContainer.current
+    val settings by c.session.settings.collectAsState()
+    var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        LwButton(stringResource(R.string.rw_import_nwc), onNwc, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
+        if (settings?.lncurlEnabled == true) Column {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LwButton(stringResource(R.string.rw_create_disposable), onLncurl, Modifier.weight(1f).testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, leading = { WalletMark(lncurl = true, size = 22.dp) })
+                LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
+            }
+            MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
         }
     }
 }

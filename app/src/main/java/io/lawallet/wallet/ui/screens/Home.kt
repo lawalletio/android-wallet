@@ -1209,7 +1209,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
           onSetPrimary = { w -> if (picked != null) linkPicked(w) else setPrimary(w) },
-          onAdd = { nav.navigate(R0.REMOTE_WALLET_ADD) },
+          onAdd = { nav.navigate(R0.addRemoteWallet(it)) },
           newWalletId = newWallet,
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
           gated = forwardTo != null && !walletsUnlocked,
