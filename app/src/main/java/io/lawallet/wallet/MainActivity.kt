@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
     private val resultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         pendingResult?.invoke(it.data.takeIf { _ -> it.resultCode == RESULT_OK }); pendingResult = null
     }
-    private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // The system splash hands off at once to LoadingScreen (same icon + progress bar + version).
@@ -42,9 +42,12 @@ class MainActivity : AppCompatActivity() {
         container.activityBridge.launch = { intent, cb -> pendingResult = cb; resultLauncher.launch(intent) }
         setContent { LaWalletRoot(container) }
         io.lawallet.wallet.core.diag.Perf.attach(window, (if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay)?.refreshRate ?: 60f)
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        val wanted = buildList {
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+            // Debug builds pointed at a dev server on the LAN (only they declare it): Android 17 blocks it otherwise.
+            if (BuildConfig.DEBUG && Build.VERSION.SDK_INT >= 37 && isLanHost(container.prefs.instanceUrl)) add(LOCAL_NETWORK)
+        }.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (wanted.isNotEmpty()) permissions.launch(wanted.toTypedArray())
         if (savedInstanceState == null) handle(intent)
     }
 
@@ -116,4 +119,13 @@ class MainActivity : AppCompatActivity() {
             Intent.ACTION_VIEW -> intent.dataString?.let { Intents.payloads.trySend(it) }
         }
     }
+}
+
+private const val LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
+private val PRIVATE_IPV4 = Regex("""^(10|127|192\.168|172\.(1[6-9]|2\d|3[01]))\.""")
+
+/** A private-network server (192.168.x.x, 10.x, 172.16–31.x, *.local), as opposed to a public instance. */
+internal fun isLanHost(url: String): Boolean {
+    val host = android.net.Uri.parse(url).host ?: return false
+    return PRIVATE_IPV4.containsMatchIn(host) || host.endsWith(".local")
 }
