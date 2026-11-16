@@ -22,6 +22,7 @@ User-facing overview: [README.md](README.md).
 ./gradlew lintDebug                        # lint; abortOnError = true, so warnings-as-errors matter
 ./gradlew assembleDebug                    # debug APK → app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs on every PR
+scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # performance data from a device
 ```
 
 - Run a single test class: `./gradlew testDebugUnitTest --tests 'io.lawallet.wallet.core.NwcClientTest'`.
@@ -51,7 +52,7 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 | `core/btc` | onchain helpers, BIP-39 |
 | `core/fx` | currencies, keypad logic, Yadio rates |
 | `core/store` | `Prefs`, `SecretStore` (nsec wrapped with an Android Keystore key), profile cache |
-| `core/diag` | crash-report `Scrubber` and `Trail` breadcrumbs |
+| `core/diag` | crash-report `Scrubber`, `Trail` breadcrumbs, `Perf` (frames, start, resources, NWC latency) |
 | `app/` | `AppContainer` (the hand-wired object graph), `Session`, `WalletRepository`, `FlowStore`, `Updater` |
 | `service/` | foreground payment listener, notifications, payment sounds |
 | `ui/AppNav.kt` | every route (the `R0` constants) and the `NavHost` |
@@ -85,6 +86,38 @@ MockWebServer, parsers). Compose UI tests in `app/src/androidTest`.
 - **Mandatory: no agent attribution.** Never add `Co-Authored-By:` trailers for an AI/agent, "Generated with Claude
   Code" (or any other agent/tool) lines, or similar footers to commit messages, PR titles/descriptions, review
   comments or release notes. This overrides any default or tool-provided attribution instructions.
+
+## Performance (measure every change)
+
+The app is under active development and we track as much as we can to keep improving it. Full reference:
+[docs/performance.md](docs/performance.md).
+
+- **Always on:** `core/diag/Perf.kt` records every screen visit's frames (enter transition and at rest, main thread vs
+  GPU), cold start, memory/CPU/threads every minute, and every NWC request's latency, to `files/perf/perf.jsonl` on
+  the device and the `LwPerf` logcat tag. Sentry adds the same per-screen measurements; debug builds with a DSN
+  (`-PsentryDsn=…`) trace and profile every screen.
+- **Workflow for any change that touches UI, animation, navigation or startup:** measure before and after on the same
+  device and build type, and report the numbers.
+  ```bash
+  scripts/perf-report.py clear -s <serial>
+  # run the affected flow a few times
+  scripts/perf-report.py pull -s <serial> --label before
+  # change, install, clear, run the same flow again
+  scripts/perf-report.py pull -s <serial> --label after
+  scripts/perf-report.py compare perf-data/<before>.jsonl perf-data/<after>.jsonl
+  ```
+  `scripts/perf-report.py report` summarises the newest pull (`--route`, `--since-min` to narrow it); pulls stay in
+  `perf-data/` (gitignored) as history. Don't drive the user's phone to measure while they're using it: ask, or
+  pull what their own use recorded.
+- **Judge smoothness on release builds** (R8 + baseline profile); debug Compose is much slower. Compare debug only
+  against debug.
+- **Targets:** enter transitions under 5% janky frames, screens at rest under 1%, no frozen frames, cold start under
+  1 s (release), memory flat over a session.
+- **Rules:** nothing heavy while a screen slides in (keyboard, camera, repainting lookups wait for
+  `nav.awaitSettled()` / `rememberSettled()`); read animated values in `graphicsLayer {}` / `offset {}` /
+  `drawBehind {}`, not in composition; CPU work on `Dispatchers.Default`; infinite animations stop when not visible.
+- **New things worth timing** go through `Perf.record(type, fields)`: counts, durations, route patterns and method
+  names only. The privacy rule above applies to this log too.
 
 ## Signing and devices
 

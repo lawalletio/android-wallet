@@ -81,8 +81,8 @@
     <string name="rw_regen_text">“%1$s” no responde. Las billeteras LNCurl son descartables y %2$s puede haberla eliminado.\n\nRegenerala: una billetera nueva del mismo proveedor, con el mismo nombre, y todas las direcciones y tarjetas que la usaban pasan a ella. Su saldo no se puede recuperar.</string>
     <string name="rw_regen">Regenerar</string>
     <string name="rw_regen_done">Billetera regenerada</string>
-    <string name="home_freeAddress">Liberar</string>
-    <string name="home_freeAddress_title">¿Liberar %1$s?</string>
+    <string name="home_freeAddress">Desvincular billetera</string>
+    <string name="home_freeAddress_title">¿Desvincular %1$s?</string>
     <string name="home_freeAddress_text">Deja de usar su billetera remota o alias. Podés asignarle una de nuevo cuando quieras.</string>
     <string name="home_forwardsTo">Reenvía a</string>
     <string name="home_lightningAlias">Alias Lightning</string>
@@ -421,4 +421,13 @@
     <string name="lock_locked_body">Usá tu huella, rostro o bloqueo de pantalla para continuar.</string>
     <string name="receipt_share_text">Compartir texto</string>
     <string name="receipt_share_image">Compartir imagen</string>
+    <string name="rw_lock">Bloquear a esta dirección</string>
+    <string name="rw_unlock">Desbloquear</string>
+    <string name="rw_locked_note">Bloqueada a esta dirección. Desbloqueala para ver todas tus billeteras.</string>
+    <string name="rw_setting_up">Configurando…</string>
+    <string name="rw_create_failed">No se pudo crear la billetera</string>
+    <string name="home_aliasToWallet">¿Quieres asignar una billetera remota a esta dirección Lightning y dejar de reenviar a %1$s?</string>
+    <string name="home_aliasToWallet_confirm">Asignar billetera</string>
+    <string name="rw_name_new">Ponle nombre a tu billetera</string>
+    <string name="rw_name_save">Guardar nombre</string>
 </resources>

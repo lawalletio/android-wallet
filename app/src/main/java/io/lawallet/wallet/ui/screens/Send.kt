@@ -60,6 +60,8 @@ import io.lawallet.wallet.core.store.Contact
 import io.lawallet.wallet.core.store.PaymentDestination
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
+import io.lawallet.wallet.ui.rememberSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.AmountDisplay
 import io.lawallet.wallet.ui.components.AmountKeypad
@@ -168,7 +170,7 @@ internal fun AddressEntry(
     val contacts = remember { c.prefs.contacts }
     // Rows read faces from the cache; observing it repaints them as lookups land.
     c.avatars.profiles.collectAsState().value
-    LaunchedEffect(Unit) { contacts.forEach { launch { c.refreshAddressProfile(it.address) } } }
+    LaunchedEffect(Unit) { nav.awaitSettled(); contacts.forEach { launch { c.refreshAddressProfile(it.address) } } } // each answer repaints the screen
     // A payable clipboard (Lightning address or unexpired invoice) gets its own one-tap row; read again on
     // every focus, since Android only lets the focused app read it and it may have changed meanwhile.
     var clip by remember { mutableStateOf<String?>(null) }

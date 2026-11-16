@@ -84,6 +84,14 @@ class Prefs(context: Context) {
     val hideBalance: StateFlow<Boolean> = _hideBalance
     fun setHideBalance(v: Boolean) { _hideBalance.value = v; sp.edit { putBoolean("hide-balance", v) } }
 
+    /** Addresses locked to their wallet (usernames): Home's wallet list shows only that wallet, so it can't be switched by accident. */
+    private val _lockedAddresses = MutableStateFlow(sp.getStringSet("locked-addresses", null)?.toSet().orEmpty())
+    val lockedAddresses: StateFlow<Set<String>> = _lockedAddresses
+    fun setAddressLocked(username: String, locked: Boolean) {
+        val s = if (locked) _lockedAddresses.value + username else _lockedAddresses.value - username
+        _lockedAddresses.value = s; sp.edit { putStringSet("locked-addresses", s) }
+    }
+
     private val _bgListener = MutableStateFlow(sp.getBoolean("bg-listener", true))
     val backgroundListener: StateFlow<Boolean> = _bgListener
     fun setBackgroundListener(v: Boolean) { _bgListener.value = v; sp.edit { putBoolean("bg-listener", v) } }

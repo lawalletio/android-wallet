@@ -57,7 +57,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -139,7 +138,7 @@ fun LwButton(
     val brand = LocalBrand.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
+    val scale = animateFloatAsState(if (pressed) 0.97f else 1f, label = "press") // read in the layer: no recomposition per frame
     val s = shape ?: RoundedCornerShape(if (brand.radius == 0.dp) 0.dp else (brand.radius + 4.dp).coerceAtMost(height / 2))
     val active = enabled && !loading
     val fg = when (variant) { BtnVariant.Default -> Lw.Background; BtnVariant.Destructive -> Lw.DestructiveFg; else -> Lw.Foreground }
@@ -160,7 +159,7 @@ fun LwButton(
     }
     Box(
         modifier
-            .scale(scale)
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             .height(height)
             .alpha(if (enabled) 1f else 0.45f)
             .then(surface)
@@ -277,14 +276,15 @@ fun BrandImage(url: String?, fallbackAsset: String, modifier: Modifier = Modifie
 
 /**
  * 0 → 1 while [source] is pressed, timed to the long-press delay so it peaks just as a hold fires;
- * springs back on release. Drive a "charging" press effect with it (shrink, dim).
+ * springs back on release. Drive a "charging" press effect with it (shrink, dim), reading it in `graphicsLayer { }`:
+ * it's a lambda so the caller doesn't recompose on every frame of the press.
  */
 @Composable
-fun holdProgress(source: InteractionSource): Float {
+fun holdProgress(source: InteractionSource): () -> Float {
     val pressed by source.collectIsPressedAsState()
     val hold = LocalViewConfiguration.current.longPressTimeoutMillis.toInt()
-    val p by animateFloatAsState(if (pressed) 1f else 0f, if (pressed) tween(hold, easing = LinearOutSlowInEasing) else spring(0.5f, Spring.StiffnessMedium), label = "hold")
-    return p
+    val p = animateFloatAsState(if (pressed) 1f else 0f, if (pressed) tween(hold, easing = LinearOutSlowInEasing) else spring(0.5f, Spring.StiffnessMedium), label = "hold")
+    return remember(p) { { p.value } }
 }
 
 /** Three dots bouncing in a wave: the hero balance's "still loading". */

@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
         container.activityBridge.activity = this
         container.activityBridge.launch = { intent, cb -> pendingResult = cb; resultLauncher.launch(intent) }
         setContent { LaWalletRoot(container) }
+        io.lawallet.wallet.core.diag.Perf.attach(window, (if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay)?.refreshRate ?: 60f)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        io.lawallet.wallet.core.diag.Perf.detach(window)
         if (container.activityBridge.activity === this) { container.activityBridge.activity = null; container.activityBridge.launch = null }
         super.onDestroy()
     }

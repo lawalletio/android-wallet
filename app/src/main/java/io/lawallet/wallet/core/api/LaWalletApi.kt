@@ -130,8 +130,9 @@ class LaWalletApi(
     // ---------- addresses ----------
     suspend fun addresses() = get("/api/wallet/addresses", ListSerializer(WalletAddress.serializer()))
     /** Throws ApiException(402) when the instance charges for addresses. */
-    suspend fun createAddress(username: String) =
-        send("POST", "/api/wallet/addresses", buildJsonObject { put("username", username) }, WalletAddress.serializer())
+    /** [mode]: how a non-primary address starts (IDLE = free); the server ignores it for the first address, which gets its own. */
+    suspend fun createAddress(username: String, mode: String? = null) =
+        send("POST", "/api/wallet/addresses", buildJsonObject { put("username", username); if (mode != null) put("mode", mode) }, WalletAddress.serializer())
     suspend fun setPrimaryAddress(username: String) = send("POST", "/api/wallet/addresses/${enc(username)}/primary", null, JsonElement.serializer())
     suspend fun createAddressInvoice(username: String) =
         send("POST", "/api/invoices", buildJsonObject {

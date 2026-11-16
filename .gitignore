@@ -10,3 +10,7 @@ build/
 *.jks
 *.keystore
 keystore.properties
+
+# Local performance pulls (scripts/perf-report.py)
+/perf-data/
+.kotlin/

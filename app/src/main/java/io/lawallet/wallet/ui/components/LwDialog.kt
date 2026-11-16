@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.R as L
 import androidx.compose.ui.focus.FocusRequester
+import io.lawallet.wallet.ui.awaitSettled
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -103,11 +104,15 @@ private fun DialogWindowAnimation() {
     SideEffect { window?.setWindowAnimations(R.style.LwDialogAnimation) }
 }
 
-/** A modal's only text field takes focus (keyboard up) as soon as the modal opens. */
+/**
+ * A modal's (or screen's) only text field takes focus, keyboard up, as soon as it's on screen: right away in a
+ * modal, once the screen has landed after a navigation (the keyboard sliding up mid-transition stutters it).
+ */
 @Composable
 fun Modifier.autoFocus(): Modifier {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() }; keyboard?.show() }
+    val nav = io.lawallet.wallet.ui.LocalNav.current
+    LaunchedEffect(Unit) { nav.awaitSettled(); runCatching { focus.requestFocus() }; keyboard?.show() }
     return focusRequester(focus)
 }

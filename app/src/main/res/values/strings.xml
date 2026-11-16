@@ -82,8 +82,8 @@
     <string name="rw_regen_text">“%1$s” isn’t answering. LNCurl wallets are disposable, and %2$s may have removed it.\n\nRegenerate it: a new wallet from the same provider, with the same name, and every address and card that used it moves over. Its balance can’t be recovered.</string>
     <string name="rw_regen">Regenerate</string>
     <string name="rw_regen_done">Wallet regenerated</string>
-    <string name="home_freeAddress">Clear</string>
-    <string name="home_freeAddress_title">Free %1$s?</string>
+    <string name="home_freeAddress">Unlink wallet</string>
+    <string name="home_freeAddress_title">Unlink %1$s?</string>
     <string name="home_freeAddress_text">It stops using its remote wallet or alias. You can assign one again any time.</string>
     <string name="home_forwardsTo">Forwards to</string>
     <string name="home_lightningAlias">Lightning alias</string>
@@ -421,4 +421,13 @@
     <string name="lock_locked_body">Use your fingerprint, face or screen lock to continue.</string>
     <string name="receipt_share_text">Share text</string>
     <string name="receipt_share_image">Share image</string>
+    <string name="rw_lock">Lock to this address</string>
+    <string name="rw_unlock">Unlock</string>
+    <string name="rw_locked_note">Locked to this address. Unlock it to see all your wallets.</string>
+    <string name="rw_setting_up">Setting up…</string>
+    <string name="rw_create_failed">Couldn\'t create the wallet</string>
+    <string name="home_aliasToWallet">Do you want to assign a remote wallet for this Lightning address and stop forwarding to %1$s?</string>
+    <string name="home_aliasToWallet_confirm">Assign wallet</string>
+    <string name="rw_name_new">Name your new wallet</string>
+    <string name="rw_name_save">Save name</string>
 </resources>

@@ -1,8 +1,10 @@
 package io.lawallet.wallet.app
 
+import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.core.ln.PayMetadata
 import io.lawallet.wallet.core.ln.WithdrawParams
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** In-memory hand-off between flow steps (wallet-flow-store.ts) — deliberately not persisted. */
 class FlowStore {
@@ -10,6 +12,12 @@ class FlowStore {
     var revealWallets = false
     /** A remote wallet just added: the list it lands in plays its entrance (consumed by the first to show it). */
     var newWalletId: String? = null
+    /**
+     * A wallet being added from Home: its card shows at once under [key] (status PENDING) while LaWallet sets it up,
+     * then [created] takes its place under the same key. Cleared once Home closes the list or leaves.
+     */
+    data class PendingWallet(val key: String, val name: String, val lncurl: Boolean, val selected: Boolean, val created: RemoteWallet? = null, val askName: Boolean = false, val renamed: Boolean = false)
+    val pendingWallet = MutableStateFlow<PendingWallet?>(null)
     /** Same, for the Onchain page after adding or backing up an onchain wallet. */
     var revealOnchain = false
 

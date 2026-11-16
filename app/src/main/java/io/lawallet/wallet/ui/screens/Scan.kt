@@ -57,6 +57,8 @@ import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
+import io.lawallet.wallet.ui.rememberSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.ErrorText
@@ -166,8 +168,11 @@ fun QrCamera(busy: Boolean, onError: (String?) -> Unit, onCode: (String) -> Unit
     val paused by rememberUpdatedState(busy)
     val failed by rememberUpdatedState(onError)
     val code by rememberUpdatedState(onCode)
+    // The camera (CameraX bind, ML Kit init) starts once the screen has landed: mid-slide it drops frames.
+    val settled = rememberSettled()
     Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
-        if (granted) {
+        if (granted && !settled) Spinner(32.dp)
+        else if (granted) {
             val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
             val scanner = remember {
                 initMlKit(context)

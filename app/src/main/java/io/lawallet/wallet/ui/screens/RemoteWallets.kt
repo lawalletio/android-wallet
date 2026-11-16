@@ -88,6 +88,8 @@ import io.lawallet.wallet.core.nwc.NwcUri
 import io.lawallet.wallet.ui.LocalContainer
 import kotlinx.serialization.builtins.ListSerializer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
+import io.lawallet.wallet.ui.rememberSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.components.BtnVariant
@@ -113,6 +115,7 @@ import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import com.composables.icons.lucide.R as L
 
 internal val remoteWalletsSer = ListSerializer(RemoteWallet.serializer())
@@ -154,7 +157,8 @@ internal suspend fun regenerateLncurlWallet(c: AppContainer, old: RemoteWallet):
     val api = c.session.api.value
     val origin = old.lncurlServerUrl ?: error("not an LNCurl wallet")
     // Under a stand-in name first: the dead wallet still holds its own (names are unique per account).
-    val created = api.createNwcWallet("${old.name} (new)", Lncurl.mint(c.http, origin.trimEnd('/')), "SEND_RECEIVE", isDefault = false, lncurlServerUrl = origin)
+    val uri = Lncurl.mint(c.http, origin.trimEnd('/'))
+    val created = withFreeName(c, "${old.name} (new)") { api.createNwcWallet(it, uri, "SEND_RECEIVE", isDefault = false, lncurlServerUrl = origin) }
     c.wallet.refreshAddresses()
     c.wallet.addresses.value.filter { it.remoteWalletId == old.id && it.mode == "CUSTOM_NWC" }.forEach { api.routeAddressToWallet(it.username, created.id) }
     api.cards().filter { it.remoteWalletId == old.id }.forEach { api.bindCardToWallet(it.id, created.id) }
@@ -261,13 +265,19 @@ internal fun rememberNewWallet(): String? {
  * growing into place, while a brand-coloured halo blooms behind it and fades.
  */
 @Composable
-internal fun NewWalletEntrance(isNew: Boolean, shape: Shape, start: suspend () -> Unit = { delay(320) }, content: @Composable () -> Unit) {
+internal fun NewWalletEntrance(isNew: Boolean, shape: Shape, start: suspend () -> Unit = { delay(320) }, ready: Boolean = true, content: @Composable () -> Unit) {
     if (!isNew) return content()
     val rise = remember { Animatable(0f) }
     val halo = remember { Animatable(0f) }
+    var risen by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         start()
-        launch { rise.animateTo(1f, spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow)) }
+        risen = true
+        rise.animateTo(1f, spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow))
+    }
+    // The halo blooms once the wallet is [ready]: with the rise for a created one, later for one still setting up.
+    LaunchedEffect(risen && ready) {
+        if (!risen || !ready) return@LaunchedEffect
         halo.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
         halo.animateTo(0f, tween(1100, delayMillis = 450, easing = LinearOutSlowInEasing))
     }
@@ -336,40 +346,119 @@ private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClic
 internal fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
     Txt(text, Modifier.glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
 
+/** A new wallet is primary when no active one is (the primary address has no wallet otherwise). */
+internal fun needsPrimary(list: List<RemoteWallet>?) = list.orEmpty().none { it.isDefault && it.status == "ACTIVE" }
+
+/** The non-primary address picked on Home's pill, if any. */
+private fun pickedAddress(c: AppContainer) = c.wallet.addresses.value.find { it.username == c.wallet.selectedAddress.value && !it.isPrimary }
+
+/** The address picked on Home's pill when it has no wallet of its own (not the primary, not forwarding): a new wallet takes it. */
+internal fun unlinkedPickedAddress(c: AppContainer): String? =
+    pickedAddress(c)?.takeIf { addressKind(it, c.prefs.cached("remote-wallets", remoteWalletsSer)) == AddressKind.IDLE }?.username
+
+/** "marce" → "marce 2", "marce 3"…: the first not in [taken]. The server's own rule for LNCurl wallets (names are unique per user). */
+internal fun uniqueName(requested: String, taken: Set<String>): String {
+    if (requested !in taken) return requested
+    var n = 2
+    while ("$requested $n" in taken) n++
+    return "$requested $n"
+}
+
+/**
+ * Creates a wallet under [name] or, when the user already has one by that name, the next free "name N": checked
+ * against the server's list first, then again on a 409 (another device took it in between). Never fails on the name.
+ */
+internal suspend fun <T> withFreeName(c: AppContainer, name: String, create: suspend (String) -> T): T {
+    val taken = (runCatching { c.session.api.value.remoteWallets() }.getOrNull() ?: c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty())
+        .mapTo(mutableSetOf()) { it.name }
+    while (true) {
+        val free = uniqueName(name, taken)
+        try { return create(free) } catch (e: io.lawallet.wallet.core.api.ApiException) { if (e.status != 409 || !taken.add(free)) throw e }
+    }
+}
+
+/** A disposable LNCurl wallet from [provider]: the server's default goes through the server, any other is minted here. */
+internal suspend fun createLncurl(c: AppContainer, provider: String, name: String?, isDefault: Boolean): RemoteWallet =
+    // The server's default provider mints server-side; any other is minted here and saved tagged LNCurl with its
+    // origin (the server's NWC config takes both), so it shows as LNCurl and can be regenerated like the server's own.
+    if (provider == Lncurl.DEFAULT) c.session.api.value.createLncurlWallet(name, isDefault)
+    else Lncurl.mint(c.http, provider).let { uri -> withFreeName(c, name ?: Lncurl.host(provider)) { c.session.api.value.createNwcWallet(it, uri, "SEND_RECEIVE", isDefault, lncurlServerUrl = provider) } }
+
+/** The cached list with [created] in it (and the old primary stepped down when it takes over). */
+internal fun cacheCreatedWallet(c: AppContainer, created: RemoteWallet) {
+    val others = c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty().filter { it.id != created.id }
+    c.prefs.setCached("remote-wallets", remoteWalletsSer, others.map { if (created.isDefault) it.copy(isDefault = false) else it } + created)
+}
+
+/**
+ * Optimistic add from Home: the card shows at once ([io.lawallet.wallet.app.FlowStore.pendingWallet]) while LaWallet
+ * sets the wallet up in the app scope (leaving Home doesn't cancel it). Primary when there's none; an unlinked
+ * picked address is routed into it. A failure takes the card away and says why.
+ */
+internal fun addWalletOptimistic(c: AppContainer, appContext: android.content.Context, name: String, lncurl: Boolean, primary: Boolean? = null, askName: Boolean = false, create: suspend (isDefault: Boolean) -> RemoteWallet) {
+    val isDefault = primary ?: needsPrimary(c.prefs.cached("remote-wallets", remoteWalletsSer))
+    val link = unlinkedPickedAddress(c)
+    // Shown selected where it will be: the primary on the primary address, the picked address's wallet on one it takes.
+    val selected = if (pickedAddress(c) != null) link != null else isDefault
+    val shownName = uniqueName(name, c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty().mapTo(mutableSetOf()) { it.name })
+    val pending = io.lawallet.wallet.app.FlowStore.PendingWallet("pending-${System.nanoTime()}", shownName, lncurl, selected, askName = askName)
+    c.flow.pendingWallet.value = pending
+    c.scope.launch {
+        runCatching { create(isDefault) }.onSuccess { made ->
+            // Named while it was being set up: the card keeps that name (local first) and LaWallet gets it after.
+            val wanted = c.flow.pendingWallet.value?.takeIf { it.key == pending.key && it.renamed }?.name
+            val created = if (wanted != null) made.copy(name = wanted) else made
+            cacheCreatedWallet(c, created)
+            // Routed before the card turns real, so it never flickers unselected in between.
+            if (link != null) runCatching { c.session.api.value.routeAddressToWallet(link, created.id) }.onSuccess { c.wallet.refreshAddresses() }
+            c.flow.pendingWallet.update { p -> if (p?.key == pending.key) p.copy(created = created) else p }
+            if (wanted != null && wanted != made.name) launch {
+                runCatching { withFreeName(c, wanted) { n -> c.session.api.value.updateRemoteWallet(made.id, name = n) } }
+                    .onSuccess { cacheCreatedWallet(c, it) }
+            }
+            runCatching { c.session.refreshMe() } // the app's wallet connection follows a new primary
+        }.onFailure { e ->
+            if (c.flow.pendingWallet.value?.key == pending.key) c.flow.pendingWallet.value = null
+            appContext.toast(e.message ?: appContext.getString(R.string.rw_create_failed))
+        }
+    }
+}
+
 /** Add a remote wallet: pick a source first (import NWC / disposable LNCurl), then fill its form. */
 @Composable
-fun AddRemoteWalletScreen() {
+fun AddRemoteWalletScreen(initialStep: String? = null) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val scope = rememberCoroutineScope()
-    val settings by c.session.settings.collectAsState()
-    var step by remember { mutableStateOf<String?>(null) } // null = choose, "nwc", "lncurl"
+    val start = initialStep?.takeIf { it == "nwc" || it == "lncurl" } // opened from Home's add sheet: the choice is made
+    var step by remember { mutableStateOf(start) } // null = choose, "nwc", "lncurl"
     var name by remember { mutableStateOf("") }
     var conn by remember { mutableStateOf("") }
     // Primary is opt-in, except for the first wallet (it has to be the primary). Cached list first, then the server's.
-    var primary by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).isNullOrEmpty()) }
+    var primary by remember { mutableStateOf(needsPrimary(c.prefs.cached("remote-wallets", remoteWalletsSer))) }
     var primaryTouched by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { runCatching { c.session.api.value.remoteWallets() }.onSuccess { if (!primaryTouched) primary = it.isEmpty() } }
+    LaunchedEffect(Unit) { runCatching { c.session.api.value.remoteWallets() }.onSuccess { if (!primaryTouched) primary = needsPrimary(it) } }
+    val fromHome = nav.previousBackStackEntry?.destination?.route == R0.HOME
+    val appContext = LocalContext.current.applicationContext
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var scanning by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(start == "nwc") }
     var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
     val invalid = "Invalid NWC connection string"
     // Name is optional: default to the URI's lud16, else its first relay host.
     val derivedName = remember(conn) { runCatching { NwcUri.parse(conn) }.getOrNull()?.let { it.lud16 ?: it.relays.firstOrNull()?.substringAfter("://")?.substringBefore('/') } ?: "Wallet" }
-    val back = { if (step != null) { step = null; error = null; scanning = false } else nav.popBackStack() }
-    androidx.activity.compose.BackHandler(step != null) { back() }
+    val back = { if (step != null && start == null) { step = null; error = null; scanning = false } else nav.popBackStack() }
+    androidx.activity.compose.BackHandler(step != null && start == null) { back() }
     fun submit(create: suspend () -> RemoteWallet) {
         busy = true; error = null
         scope.launch {
             runCatching { create() }.onSuccess { created ->
                 // Back where we came from (Home's wallet list or Remote wallets) while the button still spins: the list
                 // already holds the new wallet (cache) and plays its entrance. Busy stays on: this screen is leaving.
-                val others = c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty().filter { it.id != created.id }
-                c.prefs.setCached("remote-wallets", remoteWalletsSer, others.map { if (created.isDefault) it.copy(isDefault = false) else it } + created)
+                cacheCreatedWallet(c, created)
                 c.flow.newWalletId = created.id
                 c.scope.launch { runCatching { c.session.refreshMe() } }
-                if (nav.previousBackStackEntry?.destination?.route == R0.HOME) c.flow.revealWallets = true
+                if (fromHome) c.flow.revealWallets = true
                 if (!nav.popBackStack()) nav.goHome()
             }.onFailure { error = it.message; busy = false }
         }
@@ -381,14 +470,7 @@ fun AddRemoteWalletScreen() {
                 null -> {
                     MutedText(stringResource(R.string.rw_add_subtitle))
                     WalletMark(lncurl = false, size = 96.dp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
-                    LwButton(stringResource(R.string.rw_import_nwc), { step = "nwc"; scanning = true }, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
-                    if (settings?.lncurlEnabled == true) Column {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LwButton(stringResource(R.string.rw_create_disposable), { step = "lncurl" }, Modifier.weight(1f).testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, leading = { WalletMark(lncurl = true, size = 22.dp) })
-                            LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
-                        }
-                        MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
-                    }
+                    AddWalletChoices(onNwc = { step = "nwc"; scanning = true }, onLncurl = { provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT; step = "lncurl" })
                 }
                 "nwc" -> {
                     if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
@@ -405,7 +487,7 @@ fun AddRemoteWalletScreen() {
                 "lncurl" -> {
                     MutedText(stringResource(R.string.rw_lncurl_body))
                     val focus = remember { FocusRequester() }
-                    LaunchedEffect(Unit) { focus.requestFocus() }
+                    LaunchedEffect(Unit) { nav.awaitSettled(); runCatching { focus.requestFocus() } }
                     OutlinedTextField(name, { name = it.take(64) }, Modifier.fillMaxWidth().focusRequester(focus).testTag("wallet-name"), enabled = !busy, label = { Txt(stringResource(R.string.rw_name)) }, singleLine = true, colors = lwFieldColors())
                     SettingsGroup { SettingsRow(stringResource(R.string.rw_make_primary), { if (!busy) { primaryTouched = true; primary = !primary } }) { Switch(primary, { primaryTouched = true; primary = it }, enabled = !busy, colors = lwSwitchColors()) } }
                 }
@@ -415,17 +497,42 @@ fun AddRemoteWalletScreen() {
         when (step) {
             "nwc" -> LwButton(stringResource(R.string.rw_connect), {
                 if (runCatching { NwcUri.parse(conn) }.isFailure) error = invalid
-                else submit { c.session.api.value.createNwcWallet(name.ifBlank { derivedName }, conn, "SEND_RECEIVE", primary) }
+                else if (fromHome) {
+                    // From Home: back at once, the card sets itself up in the list.
+                    val n = name.ifBlank { derivedName }; val uri = conn; val p = primary
+                    addWalletOptimistic(c, appContext, n, lncurl = false, primary = p) { d -> withFreeName(c, n) { c.session.api.value.createNwcWallet(it, uri, "SEND_RECEIVE", d) } }
+                    c.flow.revealWallets = true
+                    nav.popBackStack()
+                }
+                else submit { withFreeName(c, name.ifBlank { derivedName }) { c.session.api.value.createNwcWallet(it, conn, "SEND_RECEIVE", primary) } }
             }, Modifier.fillMaxWidth().padding(16.dp).testTag("wallet-connect"), BtnVariant.Theme, enabled = !busy && conn.isNotBlank(), loading = busy)
             "lncurl" -> LwButton(stringResource(R.string.rw_create), {
-                submit {
-                    // ponytail: only the server's default provider goes through the server (LNCurl tag, revive); any
-                    // other is minted here and imported as a plain NWC wallet until the server takes a provider.
-                    if (provider == Lncurl.DEFAULT) c.session.api.value.createLncurlWallet(name.ifBlank { null }, primary)
-                    else c.session.api.value.createNwcWallet(name.ifBlank { Lncurl.host(provider) }, Lncurl.mint(c.http, provider), "SEND_RECEIVE", primary)
-                }
+                val n = name.ifBlank { null }; val pr = provider; val p = primary
+                if (fromHome) {
+                    addWalletOptimistic(c, appContext, n ?: Lncurl.host(pr), lncurl = true, primary = p) { createLncurl(c, pr, n, it) }
+                    c.flow.revealWallets = true
+                    nav.popBackStack()
+                } else submit { createLncurl(c, pr, n, p) }
             },
                 Modifier.fillMaxWidth().padding(16.dp).testTag("create-lncurl"), BtnVariant.Theme, enabled = !busy, loading = busy, icon = L.drawable.lucide_ic_zap)
+        }
+    }
+}
+
+/** The two ways to add a wallet: import an NWC connection, or a disposable LNCurl one (when the instance runs LNCurl). */
+@Composable
+internal fun AddWalletChoices(onNwc: () -> Unit, onLncurl: () -> Unit) {
+    val c = LocalContainer.current
+    val settings by c.session.settings.collectAsState()
+    var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        LwButton(stringResource(R.string.rw_import_nwc), onNwc, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
+        if (settings?.lncurlEnabled == true) Column {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LwButton(stringResource(R.string.rw_create_disposable), onLncurl, Modifier.weight(1f).testTag("add-lncurl"), BtnVariant.Secondary, height = 60.dp, leading = { WalletMark(lncurl = true, size = 22.dp) })
+                LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
+            }
+            MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
         }
     }
 }
