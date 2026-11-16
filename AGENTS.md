@@ -141,5 +141,7 @@ The app is under active development and we track as much as we can to keep impro
 2. Zapstore: automatic. `.github/workflows/zapstore.yml` runs when the Release workflow succeeds on a tag (or a
    release is published by hand) and `zsp` publishes the arm64 APK with metadata from `fastlane/metadata`, signed
    by the maintainer's NIP-46 remote signer (`ZAPSTORE_BUNKER` secret, a `bunker://` string; never commit it).
-   Fallback: `./scripts/publish-zapstore.sh` signs with the NIP-07 browser extension in an interactive terminal.
+   It refuses to publish when GitHub's latest release isn't the highest version, so Zapstore never goes backwards:
+   always release through a tag above the highest one. Fallback: `./scripts/publish-zapstore.sh` signs with the NIP-07
+   browser extension in an interactive terminal.
 3. Play listing, store metadata and console declarations: [PLAY_STORE.md](PLAY_STORE.md).

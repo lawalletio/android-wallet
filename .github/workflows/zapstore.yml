@@ -34,6 +34,18 @@ jobs:
         with:
           go-version: stable
           cache: false
+      # zsp publishes GitHub's *latest* release. Never let that move the listing backwards: the latest release must be
+      # the highest version, and the one this run was started for.
+      - name: Never publish an older version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch || github.event.release.tag_name }}
+        run: |
+          latest=$(gh release view --json tagName -q .tagName)
+          highest=$(gh release list --limit 200 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName' | sort -V | tail -1)
+          echo "latest release: $latest · highest version: $highest · started for: ${RUN_TAG:-manual run}"
+          if [ "$latest" != "$highest" ]; then echo "::error::The latest release ($latest) isn't the highest version ($highest): refusing to publish an older version"; exit 1; fi
+          if [ -n "$RUN_TAG" ] && [ "$RUN_TAG" != "$latest" ]; then echo "::error::Started for $RUN_TAG, but the latest release is $latest: refusing"; exit 1; fi
       - name: Install zsp
         run: go install github.com/zapstore/zsp@v0.4.14
       - name: Publish
