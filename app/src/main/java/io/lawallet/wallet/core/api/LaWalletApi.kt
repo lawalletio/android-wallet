@@ -220,6 +220,15 @@ class LaWalletApi(
     /** RECOVER QRs: whether the claim needs a merge prompt, or the card is already this account's. */
     suspend fun recoveryCheck(id: String) = get("/api/activation-tokens/${enc(id)}/recovery-check", RecoveryCheck.serializer())
 
+    // ---------- polls ----------
+    /** 404 when the instance has no such poll (or predates polls). */
+    suspend fun poll(slug: String) = get("/api/polls/${enc(slug)}", PollState.serializer())
+    /** [choices]: option ids (ranked best first) or `custom:<text>`. 409 `POLL_LOCKED` / `POLL_CLOSED`. */
+    suspend fun submitPoll(slug: String, choices: List<String>) =
+        send("PUT", "/api/polls/${enc(slug)}/response", buildJsonObject {
+            putJsonArray("choices") { choices.forEach { add(JsonPrimitive(it)) } }
+        }, PollSubmitted.serializer()).response
+
     // ---------- passkeys / oauth ----------
     suspend fun passkeyRegistrationVerify(body: JsonObject, authenticated: Boolean) =
         send("POST", "/api/auth/passkey/registration/verify", body, JsonElement.serializer(), auth = authenticated)
@@ -283,8 +292,8 @@ class LaWalletApi(
         private val PATH_WORDS = setOf(
             "account", "account-transfer", "activation-tokens", "addresses", "api", "auth", "balance", "card-recovery", "cards",
             "check", "claim", "connection-string", "credentials", "currency-prefs", "dismiss", "email", "preview", "request", "grants", "invoices", "jwt",
-            "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "passkey", "primary", "profiles",
-            "receive-action", "recovery-check", "registration", "remote-wallets", "settings", "users", "verify", "version", "wallet",
+            "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "passkey", "polls", "primary", "profiles",
+            "receive-action", "recovery-check", "registration", "remote-wallets", "response", "settings", "users", "verify", "version", "wallet",
         )
 
         /** True when the JWT's `exp` is < 5 min away (jwt-expiry.ts). Unparseable tokens count as expired. */

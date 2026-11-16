@@ -50,7 +50,11 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "DEFAULT_INSTANCE", "\"https://beta.lawallet.io\"")
+        manifestPlaceholders["appLabel"] = "@string/app_name"
+        manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
+        // `-PdefaultInstance=http://192.168.1.4:3052` points a fresh install (e.g. a `-PidSuffix=.preview` copy) at a
+        // local instance from the first screen; plain http only works in debug builds.
+        buildConfigField("String", "DEFAULT_INSTANCE", "\"${findProperty("defaultInstance") ?: "https://beta.lawallet.io"}\"")
         // Crash reports (opt-in): CI passes -PsentryDsn. Local and F-Droid source builds have none,
         // so the reporter never starts there.
         buildConfigField("boolean", "SELF_UPDATE", "$selfUpdate")
@@ -76,7 +80,14 @@ android {
         debug {
             signingConfigs.findByName("lawallet")?.let { signingConfig = it }
             // `-PidSuffix=.preview` installs a side-by-side copy (fresh state) for UI checks.
-            (project.findProperty("idSuffix") as String?)?.let { applicationIdSuffix = it }
+            // It says so: "LaWallet Preview" with an amber icon on the launcher, "1.0.0-preview" in Settings.
+            (project.findProperty("idSuffix") as String?)?.let { suffix ->
+                applicationIdSuffix = suffix
+                val tag = suffix.trimStart('.')
+                versionNameSuffix = "-$tag"
+                manifestPlaceholders["appLabel"] = "LaWallet ${tag.replaceFirstChar { it.uppercase() }}"
+                manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher_preview"
+            }
         }
         release {
             isMinifyEnabled = true
@@ -194,6 +205,7 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.lucide)
     implementation(libs.haze)
+    implementation(libs.reorderable)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.sentry.android.core)

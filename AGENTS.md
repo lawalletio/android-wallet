@@ -33,7 +33,9 @@ scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # perfo
   adb shell am instrument -w -e class io.lawallet.wallet.AppLaunchTest io.lawallet.wallet.test/androidx.test.runner.AndroidJUnitRunner
   ```
 - `-PidSuffix=.preview` installs a side-by-side debug copy with fresh state, which is the safe way to try onboarding
-  or other flows without touching a real install.
+  or other flows without touching a real install. Add `-PdefaultInstance=http://<mac-lan-ip>:<port>` to point it at a
+  local lawallet-nwc dev server (the emulator also reaches it at `http://10.0.2.2:<port>`). On Android 17 a phone
+  must allow the local network permission the debug build asks for at launch, or every request times out.
 - Baseline profile: `./gradlew :app:generateReleaseBaselineProfile`. Profile/benchmark builds install as
   `io.lawallet.wallet.bench`, so they never touch a real install.
 

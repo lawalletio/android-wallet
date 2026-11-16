@@ -35,6 +35,7 @@ sentry = "8.61.1"
 sentryGradle = "6.24.0"
 leakcanary = "2.14"
 playAppUpdate = "2.1.0"
+reorderable = "3.1.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -84,6 +85,7 @@ androidx-espresso = { module = "androidx.test.espresso:espresso-core", version.r
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "testRules" }
 sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry" }
 play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 leakcanary = { module = "com.squareup.leakcanary:leakcanary-android", version.ref = "leakcanary" }
 
 [plugins]

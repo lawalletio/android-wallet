@@ -215,6 +215,7 @@ object R0 {
     const val ONCHAIN_IMPORT = "onchain/import"
     fun onchainWallet(id: String) = "onchain/wallet/$id"
     fun onchainBackup(id: String) = "onchain/backup/$id"
+    fun poll(slug: String) = "poll/$slug"
 }
 
 /** Deep links / notifications / NFC push routes or raw payloads here; the UI consumes them. */
@@ -474,6 +475,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
                 composable(R0.UPDATES) { UpdatesScreen() }
                 composable(R0.FEEDBACK) { FeedbackScreen() }
+                composable("poll/{slug}") { PollScreen(it.arguments?.getString("slug").orEmpty()) }
             }
             }
             }

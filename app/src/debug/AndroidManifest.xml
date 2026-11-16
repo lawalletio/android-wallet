@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug only: Android 17 blocks LAN addresses without this, so a phone can't reach a dev server on the Mac
+     (-PdefaultInstance=http://192.168.x.x:port). Release builds only talk HTTPS to public instances. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+</manifest>
