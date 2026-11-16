@@ -65,6 +65,16 @@ class LaWalletApiTest {
         assertEquals(fresh, stored)
     }
 
+    /** A wallet minted at another LNCurl server is saved tagged LNCurl with its origin (the server's strict NWC config). */
+    @Test fun createsClientMintedLncurlWalletTagged() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"w1","name":"Masize","type":"NWC","status":"ACTIVE","isDefault":false,"provider":"lncurl"}"""))
+        val w = api.createNwcWallet("Masize", "nostr+walletconnect://x", "SEND_RECEIVE", false, lncurlServerUrl = "https://lncurl.masize.com")
+        assertEquals("lncurl", w.provider)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body, "\"provider\":\"lncurl\"" in body && "\"lncurlServerUrl\":\"https://lncurl.masize.com\"" in body)
+    }
+
     @Test fun deletesAccountWithBearerAndConfirmation() = runBlocking {
         stored = jwt(86_400)
         server.enqueue(MockResponse().setBody("""{"deleted":true}"""))

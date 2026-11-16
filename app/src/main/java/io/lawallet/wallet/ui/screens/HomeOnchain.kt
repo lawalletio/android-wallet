@@ -204,7 +204,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                 ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                                 .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("onchain-balance-toggle")
                                 .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
-                                .graphicsLayer { rollIn(ONCHAIN); scaleX = 1f - 0.06f * hold; scaleY = scaleX; alpha *= 1f - 0.3f * hold },
+                                .graphicsLayer { rollIn(ONCHAIN); val p = hold(); scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                             contentAlignment = Alignment.Center,
                         ) {
                             FigureStrut()

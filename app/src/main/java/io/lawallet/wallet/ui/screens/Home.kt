@@ -24,6 +24,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.ui.layout.onSizeChanged
 import io.lawallet.wallet.core.api.WalletAddress
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,6 +116,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -125,6 +130,10 @@ import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.ui.components.toast
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -177,6 +186,7 @@ import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import io.lawallet.wallet.ui.sharedAddress
 import androidx.compose.material3.ripple
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -287,12 +297,14 @@ internal fun GraphicsLayerScope.rollIn(page: Int) {
  * right without pushing it over, so the label lands on the same spot on every page.
  */
 @Composable
-internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null, lightningText: String? = null) {
+internal fun BalanceLabel(primary: Boolean, pin: Modifier, badge: (@Composable () -> Unit)? = null, primaryText: String? = null, lightningText: String? = null, replace: (@Composable () -> Unit)? = null) {
     val pt by animateFloatAsState(if (primary) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "primary")
     val labels = listOf(stringResource(R.string.home_onchainBalance), lightningText ?: stringResource(R.string.home_lightningBalance), stringResource(R.string.home_usdtBalance))
     Layout(
         content = {
-            Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
+            // [replace] (the wallet pill) stands in for the words, taller than the row: unclipped, centred on it.
+            if (replace != null) Box(pin, contentAlignment = Alignment.Center) { replace() }
+            else Box(pin.clipToBounds(), contentAlignment = Alignment.Center) {
                 Box(Modifier.graphicsLayer { translationY = -pt * size.height; alpha = 1f - pt }) { PagedWords(labels, 14.sp, Lw.MutedFg) }
                 Txt(primaryText ?: stringResource(R.string.home_primaryBalance), Modifier.graphicsLayer { translationY = (1f - pt) * size.height; alpha = pt }, size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg, maxLines = 1)
             }
@@ -395,7 +407,8 @@ fun HomeScreen() {
         ) { page ->
             Box(Modifier.fillMaxSize()) {
                 PageWatermark(page, { pager.currentPage - page + pager.currentPageOffsetFraction }, { anchors.sheet[page]?.progress ?: 0f })
-                val current = pager.currentPage == page
+                // At rest: currentPage flips mid-swipe and would recompose both heavy pages in that one frame.
+                val current = pager.settledPage == page
                 when (page) {
                     ONCHAIN -> OnchainPage(current, anchors)
                     LIGHTNING -> LightningPage(current, intro, anchors)
@@ -403,11 +416,6 @@ fun HomeScreen() {
                 }
             }
         }
-        // The pull-down arrows, fixed under the header for every page; they fade as the wallet list or the activity opens.
-        SwipeHint(
-            { maxOf(smooth(0f, 0.15f, anchors.revealAt(HomePager.position)), anchors.sheetAt(HomePager.position) * 2.2f) },
-            Modifier.align(Alignment.TopCenter).padding(top = HEADER_H + 20.dp).riseIn(0, intro),
-        )
         PageDots(anchors, rootTop, Modifier.riseIn(2, intro)) { scope.launch { pager.animateScrollToPage(it) } }
         // Last, so the address drop-down and its backdrop cover everything on Home (the tab bar steps aside for it).
         CompositionLocalProvider(LocalHaze provides pagesHaze) { HomeHeader(intro, anchors) }
@@ -506,6 +514,8 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     val users = remember(switchable) { switchable.map { it.username } }
     // Tap (Lightning): the pill drops down a list of the addresses to switch to, plus "Add address".
     var picker by AddressPickerOverlay::open
+    var menuFor by remember { mutableStateOf<WalletAddress?>(null) }
+    val scope = rememberCoroutineScope()
     // Leaving Home (Add address, Settings…) never leaves it open behind.
     DisposableEffect(Unit) { onDispose { AddressPickerOverlay.open = false } }
     val primaryUser = address?.substringBefore('@')
@@ -513,7 +523,8 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
     LaunchedEffect(users, selected, primaryUser) { idx = users.indexOf(selected).takeIf { it >= 0 } ?: users.indexOf(primaryUser).coerceAtLeast(0) }
     val span = with(LocalDensity.current) { 72.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
-    val canSwipe = address != null && users.size > 1 && HomePager.page == LIGHTNING
+    val onLightning by remember { derivedStateOf { HomePager.page == LIGHTNING } } // not every swipe frame
+    val canSwipe = address != null && users.size > 1 && onLightning
     val dragState = rememberDraggableState { d ->
         val next = drag + d
         // Past the first or last address it only gives a little.
@@ -544,7 +555,7 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             Box(
                 // Tap: receive. Hold (Lightning, with an address): the pill expands into the Lightning addresses screen,
                 // "charging" (shrinks, dims) up to the long press.
-                Modifier.weight(1f).graphicsLayer { val p = addressHold; scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
+                Modifier.weight(1f).graphicsLayer { val p = addressHold(); scaleX = 1f - 0.05f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }
                     .then(if (address != null) Modifier.sharedAddress() else Modifier)
                     .height(44.dp).glass(CircleShape)
                     .draggable(dragState, Orientation.Horizontal, enabled = canSwipe, onDragStopped = { v ->
@@ -582,11 +593,32 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
                     Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
-                    if (address != null) Row(Modifier.padding(horizontal = 14.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-                        // Username leads; the domain sits a step dimmer and never truncates.
-                        if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
-                        else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                        Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                    if (address != null) {
+                        // Even room both sides: the address stays centred and never runs under the arrow.
+                        Row(Modifier.padding(horizontal = 34.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                            // Username leads; the domain sits a step dimmer and never truncates.
+                            if (users.size > 1) SwipeUsername(users, idx.coerceIn(users.indices), { drag }, span, Modifier.weight(1f, fill = false))
+                            else Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                            Txt("@" + address.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
+                        }
+                        // The page's bolt on the left, balancing the arrow: the watermark's tilt and tone wash, small.
+                        val tone = PAGE_TONES[LIGHTNING]
+                        Image(
+                            painterResource(L.drawable.lucide_ic_zap), null,
+                            Modifier.align(Alignment.CenterStart).padding(start = 13.dp).size(18.dp)
+                                .graphicsLayer { rotationZ = -10f; compositingStrategy = CompositingStrategy.Offscreen }
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRect(Brush.linearGradient(listOf(tone, tone.copy(alpha = 0.45f)), Offset.Zero, Offset(size.width, size.height)), blendMode = BlendMode.SrcIn)
+                                },
+                        )
+                        // The pill reads as a dropdown: a tap here is the pill's tap (opens the address list); it flips while open.
+                        val flip = animateFloatAsState(if (picker) 180f else 0f, spring(0.8f, Spring.StiffnessMedium), label = "pickerArrow")
+                        LwIcon(
+                            L.drawable.lucide_ic_chevron_down,
+                            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).graphicsLayer { rotationZ = flip.value }.testTag("home-address-arrow"),
+                            size = 18.dp, tint = Lw.Foreground.copy(alpha = 0.6f),
+                        )
                     }
                     else BrandImage(brand.logotype, "logotype.svg", Modifier.height(20.dp).width(88.dp))
                 }
@@ -605,7 +637,18 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
             picker, { picker = false }, switchable, users.getOrNull(idx), address.substringAfter('@'),
             onPick = { i -> picker = false; if (i != idx) { idx = i; c.wallet.selectAddress(users[i].takeIf { it != primaryUser }) } },
             onAdd = { picker = false; nav.navigate("${R0.CLAIM}?from=addresses&bonus=0") },
+            onMenu = { i -> menuFor = switchable.getOrNull(i) },
         )
+        // Hold an address in the switcher: its actions sheet, as on the addresses screen.
+        if (address != null) menuFor?.let { a ->
+            val domain = address.substringAfter('@')
+            AddressMenu(a, "${a.username}@$domain", c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty(), { block ->
+                scope.launch {
+                    runCatching { block() }.onFailure { context.toast(it.message ?: "") }
+                    c.wallet.refreshAddresses(); runCatching { c.session.refreshMe() }
+                }
+            }) { menuFor = null }
+        }
     }
 }
 
@@ -613,6 +656,8 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
 object HomeLightningAddress {
     var free by mutableStateOf(false)
     var alias by mutableStateOf(false)
+    /** How open the Lightning wallet list is (0..1), read at draw time: the tab bar steps aside for its Add button. */
+    var deck: () -> Float = { 0f }
 }
 
 /** Whether Home's address drop-down is open: AppNav's tab bar steps aside so the drop-down is on top. */
@@ -653,12 +698,15 @@ private fun BoxScope.AddressPickerScrim(open: Boolean, onDismiss: () -> Unit) {
 
 /**
  * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
- * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown, then "Add address".
+ * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown; "Add address" is the
+ * main button at the bottom while it's open.
  * Drawn in Home's own window (not a popup): Haze then blurs it like the tab bar, and nothing outlives its closing (a
  * popup's blur kept the closed window registered with the app's Haze source, leaking each one).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, onPick: (Int) -> Unit, onAdd: () -> Unit) {
+private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: List<WalletAddress>, current: String?, domain: String, onPick: (Int) -> Unit, onAdd: () -> Unit, onMenu: (Int) -> Unit) {
+    val haptics = LocalHapticFeedback.current
     val c = LocalContainer.current
     val brand = LocalBrand.current
     val haze = LocalHaze.current
@@ -680,12 +728,14 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
             Column(
                 Modifier.fillMaxWidth().frosted(haze, shape, PanelStyle).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
-              // The addresses scroll when they don't fit; "Add address" stays pinned under them.
+              // The addresses scroll when they don't fit ("Add address" is the main button at the bottom, AddAddressButton).
               Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
                     Row(
-                        Modifier.fillMaxWidth().clickable { onPick(i) }.padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-${a.username}"),
+                        Modifier.fillMaxWidth()
+                            .combinedClickable(onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onMenu(i) }) { onPick(i) }
+                            .padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-${a.username}"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val kind = addressKind(a, wallets)
@@ -718,11 +768,16 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
                     }
                 }
               }
-                LwButton(
-                    stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp).testTag("address-picker-add"),
-                    BtnVariant.Theme, height = 48.dp, icon = L.drawable.lucide_ic_plus,
-                )
             }
+    }
+    // Where the tab bar was (it steps aside while the drop-down is open), like the wallet list's Add wallet.
+    AnimatedVisibility(
+        open,
+        Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+        enter = fadeIn(tween(200, 60)) + slideInVertically(spring(0.86f, Spring.StiffnessMediumLow)) { it / 2 },
+        exit = fadeOut(tween(140)) + slideOutVertically(tween(180)) { it / 2 },
+    ) {
+        LwButton(stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().testTag("address-picker-add"), BtnVariant.Theme, height = 58.dp, icon = L.drawable.lucide_ic_plus)
     }
 }
 
@@ -836,10 +891,14 @@ private fun PageDots(anchors: HomePages, rootTop: Float, modifier: Modifier, onT
     val desc = stringResource(R.string.home_pages_hint)
     Box(
         modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally)
-            // One height for all pages (the lowest page's slot), so a horizontal swipe never moves them; they still
-            // ride the balance's vertical moves (wallet reveal), which every page mirrors.
+            // Under the balance of the page in front, gliding between the pages' spots with the swipe (they differ
+            // when a page's wallet list is open and shorter or longer than its neighbours').
             .offset {
-                val y = anchors.y.filterNot(Float::isNaN).maxOrNull()
+                val known = anchors.y.filterNot(Float::isNaN)
+                val y = if (known.isEmpty()) null else {
+                    val fallback = known.max()
+                    (0 until PAGES).sumOf { k -> (HomePager.weight(k) * (anchors.y[k].takeUnless(Float::isNaN) ?: fallback)).toDouble() }.toFloat()
+                }
                 IntOffset(0, if (y == null) 0 else (y - rootTop - 16.dp.toPx()).toInt())
             }
             .graphicsLayer {
@@ -898,7 +957,26 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
     val newWallet = rememberNewWallet()
     val walletBalances = rememberWalletBalances() // cached figures first, then live
-    var promoting by remember { mutableStateOf<String?>(null) }
+    // A wallet being added from here (optimistic): once LaWallet has it, it joins the list under its card.
+    val pendingWallet by c.flow.pendingWallet.collectAsState()
+    // Created from the sheet with an automatic name: asked for one (prefilled) once its card has landed.
+    var naming by remember { mutableStateOf<String?>(null) } // the pending wallet's key
+    LaunchedEffect(pendingWallet?.created) {
+        val w = pendingWallet?.created ?: return@LaunchedEffect
+        if (pendingWallet?.lncurl == true) walletBalances[w.id] = 0L // a fresh disposable wallet starts empty
+        wallets = wallets.orEmpty().filter { it.id != w.id }.map { if (w.isDefault) it.copy(isDefault = false) else it } + w
+        readWalletBalance(c, w.id, walletBalances)
+    }
+    // Named right away, while LaWallet sets it up: the card takes the name at once, LaWallet gets it once it exists.
+    LaunchedEffect(pendingWallet?.key) {
+        val p = pendingWallet?.takeIf { it.askName } ?: return@LaunchedEffect
+        delay(350) // the card's entrance first
+        naming = p.key
+    }
+    // Landed: it lets go of its setting-up card once the list closes or Home leaves, so a return doesn't replay it.
+    val settled = { if (c.flow.pendingWallet.value?.created != null) c.flow.pendingWallet.value = null }
+    LaunchedEffect(open) { if (!open) settled() }
+    DisposableEffect(Unit) { onDispose { settled() } }
     // While the primary switches, the main balance shows the new wallet's known balance until its own arrives.
     var heldBalance by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(open) {
@@ -935,6 +1013,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     }
     // Delete: a wallet with funds is swept first (Sweeps.deleteAfter), then the prompt comes back here.
     var deleting by remember { mutableStateOf<RemoteWallet?>(null) }
+    var leaving by remember { mutableStateOf(setOf<String>()) }
     var sweepFirst by remember { mutableStateOf<Pair<RemoteWallet, Long>?>(null) }
     var freeing by remember { mutableStateOf(false) }
     var regenSkipped by remember { mutableStateOf(setOf<String>()) }
@@ -951,43 +1030,70 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val addressList by c.wallet.addresses.collectAsState()
     val selectedAddress by c.wallet.selectedAddress.collectAsState()
     val picked = addressList.find { it.username == selectedAddress && !it.isPrimary }
-    val forwardTo = picked?.takeIf { it.mode == "ALIAS" || it.mode == "PROXY_ALIAS" }?.redirect
-    val shownWallet = picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
-    val unlinked = picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
+    // Optimistic: a card tapped for the picked address shows as its wallet at once, until LaWallet's list agrees.
+    var routed by remember(selectedAddress) { mutableStateOf<String?>(null) }
+    val forwardTo = picked?.takeIf { routed == null && (it.mode == "ALIAS" || it.mode == "PROXY_ALIAS") }?.redirect
+    LaunchedEffect(picked?.remoteWalletId, picked?.mode) { if (routed != null && picked?.mode == "CUSTOM_NWC" && picked.remoteWalletId == routed) routed = null }
+    val shownWallet = routed ?: picked?.takeIf { it.mode == "CUSTOM_NWC" && forwardTo == null }?.remoteWalletId
+    val unlinked = routed == null && picked != null && wallets != null && addressKind(picked, wallets) == AddressKind.IDLE
     val detached = forwardTo != null || unlinked
-    // An alias address keeps the list behind a deliberate tap: back behind it on every switch and every close.
-    var walletsUnlocked by remember(selectedAddress) { mutableStateOf(false) }
-    LaunchedEffect(reveal) { snapshotFlow { reveal.open }.collect { if (!it) walletsUnlocked = false } }
+    // The wallet in use, shown as a pill in the balance label's place (none for a free or alias address): tap opens
+    // the list, hold its menu; opening the list morphs it into that wallet's card.
+    val pillWallet = if (detached) null else wallets?.let { ws -> if (picked == null) ws.find { it.isDefault && it.status == "ACTIVE" } else ws.find { it.id == shownWallet } }
+    // The address in use, locked to its wallet: the list then shows only that wallet (a free or alias one has none to lock).
+    val lockedAddresses by c.prefs.lockedAddresses.collectAsState()
+    val lockUser = if (detached) null else (picked?.username ?: addressList.find { it.isPrimary }?.username)
+    val lockedHere = lockUser != null && lockUser in lockedAddresses
+    // An alias address forwards elsewhere: linking it to a wallet stops that, so it's asked first.
+    var confirmLink by remember(selectedAddress) { mutableStateOf<RemoteWallet?>(null) }
     SideEffect { HomeLightningAddress.free = unlinked; HomeLightningAddress.alias = forwardTo != null }
-    DisposableEffect(Unit) { onDispose { HomeLightningAddress.free = false; HomeLightningAddress.alias = false } }
-    val linkPicked: (RemoteWallet) -> Unit = { w ->
-        picked?.let { a ->
-            scope.launch {
-                runCatching { c.session.api.value.routeAddressToWallet(a.username, w.id) }
-                    .onSuccess { c.wallet.refreshAddresses() }.onFailure { context.toast(it.message ?: "") }
+    DisposableEffect(Unit) {
+        HomeLightningAddress.deck = { reveal.progress }
+        onDispose { HomeLightningAddress.free = false; HomeLightningAddress.alias = false; HomeLightningAddress.deck = { 0f } }
+    }
+    // Switching is instant and never blocks: the tap shows at once (card, pill, balance held at the card's figure) and
+    // a newer tap cancels the older one's wait. Saves run one at a time, so LaWallet ends on the last wallet tapped.
+    val switcher = remember { object { var job: Job? = null; val lock = Mutex() } }
+    fun switchWallet(w: RemoteWallet, send: suspend () -> Unit, confirm: suspend () -> Unit, revert: () -> Unit) {
+        heldBalance = walletBalances[w.id]
+        switcher.job?.cancel()
+        switcher.job = scope.launch {
+            val oldClient = c.wallet.client.value
+            try {
+                switcher.lock.withLock { send() }
+                confirm()
+                // Hold the figure until the new wallet answers: its first emission is the on-device cache (stale,
+                // often 0), so wait for a live read instead.
+                withTimeoutOrNull(10_000) { c.wallet.refreshBalance(c.wallet.client.first { it != null && it !== oldClient }) }
+                heldBalance = null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                revert(); heldBalance = null; context.toast(e.message ?: "")
             }
         }
     }
-    val setPrimary: (RemoteWallet) -> Unit = { w ->
-        if (promoting == null) scope.launch {
-            val before = wallets
-            val oldClient = c.wallet.client.value
-            promoting = w.id
-            wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
-            heldBalance = walletBalances[w.id]
-            runCatching { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) }
-                .onSuccess {
-                    c.prefs.notePrimary(w.id)
-                    wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
-                    promoting = null
-                    runCatching { c.session.refreshMe() }
-                    // Hold the list's figure until the new wallet answers: its first emission is the on-device
-                    // cache (stale, often 0), so wait for a live read instead.
-                    withTimeoutOrNull(10_000) { c.wallet.refreshBalance(c.wallet.client.first { it != null && it !== oldClient }) }
-                    heldBalance = null
-                }
-                .onFailure { wallets = before; heldBalance = null; promoting = null; context.toast(it.message ?: "") }
+    val linkPicked: (RemoteWallet) -> Unit = { w ->
+        picked?.let { a ->
+            routed = w.id
+            switchWallet(w, { c.session.api.value.routeAddressToWallet(a.username, w.id) }, { c.wallet.refreshAddresses() }, { routed = null })
         }
+    }
+    // The primary as LaWallet last confirmed it: where a failed switch goes back to.
+    var savedWallets by remember { mutableStateOf<List<RemoteWallet>?>(null) }
+    val setPrimary: (RemoteWallet) -> Unit = { w ->
+        if (switcher.job?.isActive != true) savedWallets = wallets
+        wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
+        switchWallet(
+            w,
+            { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) },
+            {
+                c.prefs.notePrimary(w.id)
+                wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                runCatching { c.session.refreshMe() }
+            },
+            { wallets = savedWallets },
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -1067,6 +1173,13 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         lightningText = when { forwardTo != null -> stringResource(R.string.home_lightningAlias); unlinked -> stringResource(R.string.home_lightningAddress); else -> null },
                         primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
+                        replace = pillWallet?.let { pw -> {
+                            WalletPill(
+                                pw, reveal, { sheet.progress * 2.2f },
+                                onOpen = { scope.launch { reveal.settleTo(1f) } },
+                                onMenu = { reveal.menuFor = pw.id },
+                            )
+                        } },
                     )
                     // Fixed-height slot: cue effects never resize it.
                     val showLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)
@@ -1087,7 +1200,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                             .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
                             .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
                             // Holding "charges" the figure (shrinks, dims) up to the long press; inside measureRoot so the ghost's start isn't skewed.
-                            .graphicsLayer { rollIn(LIGHTNING); val p = balanceHold; scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
+                            .graphicsLayer { rollIn(LIGHTNING); val p = balanceHold(); scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                         contentAlignment = Alignment.Center,
                     ) {
                         FigureStrut()
@@ -1167,14 +1280,14 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       // A free or alias address's way forward, down by the thumb just above the tab bar; it fades as the wallet list
       // opens (the list is the choice then).
       if (detached) Column(
-          Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 132.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress },
+          Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 132.dp).fillMaxWidth().graphicsLayer { alpha = 1f - reveal.progress }
+              // Over the activity sheet's drag area (a sibling: it never gets touches that land here), and right where
+              // the balance sits with the list open. Drags here move the reveal like anywhere else on Home.
+              .nestedScroll(reveal.connection).scrollable(rememberScrollableState { 0f }, Orientation.Vertical),
           verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
           LwButton(
-              stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), {
-                  walletsUnlocked = true // this tap is the deliberate step: the list shows right away, no gate
-                  scope.launch { reveal.settleTo(1f) }
-              },
+              stringResource(if (forwardTo != null) R.string.home_setWallet else R.string.home_selectWallet), { scope.launch { reveal.settleTo(1f) } },
               Modifier.fillMaxWidth().testTag("home-select-wallet"), BtnVariant.Theme, enabled = current && !open, height = 58.dp,
               leading = { ActionMark { WalletMark(lncurl = false, size = 20.dp) } },
           )
@@ -1184,15 +1297,14 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               leading = { ActionMark { LwIcon(L.drawable.lucide_ic_forward, size = 18.dp, tint = Lw.Lightning) } },
           )
       }
-      // With the list open, a linked or alias address can be freed: bottom-left, just above the tab bar.
-      if (picked != null && !unlinked && sweepFrom == null) Txt(
-          stringResource(R.string.home_freeAddress),
-          Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 118.dp).graphicsLayer { alpha = smooth(0.6f, 1f, reveal.progress) }
-              .height(32.dp).clip(CircleShape).border(1.dp, Lw.Foreground.copy(alpha = 0.18f), CircleShape)
-              .clickable(enabled = open && current) { freeing = true }
-              .padding(horizontal = 12.dp).wrapContentHeight().testTag("home-free-address"),
-          size = 13.sp, weight = FontWeight.SemiBold,
-      )
+      confirmLink?.let { w ->
+          LwAlertDialog(
+              onDismissRequest = { confirmLink = null },
+              text = { Txt(stringResource(R.string.home_aliasToWallet, forwardTo.orEmpty())) },
+              confirmButton = { ModalAction(stringResource(R.string.home_aliasToWallet_confirm), { confirmLink = null; linkPicked(w) }) },
+              modifier = Modifier.testTag("home-alias-to-wallet"),
+          )
+      }
       if (freeing && picked != null) LwAlertDialog(
           onDismissRequest = { freeing = false },
           title = { Txt(stringResource(R.string.home_freeAddress_title, picked.username)) },
@@ -1205,32 +1317,70 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               }
           }, destructive = true) },
       )
+      // Optimistic: the card shows the new name at once; a failed save puts the old one back.
+      val renameWallet: (RemoteWallet, String) -> Unit = { w, name ->
+          val before = wallets
+          wallets = wallets?.map { if (it.id == w.id) it.copy(name = name) else it }
+          scope.launch {
+              runCatching { withFreeName(c, name) { n -> c.session.api.value.updateRemoteWallet(w.id, name = n) } }
+                  .onSuccess { saved -> wallets = wallets?.map { if (it.id == w.id) it.copy(name = saved.name) else it }; wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) } }
+                  .onFailure { wallets = before; context.toast(it.message ?: "") }
+          }
+      }
       WalletsReveal(
           reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
-          onSetPrimary = { w -> if (picked != null) linkPicked(w) else setPrimary(w) },
-          onAdd = { nav.navigate(R0.addRemoteWallet(it)) },
+          onSetPrimary = { w -> when { picked == null -> setPrimary(w); forwardTo != null -> confirmLink = w; else -> linkPicked(w) } },
+          onAdd = { step ->
+              if (step == "lncurl") {
+                  // Straight from the sheet: no form, the card shows at once and sets itself up. An address without a
+                  // wallet names it, as when an address gets one on claim.
+                  val provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT
+                  val name = unlinkedPickedAddress(c)
+                  // Named automatically so it's instant; once it exists, Home asks for a name (prefilled).
+                  addWalletOptimistic(c, context.applicationContext, name ?: Lncurl.host(provider), lncurl = true, askName = true) { createLncurl(c, provider, name, it) }
+              } else nav.navigate(R0.addRemoteWallet(step))
+          },
           newWalletId = newWallet,
+          pending = pendingWallet,
+          addButton = Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
-          gated = forwardTo != null && !walletsUnlocked,
-          onUnlock = { walletsUnlocked = true },
           sweepFrom = sweepFrom,
           onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
           onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
           onSweepCancel = { Sweeps.deleteAfter = null; sweepFrom = null },
           onDelete = { w, bal -> if ((bal ?: 0L) > 0L) sweepFirst = w to bal!! else deleting = w },
           onTransfer = { w -> scope.launch { nav.navigate(startSend(c, Destination.Wallet(w.id, w.name))) } },
-          // Optimistic: the card shows the new name at once; a failed save puts the old one back.
-          onRename = { w, name ->
-              val before = wallets
-              wallets = wallets?.map { if (it.id == w.id) it.copy(name = name) else it }
-              scope.launch {
-                  runCatching { c.session.api.value.updateRemoteWallet(w.id, name = name) }
-                      .onSuccess { wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) } }
-                      .onFailure { wallets = before; context.toast(it.message ?: "") }
+          onRename = renameWallet,
+          leaving = leaving,
+          locked = lockedHere,
+          onLock = lockUser?.let { u -> { c.prefs.setAddressLocked(u, !lockedHere) } },
+          // A linked or alias address can be unlinked: bottom-left under the list, opposite the total (not while locked).
+          footerStart = if (picked != null && !unlinked && sweepFrom == null && !lockedHere) ({
+              Row(
+                  Modifier.height(32.dp).clip(CircleShape).border(1.dp, Lw.Foreground.copy(alpha = 0.18f), CircleShape)
+                      .clickable(enabled = open && current) { freeing = true }
+                      .padding(start = 10.dp, end = 12.dp).testTag("home-free-address"),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  LwIcon(L.drawable.lucide_ic_unlink, size = 14.dp, tint = Lw.Foreground.copy(alpha = 0.7f))
+                  Spacer(Modifier.width(6.dp))
+                  Txt(stringResource(R.string.home_freeAddress), size = 13.sp, weight = FontWeight.SemiBold)
               }
-          },
+          }) else null,
       )
+      pendingWallet?.takeIf { it.key == naming }?.let { p ->
+          TextPrompt(stringResource(R.string.rw_name_new), p.name, { naming = null }, saveLabel = stringResource(R.string.rw_name_save)) { v ->
+              naming = null
+              val created = p.created
+              when {
+                  v == p.name -> {}
+                  created != null -> { c.flow.pendingWallet.value = p.copy(name = v); renameWallet(wallets?.find { it.id == created.id } ?: created, v) }
+                  // Still being set up: the card shows it now, and the create sends it once the wallet exists.
+                  else -> c.flow.pendingWallet.update { cur -> if (cur?.key == p.key) cur.copy(name = v, renamed = true) else cur }
+              }
+          }
+      }
       sweepFirst?.let { (w, bal) ->
           LwAlertDialog(
               onDismissRequest = { sweepFirst = null },
@@ -1275,25 +1425,33 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               confirmButton = { ModalAction(stringResource(R.string.rw_delete), {
                   deleting = null
                   val before = wallets
-                  wallets = wallets?.filter { it.id != w.id }
+                  // The card folds away at once (the rest close over it), and leaves the list once it has.
+                  leaving = leaving + w.id
                   scope.launch {
+                      val fold = launch { delay(LEAVE_MS); wallets = wallets?.filter { it.id != w.id }; leaving = leaving - w.id }
                       runCatching { c.session.api.value.deleteRemoteWallet(w.id, permanent = w.status != "ACTIVE") }
                           .onSuccess {
+                              fold.join()
                               wallets = wallets?.let { ensurePrimary(c, it) } // deleting the primary hands it on
                               wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
                               runCatching { c.session.refreshMe() }
                           }
-                          .onFailure { wallets = before; context.toast(it.message ?: "") }
+                          .onFailure { fold.cancel(); leaving = leaving - w.id; wallets = before; context.toast(it.message ?: "") }
                   }
               }, destructive = true) },
           )
       }
+      SideEffect { reveal.hero = pillWallet != null }
+      if (pillWallet != null && open) WalletPillMorph(pillWallet, reveal)
       // The figure flies into its wallet's card; a free or alias address has neither, so nothing flies.
       if (open && !detached && wallets.orEmpty().any { it.isDefault } && shown != null) {
-          BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
+          BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp, intoPill = pillWallet != null)
       }
     }
 }
+
+/** How long a deleted wallet's card takes to fold out of the list before it leaves it. */
+private const val LEAVE_MS = 450L
 
 /** Banners under the balance: ride down with it and fade, so the landed balance stands alone. */
 internal fun Modifier.revealAside(reveal: HomeReveal) = graphicsLayer {
@@ -1351,17 +1509,35 @@ internal fun Odometer(text: String, modifier: Modifier, size: TextUnit, letterSp
     }
 }
 
+/** Wheel springs (critically damped: no overshoot past the digit): a normal roll ≈ 650ms, an interrupted one ≈ 300ms. */
+private const val ODO_STIFF = 90f
+private const val ODO_FAST = 400f
+
 @Composable
 private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, letterSpacing: TextUnit, color: Color, fromZero: Boolean, lineHeight: TextUnit) {
     val pos = remember { Animatable(if (fromZero) 0f else digit.toFloat()) }
-    LaunchedEffect(digit) {
+    val target by rememberUpdatedState(digit)
+    LaunchedEffect(Unit) {
         // Intro: left-most wheels settle first, the units keep spinning a beat longer.
-        if (pos.value == 0f && fromZero) delay(250L + index * 60L)
-        pos.animateTo(digit.toFloat(), tween(if (fromZero) 1100 else 700, easing = FastOutSlowInEasing))
+        if (fromZero && pos.value == 0f) { delay(250L + index * 60L); pos.animateTo(target.toFloat(), tween(1100, easing = FastOutSlowInEasing)) }
+        // Each change starts its roll while the last is still running (not after cancelling it), so a change mid-roll
+        // (switching wallets fast) takes over at the wheel's current speed and settles quicker: the figure keeps up
+        // and lands on the latest balance without restarting from rest.
+        snapshotFlow { target }.collect { d ->
+            if (pos.targetValue == d.toFloat()) return@collect
+            val fast = pos.isRunning
+            launch { pos.animateTo(d.toFloat(), spring(1f, if (fast) ODO_FAST else ODO_STIFF)) }
+        }
     }
     // One Text node (transparent target digit) owns layout + baseline; the rolling faces are painted over it.
+    // The ten faces laid out once (colour applied at draw time): measuring per frame missed the measurer's 8-entry
+    // cache on every full roll, and a tint change (a new style) missed it on every frame of the tint.
     val measurer = rememberTextMeasurer()
-    val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = lineHeight, letterSpacing = letterSpacing, color = color)
+    val faces = remember(measurer, size, letterSpacing, lineHeight) {
+        val style = TextStyle(fontFamily = Inter, fontFeatureSettings = "tnum", fontSize = size, fontWeight = FontWeight.SemiBold, lineHeight = lineHeight, letterSpacing = letterSpacing)
+        Array(10) { measurer.measure(it.toString(), style) }
+    }
+    val tint by rememberUpdatedState(color)
     Txt(
         digit.toString(),
         Modifier.alignByBaseline().drawWithContent {
@@ -1371,8 +1547,8 @@ private fun RowScope.OdometerWheel(digit: Int, index: Int, size: TextUnit, lette
             val lo = ((base.toInt() % 10) + 10) % 10
             val h = this.size.height
             clipRect(-h, 0f, this.size.width + h, h) {
-                drawText(measurer.measure(lo.toString(), style), topLeft = Offset(0f, -frac * h), alpha = 1f - frac)
-                if (frac > 0f) drawText(measurer.measure(((lo + 1) % 10).toString(), style), topLeft = Offset(0f, (1f - frac) * h), alpha = frac)
+                drawText(faces[lo], color = tint, topLeft = Offset(0f, -frac * h), alpha = 1f - frac)
+                if (frac > 0f) drawText(faces[(lo + 1) % 10], color = tint, topLeft = Offset(0f, (1f - frac) * h), alpha = frac)
             }
         },
         size = size, weight = FontWeight.SemiBold, color = Color.Transparent, lineHeight = lineHeight, letterSpacing = letterSpacing,

@@ -148,10 +148,20 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
     }
 
     suspend fun finish(address: String?) {
-        if (fromAddresses && settings?.lncurlEnabled == true) provisionLncurl(c, username)
+        // Only the user's first address gets a wallet of its own; later ones start free (the wallet list offers one).
+        // The snapshot may not have landed on a fast claim: then the list as it stands now, this one included.
+        // How many the user had before this one; unknown (null) when the count can't be read: then neither branch runs
+        // (freeing a primary would unlink the account's wallet).
+        val before = priorAddresses ?: runCatching { c.session.api.value.addresses().size - 1 }.getOrNull()
+        if (fromAddresses && before == 0 && settings?.lncurlEnabled == true) provisionLncurl(c, username)
+        // Later addresses start free. Created here they ask for IDLE; a paid claim is created by the server, which
+        // routes a new address like the primary: set it free.
+        if (before != null && before > 0) runCatching { c.session.api.value.freeAddress(username) }
         claimed = address ?: "$username@$domain"
         step = "success"
         runCatching { c.session.refreshMe() }
+        // Home's address switcher lists it at once (on its own it only re-reads when the primary changes).
+        c.wallet.refreshAddresses()
     }
 
     suspend fun claimPaid(inv: RegistrationInvoice, preimage: String) {
@@ -234,13 +244,13 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                     loading = true; error = null
                     scope.launch {
                         try {
-                            val addr = c.session.api.value.createAddress(username)
+                            val addr = c.session.api.value.createAddress(username, mode = "IDLE")
                             finish("${addr.username}@$domain")
                         } catch (e: ApiException) {
                             if (e.status == 402) {
                                 step = "payment"
                                 runCatching { c.session.api.value.createAddressInvoice(username) }
-                                    .onSuccess { inv -> if (inv.free) runCatching { finish("${c.session.api.value.createAddress(username).username}@$domain") }.onFailure { error = it.message; step = "username" } else invoice = inv }
+                                    .onSuccess { inv -> if (inv.free) runCatching { finish("${c.session.api.value.createAddress(username, mode = "IDLE").username}@$domain") }.onFailure { error = it.message; step = "username" } else invoice = inv }
                                     .onFailure { error = it.message; step = "username" }
                             } else error = e.message ?: createFailed
                         } catch (e: Exception) {
@@ -253,7 +263,13 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
             )
             "success" -> LwButton(
                 stringResource(if (fromAddresses) R.string.addresses_configure else R.string.claim_goToWallet),
-                { if (fromAddresses) { if (!nav.popBackStack(R0.ADDRESSES, inclusive = false)) nav.goHome() } else nav.goHome() },
+                {
+                    if (fromAddresses) {
+                        // The new address becomes the one Home shows, ready to configure (null = it's the primary).
+                        c.wallet.selectAddress(username.takeIf { u -> c.wallet.addresses.value.none { it.username == u && it.isPrimary } })
+                        if (!nav.popBackStack(R0.ADDRESSES, inclusive = false)) nav.goHome()
+                    } else nav.goHome()
+                },
                 Modifier.fillMaxWidth().padding(16.dp).graphicsLayer {
                     val p = celebrate.phase(0.70f, 0.92f)
                     alpha = p; translationY = (1f - p) * 16.dp.toPx()
@@ -410,7 +426,7 @@ private fun CacheDrawScope.lightning(clock: Animatable<Float, *>, t400: Color, t
 }
 
 /**
- * A new address gets its own disposable LNCurl wallet when the instance runs LNCurl: created, named
+ * The user's first address gets its own disposable LNCurl wallet when the instance runs LNCurl: created, named
  * after the address, and the address routed into it. It becomes primary only if there's no active one.
  * Best effort: a failure leaves the address on the server's default routing.
  */
@@ -420,5 +436,7 @@ internal suspend fun provisionLncurl(c: io.lawallet.wallet.app.AppContainer, use
         val hasPrimary = api.remoteWallets().any { it.isDefault && it.status == "ACTIVE" }
         val w = api.createLncurlWallet(name = username, isDefault = !hasPrimary)
         api.routeAddressToWallet(username, w.id)
+        // Into the cached list Home reads: without it Home showed the address as free until the list reloaded.
+        cacheCreatedWallet(c, w)
     }
 }

@@ -94,8 +94,6 @@ fun LightningAddressesScreen() {
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var acting by remember { mutableStateOf<WalletAddress?>(null) }
-    var picking by remember { mutableStateOf<WalletAddress?>(null) }
-    var deleting by remember { mutableStateOf<WalletAddress?>(null) }
     var busy by remember { mutableStateOf<String?>(null) } // the username being changed
     val copied = stringResource(R.string.common_copied)
     suspend fun load() {
@@ -152,28 +150,39 @@ fun LightningAddressesScreen() {
         )
     }
 
-    acting?.let { a ->
-        AddressActionsSheet(
-            full(a), a.isPrimary, onDismiss = { acting = null },
-            onCopy = { context.copyToClipboard(full(a), copied) },
-            onPrimary = { change(a) { c.session.api.value.setPrimaryAddress(a.username) } },
-            onReceiveInto = { picking = a },
-            onRedirect = { acting = null; nav.navigate(R0.aliasTarget(a.username)) },
-            onDelete = { deleting = a },
+    acting?.let { a -> AddressMenu(a, full(a), wallets, { block -> change(a, block) }) { acting = null } }
+}
+
+/**
+ * An address's actions (the sheet, then the wallet picker or the delete prompt it leads to), shared by the
+ * addresses screen and Home's address switcher (long press). [change] runs a server call and refreshes after it;
+ * [onClose] once nothing of it is showing any more.
+ */
+@Composable
+internal fun AddressMenu(a: WalletAddress, full: String, wallets: List<RemoteWallet>, change: (suspend () -> Unit) -> Unit, onClose: () -> Unit) {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val context = LocalContext.current
+    val copied = stringResource(R.string.common_copied)
+    var stage by remember(a.username) { mutableStateOf("menu") }
+    when (stage) {
+        "menu" -> AddressActionsSheet(
+            full, a.isPrimary, onDismiss = onClose,
+            onCopy = { context.copyToClipboard(full, copied) },
+            onPrimary = { onClose(); change { c.session.api.value.setPrimaryAddress(a.username) } },
+            onReceiveInto = { stage = "wallet" },
+            onRedirect = { onClose(); nav.navigate(R0.aliasTarget(a.username)) },
+            onDelete = { stage = "delete" },
         )
-    }
-    picking?.let { a ->
-        WalletPickerSheet(wallets.filter { it.status == "ACTIVE" }, a.remoteWalletId.takeIf { a.mode == "CUSTOM_NWC" }, onDismiss = { picking = null }) { w ->
-            picking = null
-            change(a) { c.session.api.value.routeAddressToWallet(a.username, w.id) }
+        "wallet" -> WalletPickerSheet(wallets.filter { it.status == "ACTIVE" }, a.remoteWalletId.takeIf { a.mode == "CUSTOM_NWC" }, onDismiss = onClose) { w ->
+            onClose()
+            change { c.session.api.value.routeAddressToWallet(a.username, w.id) }
         }
-    }
-    deleting?.let { a ->
-        LwAlertDialog(
-            onDismissRequest = { deleting = null },
+        else -> LwAlertDialog(
+            onDismissRequest = onClose,
             title = { Txt(stringResource(R.string.addresses_delete)) },
-            text = { Txt(stringResource(R.string.addresses_deleteConfirm, full(a))) },
-            confirmButton = { ModalAction(stringResource(R.string.addresses_delete), { deleting = null; change(a) { c.session.api.value.deleteAddress(a.username) } }, destructive = true) },
+            text = { Txt(stringResource(R.string.addresses_deleteConfirm, full)) },
+            confirmButton = { ModalAction(stringResource(R.string.addresses_delete), { onClose(); change { c.session.api.value.deleteAddress(a.username) } }, destructive = true) },
         )
     }
 }
@@ -221,7 +230,7 @@ private fun AddressActionsSheet(full: String, isPrimary: Boolean, onDismiss: () 
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
-    fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
+    fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { action() } }
     AppSheet(state, onDismiss, "address-menu") {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
