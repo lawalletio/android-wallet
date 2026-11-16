@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -253,8 +254,17 @@ class WalletRepository(
         }
     }
 
+    /** The balance read in flight, shared: callers asking at once (Home opening, foreground, a payment) wait for one. */
+    private var balanceRead: Pair<NwcClient, kotlinx.coroutines.Deferred<Unit>>? = null
+
     suspend fun refreshBalance(c: NwcClient? = _client.value) {
         c ?: return
+        val read = balanceRead?.takeIf { it.first === c && it.second.isActive }?.second
+            ?: scope.async { readBalance(c) }.also { balanceRead = c to it }
+        read.await()
+    }
+
+    private suspend fun readBalance(c: NwcClient) {
         try {
             val sats = c.getBalanceMsat() / 1000
             _balance.value = sats
@@ -313,20 +323,30 @@ class WalletRepository(
         runCatching { c.listTransactions(from = since, limit = 50) }.getOrNull()
             ?.map(Tx::from)?.filter { it.state == "settled" }
             ?.sortedBy { it.settledAt ?: it.createdAt }
-            ?.forEach { onPayment(key, if (it.incoming) "payment_received" else "payment_sent", it) }
+            // A reconnect can bring several at once: each is noticed, but the list is merged (and saved) and the
+            // balance read once for the batch, not once per payment.
+            ?.filter { notice(key, if (it.incoming) "payment_received" else "payment_sent", it) }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { merge(it); refreshBalance() }
     }
 
     private suspend fun onPayment(key: String, type: String, tx: Tx) {
+        if (!notice(key, type, tx)) return
+        merge(listOf(tx))
+        refreshBalance()
+    }
+
+    /** Marks [tx] seen and announces it; false when it already was (no notice). */
+    private suspend fun notice(key: String, type: String, tx: Tx): Boolean {
         val id = paymentKey(tx)
         val seen = prefs.seen(key)
         // Pre-#19 keys were "$type:$hash": honour them so an upgrade doesn't re-notify the last payment.
-        if (id in seen || "$type:${tx.paymentHash}" in seen) return
+        if (id in seen || "$type:${tx.paymentHash}" in seen) return false
         prefs.setSeen(key, seen + id)
         prefs.setLastSeen(key, maxOf(prefs.lastSeen(key), (tx.settledAt ?: tx.createdAt) / 1000))
         fresh += id
-        merge(listOf(tx))
         _notices.emit(PaymentNotice(id, type, tx))
-        refreshBalance()
+        return true
     }
 
     /** Debug builds only (the web's `?devPayment=`): fake a payment to exercise notices and the balance roll. */

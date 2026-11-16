@@ -63,6 +63,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -109,6 +110,24 @@ import kotlinx.coroutines.flow.receiveAsFlow
 
 val LocalContainer = staticCompositionLocalOf<AppContainer> { error("AppContainer not provided") }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("NavController not provided") }
+
+/**
+ * Suspends until the screen transition in progress has finished (one destination left on screen), capped in case
+ * one never settles. Work that would cost frames mid-slide waits for it: the keyboard (imePadding relayouts every
+ * frame of its own animation), the camera, network lookups that repaint the screen.
+ */
+suspend fun NavHostController.awaitSettled() {
+    kotlinx.coroutines.withTimeoutOrNull(700) { visibleEntries.first { es -> es.count { it.destination.navigatorName == "composable" } <= 1 } }
+}
+
+/** False until this screen's enter transition has finished (see [awaitSettled]). */
+@Composable
+fun rememberSettled(): Boolean {
+    val nav = LocalNav.current
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { nav.awaitSettled(); settled = true }
+    return settled
+}
 /** Shared-element scopes: the layout around the NavHost, and the destination's own enter/exit. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalSharedScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -222,10 +241,11 @@ fun LaWalletRoot(container: AppContainer) {
     LaWalletTheme(brand) {
         CompositionLocalProvider(LocalContainer provides container) {
             Box(Modifier.fillMaxSize().background(Lw.Background).semantics { testTagsAsResourceId = true }) {
-                PrismBackground(brand)
                 val auth by container.session.auth.collectAsState()
                 when (auth) {
-                    AuthState.Loading -> LoadingScreen()
+                    // Only here: past loading, AppNavHost draws its own prism (inside the haze source), and a second one
+                    // underneath was a full-screen bitmap blit per frame that nothing saw.
+                    AuthState.Loading -> { PrismBackground(brand); LoadingScreen() }
                     else -> {
                         val loggedIn = auth == AuthState.LoggedIn
                         AppNavHost(container, loggedIn = loggedIn)
@@ -280,18 +300,27 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     // Home's activity sheet rising swaps the tabs for search + filters, 1:1 with the finger.
     // Only Lightning has the sheet: swiping to Onchain swaps the search back to the tabs, 1:1 with the pager.
     val sheet = { if (route == R0.HOME) ActivitySearch.sheet * HomePager.weight(LIGHTNING) else ActivitySearch.sheet }
+    // The Lightning wallet list open puts its own Add button down here: the bar fades and drops out for it.
+    val deck = { if (route == R0.HOME) io.lawallet.wallet.ui.screens.HomeLightningAddress.deck().coerceIn(0f, 1f) * HomePager.weight(LIGHTNING) else 0f }
+    val deckOut by remember(route) { derivedStateOf { deck() >= 0.5f } }
     val tabs by remember(route) { derivedStateOf { sheet() < 1f } }
     val search by remember(route) { derivedStateOf { sheet() > 0f } }
     val context = LocalContext.current
     val onchainSoon = stringResource(R.string.onchain_soon)
     val usdtSoon = stringResource(R.string.usdt_soon)
     // Off Lightning (Onchain, USDT), Home's Receive / Send aren't wired yet.
-    val soon = if (route == R0.HOME && HomePager.page != LIGHTNING) { if (HomePager.page == USDT) usdtSoon else onchainSoon } else null
+    // derivedStateOf: HomePager.page reads the live swipe offset, which would recompose the bar every swipe frame.
+    val homePage by remember { derivedStateOf { HomePager.page } }
+    val soon = if (route == R0.HOME && homePage != LIGHTNING) { if (homePage == USDT) usdtSoon else onchainSoon } else null
     // Home's address drop-down covers everything: the bar fades out under it (and leaves once gone, taking no taps).
     val overlay by animateFloatAsState(if (route == R0.HOME && AddressPickerOverlay.open) 1f else 0f, tween(180), label = "pickerOverlay")
     // Both tabs composed = switching tabs: the bar stays put.
-    Box(modifier.graphicsLayer { alpha = (if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f) * (1f - overlay) }, contentAlignment = Alignment.BottomCenter) {
-        if (tabs && overlay < 1f) NavTabBar(
+    Box(modifier.graphicsLayer {
+        val d = deck()
+        alpha = (if (shown.size > 1) 1f else shown.values.maxOfOrNull { it.value } ?: 0f) * (1f - overlay) * (1f - (d * 2f).coerceAtMost(1f))
+        translationY = d * 48.dp.toPx()
+    }, contentAlignment = Alignment.BottomCenter) {
+        if (tabs && overlay < 1f && !deckOut) NavTabBar(
             // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
             onReceive = { if (soon != null) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
             onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
@@ -331,8 +360,15 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     LaunchedEffect(route) {
         route ?: return@LaunchedEffect
         Trail.add("navigation", route)
+        io.lawallet.wallet.core.diag.Perf.screen(route)
         val tx = Diagnostics.screen(route)
-        try { delay(1000) } finally { tx?.finish() }
+        try {
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            nav.awaitSettled()
+            // The enter transition's frames (count, jank, p90/p99, main thread vs GPU) on the screen's transaction.
+            io.lawallet.wallet.core.diag.Perf.settled().forEach { (k, v) -> tx?.setMeasurement(k, v) }
+            delay((1000 - (android.os.SystemClock.elapsedRealtime() - t0)).coerceAtLeast(0))
+        } finally { tx?.finish() }
     }
     var notice by remember { mutableStateOf<PaymentNotice?>(null) }
 
@@ -450,9 +486,11 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                     Txt(stringResource(R.string.offline_mode), size = 11.sp, color = Lw.Orange)
                 }
             }
+            // Only read while a notice shows; derived so a page swipe doesn't recompose the NavHost's parent every frame.
+            val offLightning by remember { derivedStateOf { HomePager.page != LIGHTNING } }
             // Home shows payments on its own balance (cue + odometer), so the pill stays away there.
             // …except on its Onchain page, where the Lightning balance is out of sight.
-            AnimatedVisibility(notice != null && (route != R0.HOME || HomePager.page != LIGHTNING), Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
+            AnimatedVisibility(notice != null && (route != R0.HOME || offLightning), Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 14.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
                 notice?.let { PaymentNoticePill(it.type, it.tx.amountSats, haze) }
             }
         }

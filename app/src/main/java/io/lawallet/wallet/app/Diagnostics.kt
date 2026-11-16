@@ -17,6 +17,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import io.lawallet.wallet.BuildConfig
+import io.lawallet.wallet.core.diag.Perf
 import io.lawallet.wallet.core.diag.Scrubber
 import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.store.Prefs
@@ -98,6 +99,7 @@ object Diagnostics {
             })
         }
         Trail.open(File(context.filesDir, "diag"), "start pid=${Process.myPid()} v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) api=${Build.VERSION.SDK_INT}")
+        Perf.open(File(context.filesDir, "perf"), if (BuildConfig.DEBUG) "debug" else "release", BuildConfig.VERSION_CODE)
         // Ours first in line, so the trail gets the crash even with reports off; Sentry, when it
         // starts, wraps this handler and still reports first.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
@@ -107,6 +109,16 @@ object Diagnostics {
         c.scope.launch(Dispatchers.IO) { runCatching { recordExits(context, c.prefs) }.onFailure { Log.w(TAG, "exit history", it) } }
         watch(context, c)
         trackState(context, c)
+        samplePerf(c)
+    }
+
+    /** A [Perf] resource sample every minute while the app is in foreground (it stops in background). */
+    private fun samplePerf(c: AppContainer) {
+        c.scope.launch(Dispatchers.Default) {
+            c.wallet.active.collectLatest { foreground ->
+                while (foreground) { runCatching { Perf.sample() }; delay(60_000) }
+            }
+        }
     }
 
     fun exits(prefs: Prefs): List<ExitRecord> = prefs.exitLog.mapNotNull(ExitRecord::parse)
@@ -197,7 +209,9 @@ object Diagnostics {
             o.logs.isEnabled = true
             o.logs.setBeforeSend { l -> Scrubber.log(l) }
             // App start, screen loads and slow/frozen frames. No network spans: OkHttp isn't instrumented.
-            o.tracesSampleRate = 0.2
+            // Development builds (a DSN passed by hand, docs/performance.md): every screen, with a profile of each.
+            o.tracesSampleRate = if (BuildConfig.DEBUG) 1.0 else 0.2
+            if (BuildConfig.DEBUG) { o.profileSessionSampleRate = 1.0; o.profileLifecycle = io.sentry.ProfileLifecycle.TRACE }
             o.setBeforeSendTransaction { t, _ -> Scrubber.transaction(t) }
             o.setBeforeBreadcrumb { b, _ -> Scrubber.breadcrumb(b) }
             o.setBeforeSend { e, _ ->
@@ -333,7 +347,7 @@ object Diagnostics {
         c.scope.launch { c.prefs.backgroundListener.collect { Trail.add("app", "listener ${if (it) "on" else "off"}") } }
         ProcessLifecycleOwner.get().lifecycle.addObserver(LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) Trail.add("app", "foreground")
-            if (event == Lifecycle.Event.ON_STOP) Trail.add("app", "background")
+            if (event == Lifecycle.Event.ON_STOP) { Trail.add("app", "background"); Perf.background() }
         })
         context.registerComponentCallbacks(object : ComponentCallbacks2 {
             override fun onTrimMemory(level: Int) = Trail.add("memory", "trim level=$level ${memory()}")

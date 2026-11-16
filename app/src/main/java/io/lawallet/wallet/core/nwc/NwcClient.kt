@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.nwc
 
+import io.lawallet.wallet.core.diag.Perf
 import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.nostr.Nip04
 import io.lawallet.wallet.core.nostr.Nip44
@@ -128,12 +129,14 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: 
             send(method, params, timeoutMs).also {
                 span?.finish(SpanStatus.OK)
                 val ms = System.currentTimeMillis() - started
+                Perf.nwc(method, ms, "ok")
                 if (method != "get_balance" || ms > 5_000) Trail.add("nwc", "$method ok ${ms}ms")
             }
         } catch (e: Exception) {
             // A cancelled caller isn't a wallet failure; a timeout is.
             val cancelled = e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException
             span?.finish(if (cancelled) SpanStatus.CANCELLED else SpanStatus.INTERNAL_ERROR)
+            Perf.nwc(method, System.currentTimeMillis() - started, if (cancelled) "cancelled" else ((e as? NwcException)?.code ?: e.javaClass.simpleName))
             if (cancelled) throw e
             Trail.add("nwc", "$method failed ${(e as? NwcException)?.code ?: e.javaClass.simpleName} ${System.currentTimeMillis() - started}ms", error = true)
             throw e

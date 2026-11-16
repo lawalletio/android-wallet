@@ -68,6 +68,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -271,8 +272,8 @@ fun CurrencyToggle(codes: List<String>, selected: String, onSelect: (String) -> 
     }
     // One press source for every segment: holding any of them "charges" the whole switcher toward [onLongPress].
     val press = remember { MutableInteractionSource() }
-    val hold = if (onLongPress != null) holdProgress(press) else 0f
-    Box(modifier.graphicsLayer { scaleX = 1f - 0.08f * hold; scaleY = scaleX; alpha = 1f - 0.25f * hold }.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
+    val hold = if (onLongPress != null) holdProgress(press) else NoHold
+    Box(modifier.graphicsLayer { val p = hold(); scaleX = 1f - 0.08f * p; scaleY = scaleX; alpha = 1f - 0.25f * p }.glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
         Box(
             Modifier.matchParentSize().layout { m, c ->
                 val p = m.measure(Constraints.fixed(w.value.roundToInt().coerceAtLeast(0), c.maxHeight))
@@ -423,12 +424,16 @@ fun qrBitmap(data: String): Bitmap {
 @Composable
 fun QrDisplay(data: String, caption: String?, copyValue: String = data, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bmp = remember(data) { qrBitmap(data).asImageBitmap() }
+    // Encoded off the main thread (ZXing scores 8 masks over ~400 chars of BOLT11): in composition it stalled the
+    // first frames of the screen's enter transition. The white tile holds its size until it's ready.
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, data) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { qrBitmap(data).asImageBitmap() }
+    }
     val copied = stringResource(R.string.common_copied)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.glass(RoundedCornerShape(32.dp), GlassLevel.Regular).padding(12.dp)) {
             Box(Modifier.clip(RoundedCornerShape(22.dp)).background(Color.White).padding(16.dp).clickable { context.copyToClipboard(copyValue, copied) }) {
-                Image(bmp, null, Modifier.size(232.dp).testTag("qr"), filterQuality = FilterQuality.None)
+                bmp?.let { Image(it, null, Modifier.size(232.dp).testTag("qr"), filterQuality = FilterQuality.None) } ?: Spacer(Modifier.size(232.dp))
             }
         }
         if (caption != null) {
@@ -838,3 +843,5 @@ fun RecipientChip(address: String, loading: Boolean = false, onClick: (() -> Uni
         if (loading) Spinner(size = 14.dp) else if (onClick != null) LwIcon(L.drawable.lucide_ic_send, size = 14.dp, tint = Lw.MutedFg, modifier = Modifier.hideInShot())
     }
 }
+
+private val NoHold: () -> Float = { 0f }
