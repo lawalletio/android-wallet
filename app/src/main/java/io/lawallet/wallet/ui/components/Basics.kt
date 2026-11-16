@@ -68,6 +68,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -107,9 +108,10 @@ fun Txt(
     mono: Boolean = false,
     letterSpacing: TextUnit = TextUnit.Unspecified,
     lineHeight: TextUnit = TextUnit.Unspecified,
+    decoration: TextDecoration? = null,
 ) = Text(
     text, modifier, color = color, fontSize = size, fontWeight = weight, textAlign = align, maxLines = maxLines,
-    overflow = TextOverflow.Ellipsis, letterSpacing = letterSpacing, lineHeight = lineHeight,
+    overflow = TextOverflow.Ellipsis, letterSpacing = letterSpacing, lineHeight = lineHeight, textDecoration = decoration,
     style = if (mono) MonoStyle else InterStyle,
 )
 

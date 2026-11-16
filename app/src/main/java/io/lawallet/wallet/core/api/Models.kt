@@ -252,3 +252,34 @@ data class ReceiveAction(
     val pendingAmountMsats: Long = 0,
     val revision: ForwardRevision? = null,
 )
+
+@Serializable data class PollOption(val id: String, val label: String)
+@Serializable
+data class Poll(
+    val id: String = "",
+    val slug: String = "",
+    val title: String = "",
+    val description: String? = null,
+    /** RANKING | SINGLE_CHOICE | TEXT */
+    val type: String = "RANKING",
+    val options: List<PollOption> = emptyList(),
+    val allowCustom: Boolean = false,
+    /** False = one-time: locked after the first submit. */
+    val updatable: Boolean = true,
+    /** DRAFT | OPEN | CLOSED */
+    val status: String = "OPEN",
+) {
+    val ranking get() = type == "RANKING"
+    /** TEXT: a free-text question (no options), answered with one `custom:<text>` of up to 280 chars. */
+    val freeText get() = type == "TEXT"
+    val open get() = status == "OPEN"
+}
+/** [choices]: option ids, best first, or `custom:<text>`. */
+@Serializable data class PollResponse(val choices: List<String> = emptyList(), val updatedAt: String? = null)
+@Serializable data class PollState(val poll: Poll, val response: PollResponse? = null) {
+    /** Option label for a stored choice (custom entries show their own text). */
+    fun label(choice: String) = choice.removePrefix(CUSTOM).takeIf { choice.startsWith(CUSTOM) } ?: poll.options.firstOrNull { it.id == choice }?.label ?: choice
+    val locked get() = response != null && !poll.updatable
+    companion object { const val CUSTOM = "custom:" }
+}
+@Serializable data class PollSubmitted(val response: PollResponse)

@@ -189,4 +189,40 @@ class LaWalletApiTest {
         assertEquals("POST", dismiss.method)
         assertEquals("/api/users/me/account-transfer/dismiss", dismiss.path)
     }
+
+    @Test fun readsAPollAndSubmitsARanking() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""{"poll":{"id":"p1","slug":"usdt-tech","title":"USDT tech","type":"RANKING","options":[{"id":"tron","label":"Tron"},{"id":"liquid","label":"Liquid"}],"allowCustom":true,"updatable":false,"status":"OPEN","createdAt":"x","updatedAt":"x"},"response":null}"""))
+        server.enqueue(MockResponse().setBody("""{"response":{"choices":["liquid","custom:Ethereum L1","tron"],"updatedAt":"2026-11-16T00:00:00Z"}}"""))
+
+        val state = api.poll("usdt-tech")
+        assertTrue(state.poll.ranking && state.poll.open && state.response == null && !state.locked)
+        assertEquals("Liquid", state.label("liquid"))
+        assertEquals("Ethereum L1", state.label("custom:Ethereum L1"))
+        val saved = api.submitPoll("usdt-tech", listOf("liquid", "custom:Ethereum L1", "tron"))
+        assertEquals("liquid", saved.choices.first())
+        assertTrue(state.copy(response = saved).locked) // one-time poll
+
+        assertEquals("/api/polls/usdt-tech", server.takeRequest().path)
+        val put = server.takeRequest()
+        assertEquals("PUT", put.method)
+        assertEquals("/api/polls/usdt-tech/response", put.path)
+        assertEquals("""{"choices":["liquid","custom:Ethereum L1","tron"]}""", put.body.readUtf8())
+    }
+
+    @Test fun lockedPollSurfacesItsCode() {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":{"message":"Already answered","code":"POLL_LOCKED"}}"""))
+        val e = assertThrows(ApiException::class.java) { runBlocking { api.submitPoll("usdt-tech", listOf("tron")) } }
+        assertEquals(409, e.status)
+        assertEquals("POLL_LOCKED", e.code)
+    }
+
+    @Test fun textPollIsNotARanking() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""{"poll":{"id":"p2","slug":"wishes","title":"Wishes","type":"TEXT","options":[],"allowCustom":false,"updatable":true,"status":"OPEN"},"response":{"choices":["custom:Cheaper fees"],"updatedAt":"x"}}"""))
+        val state = api.poll("wishes")
+        assertTrue(state.poll.freeText && !state.poll.ranking)
+        assertEquals("Cheaper fees", state.label(state.response!!.choices.first()))
+    }
 }

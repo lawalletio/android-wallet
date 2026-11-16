@@ -45,6 +45,27 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import io.lawallet.wallet.ui.theme.GlassLevel
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import io.lawallet.wallet.core.api.ApiException
+import io.lawallet.wallet.core.api.PollState
+import io.lawallet.wallet.ui.components.LwIcon
+import io.lawallet.wallet.ui.rememberSettled
+import com.composables.icons.lucide.R as L
 
 /*
  * Home's USDT page, an upcoming asset: the same layout as Onchain and Lightning (balance, activity, the deck a swipe
@@ -53,14 +74,13 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun UsdtPage(current: Boolean, anchors: HomePages) {
     val c = LocalContainer.current
-    val nav = LocalNav.current
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     val currencies by c.prefs.currencies.collectAsState()
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
 
     val reveal = remember { HomeReveal() }
+    var heroExtra by remember { mutableFloatStateOf(0f) }
     reveal.bottomReserve = with(density) { 158.dp.toPx() }
     reveal.minTravel = with(density) { 48.dp.toPx() }
     val open by remember { derivedStateOf { reveal.open } }
@@ -76,7 +96,8 @@ internal fun UsdtPage(current: Boolean, anchors: HomePages) {
         ActivitySheetLayout(
             sheet,
             header = { Spacer(Modifier.fillMaxWidth().height(HEADER_H).measureRoot { reveal.headerBottom = it.bottom }) },
-            floor = anchors.floorFor(USDT), onNeed = { anchors.need[USDT] = it },
+            // The poll card is taller than the other pages' rows: only this page docks below it, the others keep their line.
+            floor = anchors.floorFor(USDT), onNeed = { anchors.need[USDT] = it - heroExtra },
             top = {
                 Box(
                     Modifier.fillMaxWidth()
@@ -95,16 +116,17 @@ internal fun UsdtPage(current: Boolean, anchors: HomePages) {
                             FigureStrut()
                             Txt(stringResource(R.string.onchain_soon_short), size = 56.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, lineHeight = 60.sp, letterSpacing = (-1.5).sp)
                         }
+                        // No USDT amounts yet, so no currency to switch: the toggle keeps its space (invisible) so "Soon" sits
+                        // where the other pages' balances do and the swipe doesn't jump.
                         if (currencies.active.size >= 2) CurrencyToggle(
-                            currencies.active, code, { cc -> c.prefs.setCurrencies(currencies.copy(selected = cc, localEdit = true)) }, Modifier.padding(top = 12.dp).pinnedGlide(anchors, USDT, anchors.toggleY),
-                            onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); nav.navigate(R0.CURRENCIES) { launchSingleTop = true } },
-                            enabled = current,
+                            currencies.active, code, {}, Modifier.padding(top = 12.dp).alpha(0f).clearAndSetSemantics {},
+                            enabled = false,
                         )
                         DotsSlot(anchors, USDT)
                     }
                 }
             },
-            below = { UsdtCta(Modifier.revealAside(reveal)) },
+            below = { UsdtCta(Modifier.revealAside(reveal), current) { heroExtra = it } },
             sheetContent = {
                 Box(Modifier.graphicsLayer {
                     translationY = reveal.progress * (reveal.range + 160.dp.toPx())
@@ -120,21 +142,105 @@ internal fun UsdtPage(current: Boolean, anchors: HomePages) {
     }
 }
 
+internal const val USDT_POLL = "usdt-tech"
+
 /**
- * What USDT will be, tagged Soon: one row, so it fits above the activity line every page shares (a taller card would
- * push that line down on all of them).
+ * What USDT will be. While the instance runs the USDT poll it is a hero card: before voting it asks which network
+ * users want; after, it shows their ranking with a way to change it (or that it's recorded, for a one-time poll).
+ * Otherwise it is the one-row "Soon" teaser. [onExtra]: how much taller than that row it is, in px.
  */
 @Composable
-private fun UsdtCta(modifier: Modifier) {
-    Row(
-        modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp).fillMaxWidth()
-            .glass(RoundedCornerShape(24.dp), tint = Lw.Tether.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 10.dp).testTag("usdt-cta"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
-        Spacer(Modifier.width(10.dp))
-        Txt(stringResource(R.string.usdt_cta_title), Modifier.weight(1f), size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1)
-        Spacer(Modifier.width(8.dp))
-        Pill(stringResource(R.string.onchain_soon_short), Lw.Tether)
+private fun UsdtCta(modifier: Modifier, current: Boolean, onExtra: (Float) -> Unit) {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val density = LocalDensity.current
+    val ser = PollState.serializer()
+    // Re-read on every return to Home, so a fresh answer shows right away.
+    var poll by remember { mutableStateOf(c.prefs.cached(pollCacheKey(USDT_POLL), ser)) }
+    val settled = rememberSettled()
+    LaunchedEffect(current && settled) {
+        if (current && settled) runCatching { c.session.api.value.poll(USDT_POLL) }
+            .onSuccess { poll = it; c.prefs.setCached(pollCacheKey(USDT_POLL), ser, it) }
+            .onFailure { if ((it as? ApiException)?.status == 404) poll = null }
     }
+    val p = poll?.takeIf { it.poll.open || it.response != null }
+    if (p == null) {
+        SideEffect { onExtra(0f) }
+        Row(
+            modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp).fillMaxWidth()
+                .glass(RoundedCornerShape(24.dp), tint = Lw.Tether.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 10.dp).testTag("usdt-cta"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Txt(stringResource(R.string.usdt_cta_title), Modifier.weight(1f), size = 14.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+            Pill(stringResource(R.string.onchain_soon_short), Lw.Tether)
+        }
+        return
+    }
+    val open = { nav.navigate(R0.poll(USDT_POLL)) { launchSingleTop = true } }
+    val ranked = p.response?.choices.orEmpty()
+    val shape = RoundedCornerShape(28.dp)
+    Column(
+        modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp).fillMaxWidth()
+            .onSizeChanged { onExtra((it.height - with(density) { ROW_H.toPx() }).coerceAtLeast(0f)) }
+            .glass(shape, GlassLevel.Regular, tint = Lw.Tether.copy(alpha = 0.16f))
+            .border(1.dp, Brush.verticalGradient(listOf(Lw.Tether.copy(alpha = 0.55f), Lw.Tether.copy(alpha = 0.08f))), shape)
+            .clip(shape).clickable(onClick = open).padding(16.dp).testTag("usdt-poll"),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).glass(CircleShape, GlassLevel.Thin, tint = Lw.Tether.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.ic_usdt), null, Modifier.size(26.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(stringResource(if (ranked.isEmpty()) R.string.usdt_poll_title else R.string.usdt_poll_voted_title), size = 17.sp, weight = FontWeight.SemiBold, lineHeight = 21.sp)
+                if (ranked.isEmpty()) Txt(stringResource(R.string.usdt_poll_subtitle), size = 13.sp, color = Lw.MutedFg, lineHeight = 17.sp)
+            }
+        }
+        if (ranked.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            // Their ranking, one per line, podium-tinted like the poll screen.
+            Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ranked.forEachIndexed { i, choice -> RankLine(i, p.label(choice)) }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        when {
+            ranked.isEmpty() -> UsdtPollButton(stringResource(R.string.usdt_poll_cta), filled = true, onClick = open)
+            p.locked || !p.poll.open -> Row(verticalAlignment = Alignment.CenterVertically) {
+                LwIcon(L.drawable.lucide_ic_circle_check, size = 16.dp, tint = Lw.Tether)
+                Spacer(Modifier.width(6.dp))
+                Txt(stringResource(R.string.usdt_poll_recorded), size = 13.sp, color = Lw.Tether, weight = FontWeight.Medium)
+            }
+            else -> UsdtPollButton(stringResource(R.string.usdt_poll_change), filled = false, onClick = open)
+        }
+    }
+}
+
+/** The compact "Soon" row's height (4dp top + 10dp padding twice + the 22dp icon): what the other pages dock under. */
+private val ROW_H = 46.dp
+
+@Composable
+private fun RankLine(index: Int, label: String) {
+    val tint = rankColor(index)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(24.dp).clip(CircleShape).background(tint.copy(alpha = if (index < 3) 0.22f else 0.10f)), contentAlignment = Alignment.Center) {
+            Txt("${index + 1}", size = 12.sp, weight = FontWeight.Bold, color = if (index < 3) tint else Lw.Foreground)
+        }
+        Spacer(Modifier.width(12.dp))
+        Txt(label, size = 15.sp, weight = FontWeight.Medium, maxLines = 1)
+    }
+}
+
+/** Full-width Tether action: solid to vote, glass outline to change an answer. */
+@Composable
+private fun UsdtPollButton(text: String, filled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().height(44.dp).clip(CircleShape)
+            .then(if (filled) Modifier.background(Lw.Tether) else Modifier.glass(CircleShape, GlassLevel.Thin, tint = Lw.Tether.copy(alpha = 0.14f)).border(1.dp, Lw.Tether.copy(alpha = 0.5f), CircleShape))
+            .clickable(onClick = onClick).testTag("usdt-poll-action"),
+        contentAlignment = Alignment.Center,
+    ) { Txt(text, size = 15.sp, weight = FontWeight.SemiBold, color = if (filled) Color.White else Lw.Tether) }
 }
