@@ -208,13 +208,13 @@ private fun UsdtCta(modifier: Modifier, current: Boolean, onExtra: (Float) -> Un
         }
         Spacer(Modifier.height(14.dp))
         when {
-            ranked.isEmpty() -> UsdtPollButton(stringResource(R.string.usdt_poll_cta), filled = true, onClick = open)
+            ranked.isEmpty() -> UsdtPollButton(stringResource(R.string.usdt_poll_cta), onClick = open)
             p.locked || !p.poll.open -> Row(verticalAlignment = Alignment.CenterVertically) {
                 LwIcon(L.drawable.lucide_ic_circle_check, size = 16.dp, tint = Lw.Tether)
                 Spacer(Modifier.width(6.dp))
                 Txt(stringResource(R.string.usdt_poll_recorded), size = 13.sp, color = Lw.Tether, weight = FontWeight.Medium)
             }
-            else -> UsdtPollButton(stringResource(R.string.usdt_poll_change), filled = false, onClick = open)
+            else -> UsdtPollButton(stringResource(R.string.usdt_poll_change), icon = L.drawable.lucide_ic_pencil, onClick = open)
         }
     }
 }
@@ -234,13 +234,14 @@ private fun RankLine(index: Int, label: String) {
     }
 }
 
-/** Full-width Tether action: solid to vote, glass outline to change an answer. */
+/** Full-width solid Tether action: "Rank now" before voting, "Change preference" (with a pencil) after. */
 @Composable
-private fun UsdtPollButton(text: String, filled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().height(44.dp).clip(CircleShape)
-            .then(if (filled) Modifier.background(Lw.Tether) else Modifier.glass(CircleShape, GlassLevel.Thin, tint = Lw.Tether.copy(alpha = 0.14f)).border(1.dp, Lw.Tether.copy(alpha = 0.5f), CircleShape))
-            .clickable(onClick = onClick).testTag("usdt-poll-action"),
-        contentAlignment = Alignment.Center,
-    ) { Txt(text, size = 15.sp, weight = FontWeight.SemiBold, color = if (filled) Color.White else Lw.Tether) }
+private fun UsdtPollButton(text: String, onClick: () -> Unit, @androidx.annotation.DrawableRes icon: Int? = null) {
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(Lw.Tether).clickable(onClick = onClick).testTag("usdt-poll-action"),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) { LwIcon(icon, size = 16.dp, tint = Color.White); Spacer(Modifier.width(8.dp)) }
+        Txt(text, size = 15.sp, weight = FontWeight.SemiBold, color = Color.White)
+    }
 }
