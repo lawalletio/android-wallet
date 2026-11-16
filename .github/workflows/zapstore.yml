@@ -54,4 +54,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$SIGN_WITH" ]; then echo "::error::Add the ZAPSTORE_BUNKER secret (the signer's bunker:// string)"; exit 1; fi
-          "$(go env GOPATH)/bin/zsp" publish --quiet zapstore.yaml
+          "$(go env GOPATH)/bin/zsp" publish --quiet --verbose zapstore.yaml
