@@ -140,7 +140,7 @@ The app is under active development and we track as much as we can to keep impro
    the tag; `versionCode` is the commit count.
 2. Zapstore: automatic. `.github/workflows/zapstore.yml` runs when the Release workflow succeeds on a tag (or a
    release is published by hand) and `zsp` publishes the arm64 APK with metadata from `fastlane/metadata`, signed
-   by the maintainer's NIP-46 remote signer (`ZAPSTORE_BUNKER` secret, a `bunker://` string; never commit it).
+   by the maintainer's NIP-46 remote signer (`ZAPSTORE_BUNKER` secret, a `bunker://` string, plus `ZAPSTORE_BUNKER_CLIENT_KEY`, the client key zsp keeps for that bunker and the signer already approved; never commit either).
    It refuses to publish when GitHub's latest release isn't the highest version, so Zapstore never goes backwards:
    always release through a tag above the highest one. Fallback: `./scripts/publish-zapstore.sh` signs with the NIP-07
    browser extension in an interactive terminal.

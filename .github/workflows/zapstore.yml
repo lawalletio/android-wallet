@@ -51,7 +51,14 @@ jobs:
       - name: Publish
         env:
           SIGN_WITH: ${{ secrets.ZAPSTORE_BUNKER }}
+          CLIENT_KEY: ${{ secrets.ZAPSTORE_BUNKER_CLIENT_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$SIGN_WITH" ]; then echo "::error::Add the ZAPSTORE_BUNKER secret (the signer's bunker:// string)"; exit 1; fi
+          # zsp talks to the bunker as a client key it keeps in its config dir. A fresh runner would make a new one
+          # the signer has never approved and wait for approval: restore the approved one instead.
+          if [ -z "$CLIENT_KEY" ]; then echo "::error::Add the ZAPSTORE_BUNKER_CLIENT_KEY secret (zsp's approved bunker client key)"; exit 1; fi
+          target=${SIGN_WITH#bunker://}; target=${target%%\?*}
+          mkdir -p -m 700 "${XDG_CONFIG_HOME:-$HOME/.config}/zsp/bunker-keys"
+          (umask 077; echo "$CLIENT_KEY" > "${XDG_CONFIG_HOME:-$HOME/.config}/zsp/bunker-keys/$target.key")
           "$(go env GOPATH)/bin/zsp" publish --quiet --verbose zapstore.yaml
