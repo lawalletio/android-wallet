@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import kotlinx.serialization.builtins.serializer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
@@ -304,8 +305,6 @@ internal fun WalletsReveal(
     newWalletId: String? = null,
     /** Being added from here: a setting-up card until LaWallet answers, then the wallet under the same key. */
     pending: FlowStore.PendingWallet? = null,
-    /** Where the Add wallet button goes (the caller's bottom slot); it rises in as the list opens. */
-    addButton: Modifier = Modifier,
     /** Bottom-left under the list, across from the total. */
     footerStart: (@Composable () -> Unit)? = null,
     /** The address is locked to its wallet: only that wallet shows. */
@@ -314,13 +313,31 @@ internal fun WalletsReveal(
     onLock: (() -> Unit)? = null,
     /** Being deleted: folded out of the list before they leave it, the rest closing over them. */
     leaving: Set<String> = emptySet(),
+    /** A transfer just made between two of these wallets: what each card's figure gains (+) or loses (−). */
+    deltas: Map<String, Long> = emptyMap(),
 ) {
     val created = pending?.created
-    val placeholder = pending?.takeIf { created == null }?.let {
-        RemoteWallet(it.key, it.name, status = PENDING, isDefault = it.selected, provider = if (it.lncurl) "lncurl" else null)
+    // One card from setting up to settled: the placeholder, then the created wallet (even the frame before Home's list
+    // has it), always under the name picked here, so a list refresh can't bring back the server's old name meanwhile.
+    val placeholder = pending?.let {
+        if (created == null) RemoteWallet(it.key, it.name, status = PENDING, isDefault = it.selected, provider = if (it.lncurl) "lncurl" else null)
+        else created.copy(name = it.name).takeIf { wallets?.none { w -> w.id == created.id } == true }
     }
-    val all = wallets?.let { ws -> if (placeholder == null) ws else ws.map { if (placeholder.isDefault) it.copy(isDefault = false) else it } + placeholder }
-    val sorted = all?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" || it.status == PENDING }) // primary last: right above the balance
+    val all = wallets?.let { ws ->
+        val named = if (created == null) ws else ws.map { if (it.id == created.id) it.copy(name = pending.name) else it }
+        if (placeholder == null) named else named.map { if (placeholder.isDefault) it.copy(isDefault = false) else it } + placeholder
+    }
+    // When each wallet was last the selected one (kept on this device): the rest sit most recent nearest the primary.
+    val c = io.lawallet.wallet.ui.LocalContainer.current
+    val usedAt = remember { androidx.compose.runtime.mutableStateMapOf<String, Long>().apply { putAll(c.prefs.cached(PRIMARY_AT, primaryAtSer).orEmpty()) } }
+    val primaryId = all?.find { it.isDefault && it.status == "ACTIVE" }?.id
+    LaunchedEffect(primaryId) {
+        if (primaryId == null) return@LaunchedEffect
+        usedAt[primaryId] = System.currentTimeMillis()
+        c.prefs.setCached(PRIMARY_AT, primaryAtSer, usedAt.toMap())
+    }
+    // Primary last (right above the balance), then the ones being set up or working, then the most recently primary.
+    val sorted = all?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" || it.status == PENDING }.thenBy { usedAt[it.id] ?: 0L })
 
     val keyOf = { w: RemoteWallet -> if (created != null && w.id == created.id) pending.key else w.id }
     // Locked: just its wallet shows; the rest fold away (and back), so none can be tapped into its place by accident.
@@ -328,20 +345,11 @@ internal fun WalletsReveal(
     val folded = { w: RemoteWallet -> (folds && !w.isDefault) || w.id in leaving }
     var adding by remember { mutableStateOf(false) }
     if (adding) AddWalletSheet({ adding = false }, onAdd)
-    // Derived: read every frame of the reveal, but only these flips recompose.
-    val open by remember { derivedStateOf { reveal.open } }
+    // Derived: read every frame of the reveal, but only this flip recomposes.
     val ready by remember { derivedStateOf { reveal.progress > 0.5f } }
-    if (open && sweepFrom == null) LwButton(
-        stringResource(R.string.rw_add), { adding = true },
-        addButton.fillMaxWidth()
-            .graphicsLayer { val p = smooth(0.45f, 1f, reveal.progress); alpha = p; translationY = (1f - p) * 28.dp.toPx() }
-            // Over the activity sheet's drag area like Home's other floating buttons: drags here still move the list.
-            .nestedScroll(reveal.connection).scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
-            .testTag("home-wallets-add"),
-        BtnVariant.Theme, enabled = ready && placeholder == null, height = 58.dp, icon = L.drawable.lucide_ic_plus,
-    )
     RevealDeck(
         reveal, sorted, keyOf, Modifier.testTag("home-wallets"), hidden = folded,
+        top = { AddWalletCard(ready && placeholder == null) { adding = true } }, hasTop = sweepFrom == null,
         header = {
             AnimatedContent(
                 sweepFrom != null,
@@ -352,7 +360,6 @@ internal fun WalletsReveal(
                 label = "sweepBanner",
             ) { picking ->
                 if (picking) SweepPickBanner(onSweepCancel)
-                // Add lives at the bottom, where the tab bar was (the bar steps aside while the list is open).
                 else Column {
                     DeckTitle(reveal, stringResource(R.string.settings_remoteWallets), onManage, null)
                     // Where the other wallets would be: how to get them back.
@@ -379,10 +386,14 @@ internal fun WalletsReveal(
                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
                 sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
                 lock = if (w.isDefault && onLock != null && w.status == "ACTIVE") locked else null, onLock = { onLock?.invoke() },
+                delta = deltas[w.id],
             )
         }
     }
 }
+
+private const val PRIMARY_AT = "rw-primary-at"
+private val primaryAtSer = kotlinx.serialization.builtins.MapSerializer(String.serializer(), Long.serializer())
 
 /**
  * The deck both Home pages reveal (remote wallets on Lightning, onchain wallets on Onchain): [items] come
@@ -399,6 +410,9 @@ internal fun <T> RevealDeck(
     footer: @Composable () -> Unit = {},
     /** Cards folded out of the list (shrinking and fading, the rest closing over them) without leaving it. */
     hidden: (T) -> Boolean = { false },
+    /** Above every card (the list's last stop scrolling up), e.g. Add wallet; also shown on an empty list. */
+    top: @Composable () -> Unit = {},
+    hasTop: Boolean = false,
     card: @Composable (T) -> Unit,
 ) {
     val top = reveal.headerBottom - reveal.rootTop
@@ -417,12 +431,17 @@ internal fun <T> RevealDeck(
         header()
         when {
             items == null -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Spinner() }
-            items.isEmpty() -> empty()
+            items.isEmpty() -> { if (hasTop) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { top() }; empty() }
             else -> {
                 Column(Modifier.weight(1f, fill = false)) {
                 // Laid out from the bottom (reverseLayout), so the primary stays right above the balance even when
                 // the room changes (switching address moves the balance); item 0 is the primary.
                 val listState = rememberLazyListState()
+                // A new primary: stay at the bottom instead of following the old primary's key up the list (that
+                // scroll, then the snap back, made the cards jump); the cards then slide to their new places.
+                val primaryKey = key(items.last())
+                val shownPrimary = remember { arrayOf(primaryKey) }
+                if (shownPrimary[0] != primaryKey) { shownPrimary[0] = primaryKey; listState.requestScrollToItem(0) }
                 // Back to the primary on a new list, a new primary (switching address re-picks it) and every close.
                 LaunchedEffect(listState, items.size, key(items.last())) {
                     listState.scrollToItem(0)
@@ -480,6 +499,19 @@ internal fun <T> RevealDeck(
                                 exit = fadeOut(tween(160)) + shrinkVertically(spring(0.9f, Spring.StiffnessMediumLow), shrinkTowards = Alignment.Top),
                             ) { Box(if (d > 0) Modifier.padding(bottom = 10.dp) else Modifier) { card(w) } }
                         }
+                    }
+                    if (hasTop) item(key = "deck-top") {
+                        Box(
+                            Modifier.animateItem(placementSpec = spring(0.8f, Spring.StiffnessMediumLow)).padding(bottom = 10.dp).graphicsLayer {
+                                val d = items.size
+                                val t = deckEntrance(d, if (reveal.hero) smooth(0.2f, 1f, reveal.progress) else reveal.progress)
+                                alpha = t
+                                translationY = -(1f - reveal.progress) * reveal.range - (1f - t) * 12.dp.toPx() * d
+                                val s = 0.92f + 0.08f * t
+                                scaleX = s; scaleY = s
+                                transformOrigin = TransformOrigin(0.5f, 1f)
+                            },
+                        ) { top() }
                     }
                 }
                 footer()
@@ -560,6 +592,30 @@ internal fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boole
  * dimmed; tapping one makes it primary, and the two cards cross-fade their states. Long press opens details.
  */
 @OptIn(ExperimentalFoundationApi::class)
+/** Add wallet, shaped like a wallet card at rest: the top of the deck. */
+@Composable
+private fun AddWalletCard(enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        Modifier.fillMaxWidth()
+            .graphicsLayer { alpha = if (enabled) 0.7f else 0.35f }
+            .glass(shape, GlassLevel.Thin)
+            .border(1.dp, Color.White.copy(alpha = 0.05f), shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .testTag("home-wallets-add"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                .background(Brush.linearGradient(listOf(Lw.MutedFg.copy(alpha = 0.16f), Lw.MutedFg.copy(alpha = 0.06f)))),
+            contentAlignment = Alignment.Center,
+        ) { LwIcon(L.drawable.lucide_ic_plus, size = 20.dp, tint = Lw.Foreground) }
+        Spacer(Modifier.width(14.dp))
+        Txt(stringResource(R.string.rw_add), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = Lw.Foreground)
+    }
+}
+
 @Composable
 private fun WalletRevealCard(
     w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
@@ -567,6 +623,8 @@ private fun WalletRevealCard(
     sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit, onRename: (String) -> Unit, onTransfer: () -> Unit, onDelete: () -> Unit,
     /** The selected card's lock: whether its address is locked to it; null shows no lock. */
     lock: Boolean? = null, onLock: () -> Unit = {},
+    /** A transfer's change to this figure, shown beside it (red out, green in) while the figure rolls. */
+    delta: Long? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -645,6 +703,20 @@ private fun WalletRevealCard(
         if (lock != null) LockButton(lock) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onLock() }
         }
         Spacer(Modifier.width(12.dp))
+        // Kept through the exit, so the amount fades out as it was.
+        var lastDelta by remember { mutableStateOf(0L) }
+        if (delta != null) lastDelta = delta
+        AnimatedVisibility(
+            delta != null && !hidden,
+            enter = fadeIn(tween(220)) + androidx.compose.animation.slideInHorizontally(spring(0.8f, Spring.StiffnessMediumLow)) { it / 2 },
+            exit = fadeOut(tween(400)) + slideOutVertically(tween(400)) { if (lastDelta < 0) it else -it },
+        ) {
+            Txt(
+                (if (lastDelta < 0) "−" else "+") + Currencies.formatBalance(kotlin.math.abs(lastDelta), code, rates),
+                Modifier.padding(end = 8.dp).testTag("home-wallet-delta-${w.name}"),
+                size = 13.sp, weight = FontWeight.SemiBold, maxLines = 1, color = if (lastDelta < 0) Lw.Red else Lw.Green,
+            )
+        }
         AnimatedContent(loading, contentAlignment = Alignment.CenterEnd, transitionSpec = { fadeIn(tween(300)).togetherWith(fadeOut(tween(200))) }, label = "figure") { loading ->
             val figure = lerp(Lw.MutedFg, Lw.Foreground, sel)
             when {

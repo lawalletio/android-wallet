@@ -243,7 +243,12 @@ fun SweepScreen(fromId: String, toId: String) {
     // Once the funds are across, let the outcome land for a beat, then return to where the sweep started.
     LaunchedEffect(run?.phase) {
         val r = run ?: return@LaunchedEffect
-        if (r.phase == SweepRun.Phase.Done && r.moved > 0) { delay(1800); back() }
+        // Straight back: the wallet list plays the move (what left one card, what reached the other).
+        if (r.phase == SweepRun.Phase.Done && r.moved > 0) {
+            val fee = r.available?.let { (it - r.left - r.moved).coerceAtLeast(0) } ?: 0L
+            c.flow.transfer = io.lawallet.wallet.app.FlowStore.Transfer(r.to.id, r.moved, fee, from = r.from.id)
+            back()
+        }
     }
     Column(Modifier.fillMaxSize().testTag("sweep")) {
         SettingsHeader(stringResource(R.string.sweep_title), back, stringResource(R.string.common_back))
