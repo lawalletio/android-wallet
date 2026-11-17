@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FlowStore {
     /** Set after adding a remote wallet: Home opens its wallet list on return, showing the new one. */
     var revealWallets = false
+    /** A transfer (or sweep) between the account's wallets that just went out: Home's wallet list plays it (no sent screen). */
+    data class Transfer(val to: String, val sats: Long, val fee: Long, /** Null: the wallet in use (what Send pays from). */ val from: String? = null)
+    var transfer: Transfer? = null
     /** A remote wallet just added: the list it lands in plays its entrance (consumed by the first to show it). */
     var newWalletId: String? = null
     /**

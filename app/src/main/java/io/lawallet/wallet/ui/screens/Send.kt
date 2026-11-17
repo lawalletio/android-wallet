@@ -430,7 +430,13 @@ fun SendPreviewScreen() {
             }.onSuccess {
                 done = true
                 c.scope.launch { c.wallet.refreshBalance(); c.wallet.refreshActivity() }
-                nav.navigate(R0.SEND_SUMMARY) { popUpTo(R0.HOME) }
+                val to = s.destination as? Destination.Wallet
+                if (to != null) {
+                    // Between the account's own wallets: straight back to the wallet list, which plays the move.
+                    c.flow.transfer = FlowStore.Transfer(to.id, amount, c.flow.send.result?.feesSats ?: 0L)
+                    c.flow.revealWallets = true
+                    if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
+                } else nav.navigate(R0.SEND_SUMMARY) { popUpTo(R0.HOME) }
             }.onFailure { error = it.message ?: failed; paying = false }
         }
     }

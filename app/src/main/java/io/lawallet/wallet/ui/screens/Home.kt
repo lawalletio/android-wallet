@@ -699,7 +699,7 @@ private fun BoxScope.AddressPickerScrim(open: Boolean, onDismiss: () -> Unit) {
 /**
  * The pill's drop-down, in the pill's own style: frosted glass that unfolds from under it, each address written like
  * the pill (username, dimmer domain) with a mark of what it does and a check on the one shown; "Add address" is the
- * main button at the bottom while it's open.
+ * list's last row.
  * Drawn in Home's own window (not a popup): Haze then blurs it like the tab bar, and nothing outlives its closing (a
  * popup's blur kept the closed window registered with the app's Haze source, leaking each one).
  */
@@ -728,7 +728,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
             Column(
                 Modifier.fillMaxWidth().frosted(haze, shape, PanelStyle).padding(vertical = 6.dp).testTag("address-picker"),
             ) {
-              // The addresses scroll when they don't fit ("Add address" is the main button at the bottom, AddAddressButton).
+              // The addresses scroll when they don't fit; "Add address" is the last row.
               Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 list.forEachIndexed { i, a ->
                     val sel = a.username == current
@@ -767,17 +767,19 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
                         if (sel) { Spacer(Modifier.width(8.dp)); LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = brand.t400) }
                     }
                 }
+              // Last row, written like an address.
+              Row(
+                  Modifier.fillMaxWidth().clickable(onClick = onAdd).padding(horizontal = 12.dp, vertical = 9.dp).testTag("address-picker-add"),
+                  verticalAlignment = Alignment.CenterVertically,
+              ) {
+                  Box(Modifier.size(36.dp).clip(CircleShape).background(brand.t400.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                      LwIcon(L.drawable.lucide_ic_plus, size = 18.dp, tint = brand.t400)
+                  }
+                  Spacer(Modifier.width(12.dp))
+                  Txt(stringResource(R.string.addresses_add), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+              }
               }
             }
-    }
-    // Where the tab bar was (it steps aside while the drop-down is open), like the wallet list's Add wallet.
-    AnimatedVisibility(
-        open,
-        Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
-        enter = fadeIn(tween(200, 60)) + slideInVertically(spring(0.86f, Spring.StiffnessMediumLow)) { it / 2 },
-        exit = fadeOut(tween(140)) + slideOutVertically(tween(180)) { it / 2 },
-    ) {
-        LwButton(stringResource(R.string.addresses_add), onAdd, Modifier.fillMaxWidth().testTag("address-picker-add"), BtnVariant.Theme, height = 58.dp, icon = L.drawable.lucide_ic_plus)
     }
 }
 
@@ -1044,6 +1046,24 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val lockedAddresses by c.prefs.lockedAddresses.collectAsState()
     val lockUser = if (detached) null else (picked?.username ?: addressList.find { it.isPrimary }?.username)
     val lockedHere = lockUser != null && lockUser in lockedAddresses
+    // A transfer between wallets comes back here instead of a sent screen: once the list is open, the paying card
+    // shows what left (red) and the receiving one what came in (green) while both figures roll to their new balance.
+    var deltas by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        val t = c.flow.transfer ?: return@LaunchedEffect
+        c.flow.transfer = null
+        val from = t.from ?: pillWallet?.id ?: return@LaunchedEffect
+        val before = walletBalances[from] to walletBalances[t.to]
+        snapshotFlow { reveal.progress >= 1f }.first { it }
+        delay(250)
+        deltas = mapOf(from to -(t.sats + t.fee), t.to to t.sats)
+        before.first?.let { walletBalances[from] = (it - t.sats - t.fee).coerceAtLeast(0) }
+        before.second?.let { walletBalances[t.to] = it + t.sats }
+        delay(2400)
+        deltas = emptyMap()
+        // Then the wallets' own figures (fees and rounding), quietly.
+        readWalletBalance(c, from, walletBalances); readWalletBalance(c, t.to, walletBalances)
+    }
     // An alias address forwards elsewhere: linking it to a wallet stops that, so it's asked first.
     var confirmLink by remember(selectedAddress) { mutableStateOf<RemoteWallet?>(null) }
     SideEffect { HomeLightningAddress.free = unlinked; HomeLightningAddress.alias = forwardTo != null }
@@ -1343,7 +1363,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           },
           newWalletId = newWallet,
           pending = pendingWallet,
-          addButton = Modifier.align(Alignment.BottomCenter).padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
           sweepFrom = sweepFrom,
           onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
@@ -1353,6 +1372,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           onTransfer = { w -> scope.launch { nav.navigate(startSend(c, Destination.Wallet(w.id, w.name))) } },
           onRename = renameWallet,
           leaving = leaving,
+          deltas = deltas,
           locked = lockedHere,
           onLock = lockUser?.let { u -> { c.prefs.setAddressLocked(u, !lockedHere) } },
           // A linked or alias address can be unlinked: bottom-left under the list, opposite the total (not while locked).
@@ -1428,7 +1448,11 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                   // The card folds away at once (the rest close over it), and leaves the list once it has.
                   leaving = leaving + w.id
                   scope.launch {
-                      val fold = launch { delay(LEAVE_MS); wallets = wallets?.filter { it.id != w.id }; leaving = leaving - w.id }
+                      val fold = launch {
+                          delay(LEAVE_MS); wallets = wallets?.filter { it.id != w.id }; leaving = leaving - w.id
+                          // A just-added wallet's card goes with it (else the list would put it back as still being added).
+                          c.flow.pendingWallet.update { p -> if (p?.created?.id == w.id) null else p }
+                      }
                       runCatching { c.session.api.value.deleteRemoteWallet(w.id, permanent = w.status != "ACTIVE") }
                           .onSuccess {
                               fold.join()

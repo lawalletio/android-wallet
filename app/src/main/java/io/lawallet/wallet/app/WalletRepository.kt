@@ -134,7 +134,10 @@ class WalletRepository(
     /** The account's Lightning addresses (cached under "addresses", shared with the addresses screen). */
     val addresses: StateFlow<List<WalletAddress>> = _addresses
     fun setAddresses(list: List<WalletAddress>) { _addresses.value = list; prefs.setCached("addresses", addressesSer, list) }
-    suspend fun refreshAddresses() { runCatching { session.api.value.addresses() }.onSuccess { setAddresses(it) } }
+    suspend fun refreshAddresses() {
+        runCatching { session.api.value.addresses() }.onSuccess { setAddresses(it) }
+            .onFailure { e -> io.lawallet.wallet.core.diag.Trail.add("address", "refresh failed: ${e::class.simpleName} ${(e as? io.lawallet.wallet.core.api.ApiException)?.status ?: ""}", error = true) }
+    }
 
     private val _selected = MutableStateFlow(prefs.selectedAddress)
     /** The username picked on Home's address pill: a local view choice (the primary address stays as it is). Null = primary. */
