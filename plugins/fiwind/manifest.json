@@ -1,0 +1,19 @@
+{
+  "id": "io.fiwind",
+  "name": "Fiwind",
+  "description": "Your Fiwind BTC balance as a Lightning wallet",
+  "version": "0.1.0",
+  "api": 1,
+  "main": "index.js",
+  "icon": "icon.png",
+  "provides": ["wallet"],
+  "wallet": {
+    "methods": ["get_balance", "pay_invoice", "make_invoice", "lookup_invoice", "list_transactions"]
+  },
+  "background": { "pollSec": 60 },
+  "permissions": {
+    "hosts": ["api.fiwind.io"],
+    "secrets": true,
+    "webLogin": { "url": "https://panel.fiwind.io" }
+  }
+}
