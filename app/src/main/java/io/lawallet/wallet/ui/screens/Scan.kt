@@ -213,7 +213,7 @@ fun ScanScreen() {
         Column(Modifier.offset(y = top + side + 24.dp).fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             urProgress?.let { UrProgressPill(it, Modifier) }
             Txt(
-                stringResource(if (urProgress != null) R.string.scan_animatedHint else if (busy) R.string.scan_readingCode else R.string.scan_hint),
+                stringResource(if (urProgress != null) R.string.scan_animatedHint else if (busy) R.string.scan_readingCode else R.string.scan_hintCashu),
                 size = 14.sp, color = Color.White.copy(alpha = 0.85f), align = TextAlign.Center,
             )
             ErrorText(error, Modifier.fillMaxWidth())

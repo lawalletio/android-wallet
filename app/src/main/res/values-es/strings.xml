@@ -524,6 +524,7 @@
     <string name="plugins_prompt_resend">Reenviar código</string>
     <string name="plugins_sign_in_to">Iniciar sesión en %1$s</string>
     <string name="withdraw_to_active_menu">Retirar a la billetera activa</string>
+    <string name="scan_hintCashu">Apunta la cámara a una factura Lightning, dirección, LNURL, QR de tarjeta o Cashu.</string>
     <string name="scan_animated">QR animado</string>
     <string name="scan_animatedHint">Mantén la cámara sobre el código hasta completarlo</string>
     <string name="cashu_title">Reclamar ecash</string>

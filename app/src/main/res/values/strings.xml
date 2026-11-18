@@ -524,6 +524,7 @@
     <string name="plugins_prompt_resend">Resend code</string>
     <string name="plugins_sign_in_to">Sign in to %1$s</string>
     <string name="withdraw_to_active_menu">Withdraw to active wallet</string>
+    <string name="scan_hintCashu">Point your camera at a Lightning invoice, address, LNURL, card or Cashu QR.</string>
     <string name="scan_animated">Animated QR</string>
     <string name="scan_animatedHint">Keep the camera on the code until it\'s complete</string>
     <string name="cashu_title">Claim ecash</string>
