@@ -37,6 +37,30 @@ On install the app downloads `main`, records its sha256, and refuses to run it i
 **Update** re-reads the same source and installs it if the version or commit changed. Remove deletes the bundle and
 everything the plugin stored.
 
+## Install links and QR codes
+
+A plugin can be shared as a link or a QR code. The scanner, Paste, and a tapped link (the `lawallet:` scheme is
+registered) all take:
+
+```
+lawallet:plugin?url=<urlencoded GitHub URL>
+```
+
+The URL is usually one plugin's folder: `https://github.com/<owner>/<repo>/tree/<ref>/plugins/<name>`. Any GitHub form
+from the table above works. A bare folder URL (`https://github.com/…/tree/…`) is accepted too. The directory at
+[lawalletio/mobile-plugins](https://github.com/lawalletio/mobile-plugins) prints one of these QR codes for each plugin.
+
+- **No direct install.** The link opens **Add Plugin** for that URL (`R0.pluginAdd`), so the resolver, the commit pin and
+  the permissions sheet run exactly as for a pasted URL. Nothing installs without the user confirming the sheet.
+- **HTTPS GitHub only.** The scanner is stricter than Add Plugin: an `http://` URL or any other host (a `manifest.json`
+  link included) is rejected with a message, so a QR from a stranger can't point the app anywhere else.
+- **Build gate.** In a build without plugins (release without `-Pplugins`), the link shows "Plugins aren't available in
+  this build" instead.
+- **Ref.** Use a branch (`main`), not a commit. **Check for updates** re-resolves the source the plugin was installed
+  from, so a link pinned to a commit never sees an update. The app still pins each install to the commit it read.
+
+Parser and routing: `PluginLink` and `ScanRouter` in `core/ln/ScanRouter.kt`, tested in `PluginScanTest`.
+
 ## Developing plugins locally
 
 Plugin code doesn't live in this repo. Debug builds read it from `plugins-dev/` (gitignored), a checkout of the plugins
