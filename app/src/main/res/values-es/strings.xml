@@ -50,6 +50,8 @@
     <string name="scan_camera_permission">Permití el acceso a la cámara para escanear códigos QR.</string>
     <string name="scan_grant">Permitir cámara</string>
     <string name="scan_paste">Pegar del portapapeles</string>
+    <string name="scan_plugins_unavailable">Los plugins no están disponibles en esta versión. Instalá una versión de prueba (debug) de LaWallet para usarlos.</string>
+    <string name="scan_plugin_bad_url">Este plugin no es de GitHub. Solo se pueden instalar plugins desde enlaces https://github.com.</string>
     <string name="nfc_tap_card">Acercá una tarjeta a la parte trasera del teléfono para cobrar esta factura.</string>
     <string name="nfc_charging">Cobrando tarjeta…</string>
     <string name="nfc_charged">Tarjeta aceptada — esperando el pago…</string>

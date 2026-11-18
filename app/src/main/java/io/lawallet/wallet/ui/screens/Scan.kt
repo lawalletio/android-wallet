@@ -95,6 +95,7 @@ import com.google.mlkit.vision.common.InputImage
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.core.ln.CashuUrScanner
+import io.lawallet.wallet.core.ln.PluginLink
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -131,9 +132,19 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Cashu -> { c.flow.cashu = r.token; nav.navigate(R0.CASHU); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
-        is ScanResult.Error -> ScanOutcome.Failed(r.message)
+        is ScanResult.InstallPlugin -> {
+            // Through the Plugins list, so Install lands back on it (and its sign-in) like Add Plugin does.
+            nav.navigate(R0.PLUGINS) { launchSingleTop = true }
+            nav.navigate(R0.pluginAdd(r.url))
+            ScanOutcome.Handled
+        }
+        ScanResult.PluginsUnavailable -> ScanOutcome.Failed(c.text(R.string.scan_plugins_unavailable, "Plugins aren't available in this build"))
+        is ScanResult.Error -> ScanOutcome.Failed(if (r.code == PluginLink.BAD_URL) c.text(R.string.scan_plugin_bad_url, r.message) else r.message)
     }
 }
+
+/** A string in the activity's (per-app) locale; scans always arrive with an activity up. */
+private fun AppContainer.text(id: Int, fallback: String) = activityBridge.activity?.getString(id) ?: fallback
 
 /** Deep links / NFC taps outside the receive screen. */
 suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false) {
