@@ -36,6 +36,7 @@ class AppContainer(context: Context) {
     val rates = RatesRepository(YadioRates(http), prefs, scope)
     val lnurl = Lnurl(http)
     val scanRouter = ScanRouter(lnurl)
+    val cashuMint = io.lawallet.wallet.core.ln.CashuMint(http)
     val boltcardPay = BoltcardPay(lnurl)
     val passkeys = Passkeys({ session.api.value }, { session.instanceHost.substringBefore(':') })
     val flow = FlowStore()

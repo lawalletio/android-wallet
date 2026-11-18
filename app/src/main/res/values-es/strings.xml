@@ -524,4 +524,16 @@
     <string name="plugins_prompt_resend">Reenviar código</string>
     <string name="plugins_sign_in_to">Iniciar sesión en %1$s</string>
     <string name="withdraw_to_active_menu">Retirar a la billetera activa</string>
+    <string name="scan_animated">QR animado</string>
+    <string name="scan_animatedHint">Mantén la cámara sobre el código hasta completarlo</string>
+    <string name="cashu_title">Reclamar ecash</string>
+    <string name="cashu_fees">La mint cobra una pequeña comisión Lightning</string>
+    <string name="cashu_cta">Reclamar %1$s sats</string>
+    <string name="cashu_eyebrowClaiming">Reclamo Cashu</string>
+    <string name="cashu_eyebrowClaimed">Ecash reclamado</string>
+    <string name="cashu_melting">Fundiendo el ecash</string>
+    <string name="cashu_meltingBody">Convirtiendo %1$s sats de ecash en Lightning.</string>
+    <string name="cashu_won">¡Sats liberados!</string>
+    <string name="cashu_pendingBody">La mint todavía está pagando. Los sats llegarán a tu saldo en breve.</string>
+    <string name="cashu_mint">Mint</string>
 </resources>

@@ -4,11 +4,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
  * What a scanned/pasted/tapped payload means. Mirrors scan-screen.tsx's order:
- * activation URL → LNURL (network) → parseDestination.
+ * activation URL → Cashu token → LNURL (network) → parseDestination.
  */
 sealed interface ScanResult {
     data class Activate(val tokenId: String, val sameInstance: Boolean, val url: String) : ScanResult
     data class Withdraw(val params: WithdrawParams) : ScanResult
+    data class Cashu(val token: CashuToken) : ScanResult
     data class Pay(val destination: Destination) : ScanResult
     data class Error(val code: String, val message: String) : ScanResult
 }
@@ -20,6 +21,7 @@ class ScanRouter(private val lnurl: Lnurl) {
         ActivationUrl.parse(text)?.let { a ->
             return ScanResult.Activate(a.tokenId, instanceHosts.any { it.equals(a.host, ignoreCase = true) }, text)
         }
+        CashuToken.parse(text)?.let { return ScanResult.Cashu(it) }
         if (Lnurl.looksLikeLnurl(text)) {
             return try {
                 when (val r = lnurl.resolve(text)) {
