@@ -959,6 +959,10 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
     val newWallet = rememberNewWallet()
     val walletBalances = rememberWalletBalances() // cached figures first, then live
+    // Plugin wallets join the server's list as cards of their own (`plugin:<id>`): listed only, never the primary.
+    val pluginsInstalled by c.plugins.installed.collectAsState()
+    val pluginAccounts by c.plugins.accounts.collectAsState()
+    val deck = remember(wallets, pluginsInstalled, pluginAccounts) { withPlugins(wallets, pluginsInstalled, pluginAccounts) }
     // A wallet being added from here (optimistic): once LaWallet has it, it joins the list under its card.
     val pendingWallet by c.flow.pendingWallet.collectAsState()
     // Created from the sheet with an automatic name: asked for one (prefilled) once its card has landed.
@@ -984,18 +988,20 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
         launch { c.wallet.refreshBalance() }
+        // Signed in or out since: a plugin wallet's card follows.
+        pluginsInstalled.filter { it.enabled && it.manifest.isWallet }.forEach { launch { c.plugins.refreshAccount(it.id) } }
         fetchRemoteWallets(c, { wallets = it }, walletBalances)
         // Live while showing: every wallet is polled (failures keep the last figure).
         while (true) {
             delay(10_000)
-            wallets.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+            deck.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
                 launch { readWalletBalance(c, w.id, walletBalances) }
             }
         }
     }
     // A payment on the main connection (NWC notification) re-reads the primary card at once, from its own endpoint.
     LaunchedEffect(open, balance) {
-        val primary = wallets?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
+        val primary = deck?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
         if (open && walletBalances.containsKey(primary.id)) readWalletBalance(c, primary.id, walletBalances)
     }
     // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
@@ -1041,7 +1047,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val detached = forwardTo != null || unlinked
     // The wallet in use, shown as a pill in the balance label's place (none for a free or alias address): tap opens
     // the list, hold its menu; opening the list morphs it into that wallet's card.
-    val pillWallet = if (detached) null else wallets?.let { ws -> if (picked == null) ws.find { it.isDefault && it.status == "ACTIVE" } else ws.find { it.id == shownWallet } }
+    val pillWallet = if (detached) null else deck?.let { ws -> if (picked == null) ws.find { it.isDefault && it.status == "ACTIVE" } else ws.find { it.id == shownWallet } }
     // The address in use, locked to its wallet: the list then shows only that wallet (a free or alias one has none to lock).
     val lockedAddresses by c.prefs.lockedAddresses.collectAsState()
     val lockUser = if (detached) null else (picked?.username ?: addressList.find { it.isPrimary }?.username)
@@ -1102,18 +1108,24 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     // The primary as LaWallet last confirmed it: where a failed switch goes back to.
     var savedWallets by remember { mutableStateOf<List<RemoteWallet>?>(null) }
     val setPrimary: (RemoteWallet) -> Unit = { w ->
-        if (switcher.job?.isActive != true) savedWallets = wallets
-        wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
-        switchWallet(
-            w,
-            { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) },
-            {
-                c.prefs.notePrimary(w.id)
-                wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
-                runCatching { c.session.refreshMe() }
-            },
-            { wallets = savedWallets },
-        )
+        // A plugin wallet is local: LaWallet can't route an address to it, so it's never the primary. Its card opens
+        // its details instead.
+        if (w.isPlugin) {
+            nav.navigate(R0.PLUGINS)
+        } else {
+            if (switcher.job?.isActive != true) savedWallets = wallets
+            wallets = wallets?.map { it.copy(isDefault = it.id == w.id) }
+            switchWallet(
+                w,
+                { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) },
+                {
+                    c.prefs.notePrimary(w.id)
+                    wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                    runCatching { c.session.refreshMe() }
+                },
+                { wallets = savedWallets },
+            )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1191,7 +1203,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                         // A free or alias address has no balance to name once the wallet list is open.
                         primaryLabel, Modifier.pinned(anchors, LIGHTNING).onSizeChanged { labelH = it.height }.then(if (detached) Modifier.graphicsLayer { alpha = 1f - reveal.progress } else Modifier),
                         lightningText = when { forwardTo != null -> stringResource(R.string.home_lightningAlias); unlinked -> stringResource(R.string.home_lightningAddress); else -> null },
-                        primaryText = wallets?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
+                        primaryText = deck?.let { ws -> if (picked == null) ws.find { it.isDefault } else ws.find { it.id == shownWallet } }?.name,
                         badge = if (relayError != null && hasNwc) ({ RelayBadge(balance != null, relayError!!) { scope.launch { c.wallet.refreshBalance() } } }) else null,
                         replace = pillWallet?.let { pw -> {
                             WalletPill(
@@ -1213,7 +1225,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                                 onClickLabel = showLabel,
                                 onLongClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val primary = wallets?.firstOrNull { it.isDefault }
+                                    val primary = deck?.firstOrNull { it.isDefault }
                                     nav.navigate(if (primary != null) R0.remoteWallet(primary.id) else R0.REMOTE_WALLETS) { launchSingleTop = true }
                                 },
                             ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
@@ -1348,11 +1360,15 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           }
       }
       WalletsReveal(
-          reveal, wallets?.let { ws -> if (picked == null) ws else ws.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
-          onOpen = { nav.navigate(R0.remoteWallet(it.id)) },
+          // An address with a wallet of its own can't be pointed at a plugin (LaWallet routes addresses over NWC).
+          reveal, deck?.let { ws -> if (picked == null) ws else ws.filter { !it.isPlugin }.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
+          onOpen = { nav.navigate(if (it.isPlugin) R0.PLUGINS else R0.remoteWallet(it.id)) },
           onSetPrimary = { w -> when { picked == null -> setPrimary(w); forwardTo != null -> confirmLink = w; else -> linkPicked(w) } },
           onAdd = { step ->
-              if (step == "lncurl") {
+              if (step.startsWith("plugin:")) {
+                  // A wallet plugin: its sign-in opens; once signed in, its card joins this list.
+                  c.plugins.get(step.removePrefix("plugin:"))?.let { signIn(c, context, it.manifest) }
+              } else if (step == "lncurl") {
                   // Straight from the sheet: no form, the card shows at once and sets itself up. An address without a
                   // wallet names it, as when an address gets one on claim.
                   val provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT
@@ -1365,12 +1381,16 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           pending = pendingWallet,
           onManage = { nav.navigate(R0.REMOTE_WALLETS) },
           sweepFrom = sweepFrom,
-          onSweep = { Sweeps.deleteAfter = null; sweepFrom = it.id },
-          onSweepTo = { to -> sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
+          // Sweeps, transfers, renames and deletes go through LaWallet's wallets: a plugin's are managed in Settings → Plugins.
+          onSweep = { if (!it.isPlugin) { Sweeps.deleteAfter = null; sweepFrom = it.id } },
+          onSweepTo = { to -> if (!to.isPlugin) sweepFrom?.let { from -> sweepFrom = null; nav.navigate(R0.sweep(from, to.id)) } },
           onSweepCancel = { Sweeps.deleteAfter = null; sweepFrom = null },
-          onDelete = { w, bal -> if ((bal ?: 0L) > 0L) sweepFirst = w to bal!! else deleting = w },
+          onDelete = { w, bal -> if (w.isPlugin) nav.navigate(R0.PLUGINS) else if ((bal ?: 0L) > 0L) sweepFirst = w to bal!! else deleting = w },
           onTransfer = { w -> scope.launch { nav.navigate(startSend(c, Destination.Wallet(w.id, w.name))) } },
-          onRename = renameWallet,
+          onWithdraw = pillWallet?.let { active -> { w -> nav.navigate(startWithdraw(c, from = w, to = active)) } },
+          // A plugin can only be withdrawn from when it pays (its manifest lists pay_invoice).
+          canWithdraw = { w -> pluginOf(w.id)?.let { id -> "pay_invoice" in c.plugins.get(id)?.manifest?.wallet?.methods.orEmpty() } ?: true },
+          onRename = { w, name -> if (!w.isPlugin) renameWallet(w, name) },
           leaving = leaving,
           deltas = deltas,
           locked = lockedHere,
@@ -1411,7 +1431,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       }
       // The wallet in use is a disposable LNCurl one that stopped answering: offer to regenerate it (once per wallet).
       val silent by c.wallet.walletSilent.collectAsState()
-      val inUse = wallets?.let { ws -> if (picked != null) ws.find { it.id == shownWallet } else ws.find { it.isDefault } }
+      val inUse = deck?.let { ws -> if (picked != null) ws.find { it.id == shownWallet } else ws.find { it.isDefault } }
       inUse?.takeIf { silent && current && it.provider == "lncurl" && it.lncurlServerUrl != null && it.id !in regenSkipped }?.let { w ->
           LwAlertDialog(
               onDismissRequest = { if (!regenerating) regenSkipped = regenSkipped + w.id },
@@ -1468,7 +1488,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       SideEffect { reveal.hero = pillWallet != null }
       if (pillWallet != null && open) WalletPillMorph(pillWallet, reveal)
       // The figure flies into its wallet's card; a free or alias address has neither, so nothing flies.
-      if (open && !detached && wallets.orEmpty().any { it.isDefault } && shown != null) {
+      if (open && !detached && deck.orEmpty().any { it.isDefault } && shown != null) {
           BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp, intoPill = pillWallet != null)
       }
     }

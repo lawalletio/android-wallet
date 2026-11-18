@@ -165,7 +165,11 @@ class Nip46Client(
                 scope.launch { runCatching { r.publish(ev) }.onFailure { if (failed.incrementAndGet() == relays.size) reply.completeExceptionally(Nip46Exception("Couldn't reach the signer's relays")) } }
             }
             val res = withTimeoutOrNull(timeoutMs) { reply.await() } ?: throw Nip46Exception("The signer did not answer in time")
-            if (!res.error.isNullOrEmpty()) throw Nip46Exception(res.error)
+            // A bare "no permission" from the signer read like the app's own fault: say whose it is and what to allow.
+            if (!res.error.isNullOrEmpty()) throw Nip46Exception(
+                if (method == "sign_event") "Your signer refused to sign (${res.error}). In your signer app, allow LaWallet to sign kind $HTTP_AUTH_KIND events (HTTP auth), then try again."
+                else res.error,
+            )
             Trail.add("nip46", "$method ok ${System.currentTimeMillis() - started}ms")
             onProgress(method, true)
             res.result ?: ""
@@ -206,7 +210,8 @@ class Nip46Client(
     companion object {
         const val KIND = 24133
         /** The only event the app signs remotely: NIP-98 HTTP auth for the LaWallet API. */
-        const val PERMS = "sign_event:27235"
+        const val HTTP_AUTH_KIND = 27235
+        const val PERMS = "sign_event:$HTTP_AUTH_KIND"
         // La Crypta's relay first (signers that use only the first relay pick it), Primal as a fallback. Both verified to
         // relay kind 24133; relay.nsec.app was unreachable and damus intermittently 503 (Nov 2026). Users can edit the list.
         val DEFAULT_RELAYS = listOf("wss://relay.lacrypta.ar", "wss://relay.primal.net")

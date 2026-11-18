@@ -148,6 +148,11 @@ fun SettingsScreen() {
                 }
                 GroupDivider()
                 SettingsRow(stringResource(R.string.instance_title), { nav.navigate(R0.INSTANCE) }, Modifier.testTag("settings-instance"), icon = L.drawable.lucide_ic_server, value = c.session.instanceHost)
+                // ponytail: debug (or -Pplugins) builds only until plugins are signed (docs/plugins.md "Later").
+                if (BuildConfig.DEBUG || BuildConfig.PLUGINS) {
+                    GroupDivider()
+                    SettingsRow(stringResource(R.string.plugins_title), { nav.navigate(R0.PLUGINS) }, Modifier.testTag("settings-plugins"), icon = L.drawable.lucide_ic_puzzle)
+                }
             }
             SettingsGroup(stringResource(R.string.settings_support)) {
                 // NIP-04 needs the raw key: Amber logins don't get the row.

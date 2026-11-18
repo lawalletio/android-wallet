@@ -238,7 +238,7 @@ object Diagnostics {
     /** What the process looks like right now — not added to events about a dead one. */
     private fun liveTags(e: SentryEvent) {
         e.setTag("fgs_running", PaymentListenerService.running.toString())
-        e.setTag("relay_connected", (container.wallet.client.value?.relay?.connected?.value == true).toString())
+        e.setTag("relay_connected", (container.wallet.client.value?.connected?.value == true).toString())
         e.setTag("uptime_min", ((SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000).toString())
         e.setTag("heap_mb", ((Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) shr 20).toString())
         e.setTag("native_mb", (Debug.getNativeHeapAllocatedSize() shr 20).toString())
@@ -321,7 +321,7 @@ object Diagnostics {
     private fun trackState(context: Context, c: AppContainer) {
         val am = context.getSystemService(ActivityManager::class.java)
         c.scope.launch {
-            c.wallet.client.flatMapLatest { it?.relay?.connected ?: flowOf(false) }.collectLatest { connected ->
+            c.wallet.client.flatMapLatest { it?.connected ?: flowOf(false) }.collectLatest { connected ->
                 while (true) {
                     val summary = "fgs=${if (PaymentListenerService.running) 1 else 0};relay=${if (connected) 1 else 0}" +
                         ";up=${(SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()) / 60_000}m;${memory()}"

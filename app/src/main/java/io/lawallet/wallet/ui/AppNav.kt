@@ -203,6 +203,9 @@ object R0 {
     const val DIAGNOSTICS = "settings/diagnostics"
     const val UPDATES = "settings/updates"
     const val FEEDBACK = "settings/feedback"
+    const val PLUGINS = "settings/plugins"
+    const val PLUGIN_ADD = "settings/plugins/add?url={url}"
+    fun pluginAdd(url: String) = "settings/plugins/add?url=${android.net.Uri.encode(url)}"
     fun activity(hash: String) = "activity/$hash"
     fun activate(id: String) = "activate/$id"
     fun emailAuth(token: String, host: String) = "auth/email?token=$token&host=${android.net.Uri.encode(host)}"
@@ -372,6 +375,12 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
         } finally { tx?.finish() }
     }
     var notice by remember { mutableStateOf<PaymentNotice?>(null) }
+    // A plugin asked to sign in (Settings → Plugins, or a session that expired): its web login opens over everything.
+    val pluginLogin by container.plugins.loginRequest.collectAsState()
+    pluginLogin?.let { PluginLoginDialog(it) }
+    // A plugin waiting on an answer (a security code before a payment…): asked right where the user is.
+    val pluginPrompt by container.plugins.promptRequest.collectAsState()
+    pluginPrompt?.let { PluginPromptDialog(it) }
 
     // Logging in navigates from the auth screens themselves (welcome / pending activation);
     // here we only bounce to the landing page when the session ends.
@@ -475,6 +484,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.DIAGNOSTICS) { DiagnosticsScreen() }
                 composable(R0.UPDATES) { UpdatesScreen() }
                 composable(R0.FEEDBACK) { FeedbackScreen() }
+                composable(R0.PLUGINS) { PluginsScreen() }
+                composable(R0.PLUGIN_ADD) { PluginAddScreen(it.arguments?.getString("url").orEmpty()) }
                 composable("poll/{slug}") { PollScreen(it.arguments?.getString("slug").orEmpty()) }
             }
             }

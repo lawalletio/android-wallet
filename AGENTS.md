@@ -23,6 +23,7 @@ User-facing overview: [README.md](README.md).
 ./gradlew assembleDebug                    # debug APK → app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs on every PR
 scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # performance data from a device
+scripts/plugins-dev.py                     # serve plugins-dev/ (gitignored) to debug builds: docs/plugins.md
 ```
 
 - Run a single test class: `./gradlew testDebugUnitTest --tests 'io.lawallet.wallet.core.NwcClientTest'`.
@@ -48,6 +49,7 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 |---|---|
 | `core/nostr` | keys, bech32, events, NIP-04/44/98, profiles, Blossom, signers |
 | `core/nwc` | relay pool (one shared, reconnecting socket per URL), NIP-47 client, NWC URIs |
+| `core/wallet`, `core/plugin` | the `Wallet` contract (NWC and plugins); JS plugin runtime, host API, registry: [docs/plugin-api.md](docs/plugin-api.md) |
 | `core/ln` | bolt11, destination / LNURL / activation / NDEF parsing, `ScanRouter`, Bolt card charge |
 | `core/api` | LaWallet REST client (NIP-98 → JWT session) and models |
 | `core/auth` | passkeys (Credential Manager + PRF → HKDF), Amber (NIP-55), NIP-46 bunker |

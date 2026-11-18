@@ -196,7 +196,7 @@ internal fun rememberWalletBalances(): SnapshotStateMap<String, Long?> {
 
 /** A live read of one wallet's balance into [balances] and the cache; a failure keeps the last figure if there is one. */
 internal suspend fun readWalletBalance(c: AppContainer, id: String, balances: MutableMap<String, Long?>) {
-    runCatching { c.session.api.value.remoteWalletBalance(id) }
+    runCatching { pluginOf(id)?.let { (c.plugins.wallet(it) ?: error("plugin off")).getBalanceMsat() / 1000 } ?: c.session.api.value.remoteWalletBalance(id) }
         .onSuccess { balances[id] = it; saveWalletBalance(c, id, it) }
         .onFailure { if (balances[id] == null) balances[id] = null }
 }
@@ -470,7 +470,13 @@ fun AddRemoteWalletScreen(initialStep: String? = null) {
                 null -> {
                     MutedText(stringResource(R.string.rw_add_subtitle))
                     WalletMark(lncurl = false, size = 96.dp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp))
-                    AddWalletChoices(onNwc = { step = "nwc"; scanning = true }, onLncurl = { provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT; step = "lncurl" })
+                    val ctx = LocalContext.current
+                    AddWalletChoices(
+                        onNwc = { step = "nwc"; scanning = true },
+                        onLncurl = { provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT; step = "lncurl" },
+                        // Its sign-in opens over whatever is showing; this screen steps back out of the way.
+                        onPlugin = { signIn(c, ctx, it.manifest); if (!nav.popBackStack()) nav.goHome() },
+                    )
                 }
                 "nwc" -> {
                     if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
@@ -521,10 +527,11 @@ fun AddRemoteWalletScreen(initialStep: String? = null) {
 
 /** The two ways to add a wallet: import an NWC connection, or a disposable LNCurl one (when the instance runs LNCurl). */
 @Composable
-internal fun AddWalletChoices(onNwc: () -> Unit, onLncurl: () -> Unit) {
+internal fun AddWalletChoices(onNwc: () -> Unit, onLncurl: () -> Unit, onPlugin: (io.lawallet.wallet.core.plugin.InstalledPlugin) -> Unit = {}) {
     val c = LocalContainer.current
     val settings by c.session.settings.collectAsState()
     var provider by remember { mutableStateOf(c.prefs.lncurlProvider ?: Lncurl.DEFAULT) }
+    val plugins = addablePluginWallets()
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         LwButton(stringResource(R.string.rw_import_nwc), onNwc, Modifier.fillMaxWidth().testTag("add-nwc"), BtnVariant.Theme, height = 60.dp, leading = { WalletMark(lncurl = false, size = 24.dp) })
         if (settings?.lncurlEnabled == true) Column {
@@ -533,6 +540,11 @@ internal fun AddWalletChoices(onNwc: () -> Unit, onLncurl: () -> Unit) {
                 LncurlProviderMenu(provider) { provider = it; c.prefs.lncurlProvider = it }
             }
             MutedText(stringResource(R.string.rw_lncurl_via, Lncurl.host(provider)), Modifier.padding(start = 6.dp, top = 6.dp))
+        }
+        // An enabled wallet plugin (Settings → Plugins) is one more kind of wallet: picking it signs in to it.
+        plugins.forEach { p ->
+            LwButton(stringResource(R.string.plugins_create_wallet, p.manifest.name), { onPlugin(p) }, Modifier.fillMaxWidth().testTag("add-plugin-${p.id}"),
+                BtnVariant.Secondary, height = 60.dp, leading = { PluginIcon(p.id, url = p.candidate.iconUrl, size = 24.dp) })
         }
     }
 }

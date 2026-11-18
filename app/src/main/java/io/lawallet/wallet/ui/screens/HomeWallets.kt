@@ -290,7 +290,7 @@ internal fun WalletsReveal(
     hidden: Boolean,
     onOpen: (RemoteWallet) -> Unit,
     onSetPrimary: (RemoteWallet) -> Unit,
-    /** "nwc" or "lncurl", picked in the add sheet. */
+    /** "nwc", "lncurl" or "plugin:<id>", picked in the add sheet. */
     onAdd: (String) -> Unit,
     onManage: () -> Unit,
     /** Set while picking where to sweep this wallet's funds: the list turns into a destination picker. */
@@ -300,6 +300,9 @@ internal fun WalletsReveal(
     onSweepCancel: () -> Unit = {},
     onRename: (RemoteWallet, String) -> Unit = { _, _ -> },
     onTransfer: (RemoteWallet) -> Unit = {},
+    /** Sends from a wallet into the one in use (the selected card); null hides the action. */
+    onWithdraw: ((RemoteWallet) -> Unit)? = null,
+    canWithdraw: (RemoteWallet) -> Boolean = { true },
     onDelete: (RemoteWallet, Long?) -> Unit = { _, _ -> },
     /** Just added: its card plays the entrance once the list is open. */
     newWalletId: String? = null,
@@ -385,6 +388,7 @@ internal fun WalletsReveal(
                 w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == PENDING || (w.status == "ACTIVE" && !balances.containsKey(w.id)),
                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
                 sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
+                onWithdraw = onWithdraw?.takeIf { canWithdraw(w) }?.let { f -> { f(w) } },
                 lock = if (w.isDefault && onLock != null && w.status == "ACTIVE") locked else null, onLock = { onLock?.invoke() },
                 delta = deltas[w.id],
             )
@@ -625,6 +629,7 @@ private fun WalletRevealCard(
     lock: Boolean? = null, onLock: () -> Unit = {},
     /** A transfer's change to this figure, shown beside it (red out, green in) while the figure rolls. */
     delta: Long? = null,
+    onWithdraw: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -681,7 +686,7 @@ private fun WalletRevealCard(
                 .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel)))),
             contentAlignment = Alignment.Center,
         ) {
-            WalletMark(lncurl, 20.dp)
+            DeckMark(w, 20.dp)
         }
         Spacer(Modifier.width(14.dp))
         // The name takes what it needs (truncating only when it must) and the lock follows it, centred on the card.
@@ -695,6 +700,7 @@ private fun WalletRevealCard(
                     isSource -> stringResource(R.string.sweep_from)
                     w.status == "DEAD" -> stringResource(R.string.rw_dead)
                     w.status == "DISABLED" -> stringResource(R.string.remoteWallets_paused)
+                    w.isPlugin -> stringResource(R.string.plugins_wallet_kind)
                     else -> if (lncurl) "LNCurl" else "NWC"
                 },
                 label = "kind",
@@ -737,11 +743,14 @@ private fun WalletRevealCard(
     }
     if (menu) WalletActionsSheet(
         w, if (hidden || balance == null) null else Currencies.formatBalance(balance, code, rates),
-        canSweep = active && (balance ?: 0L) > 0L,
+        // A plugin wallet lives in its plugin: LaWallet can't sweep or rename it.
+        canSweep = active && !w.isPlugin && (balance ?: 0L) > 0L,
         onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep,
-        onRename = { renaming = true },
+        onRename = if (w.isPlugin) null else ({ renaming = true }),
         // Paid from the primary, so the primary can't be its own destination.
         onTransfer = if (active && !w.isDefault) onTransfer else null,
+        // The other way: from this wallet into the one in use.
+        onWithdraw = if (active && !w.isDefault) onWithdraw else null,
         onDelete = onDelete,
     )
     if (renaming) TextPrompt(stringResource(R.string.rw_rename), w.name, onDismiss = { renaming = false }) { v ->
@@ -870,7 +879,7 @@ internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float
             .testTag("home-wallet-pill"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PillMark(lncurl, Modifier.measureRoot { if (reveal.progress == 0f) reveal.pillMark = it })
+        PillMark(w, Modifier.measureRoot { if (reveal.progress == 0f) reveal.pillMark = it })
         Spacer(Modifier.width(8.dp))
         PillName(w.name, Modifier.weight(1f, fill = false).measureRoot { if (reveal.progress == 0f) reveal.pillName = it })
     }
@@ -886,10 +895,10 @@ private val PillEdge = Color.White.copy(alpha = 0.08f)
 private fun Modifier.pillGlass() = clip(PillShape).background(PillFill).border(1.dp, PillEdge, PillShape)
 
 @Composable
-private fun PillMark(lncurl: Boolean, modifier: Modifier = Modifier) = Box(
-    modifier.size(24.dp).clip(CircleShape).background((if (lncurl) Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.12f)),
+private fun PillMark(w: RemoteWallet, modifier: Modifier = Modifier) = Box(
+    modifier.size(24.dp).clip(CircleShape).background((if (w.isPlugin) Lw.Foreground else if (w.provider == "lncurl") Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.12f)),
     contentAlignment = Alignment.Center,
-) { WalletMark(lncurl, 13.dp, Modifier.alpha(0.8f)) }
+) { DeckMark(w, 13.dp, Modifier.alpha(0.8f)) }
 
 @Composable
 private fun PillName(name: String, modifier: Modifier = Modifier) =
@@ -932,7 +941,7 @@ internal fun WalletPillMorph(w: RemoteWallet, reveal: HomeReveal) {
     })
     // The pill's mark and name travel and grow into the card's, which takes over as they land.
     val lncurl = w.provider == "lncurl"
-    MorphPart(reveal, reveal.pillMark, { reveal.cardMark }) { PillMark(lncurl) }
+    MorphPart(reveal, reveal.pillMark, { reveal.cardMark }) { PillMark(w) }
     MorphPart(reveal, reveal.pillName, { reveal.cardName }, uniform = true) { PillName(w.name) }
 }
 
@@ -1051,7 +1060,7 @@ private fun SweepPickBanner(onCancel: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onRename: () -> Unit, onTransfer: (() -> Unit)?, onDelete: () -> Unit) {
+private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onRename: (() -> Unit)?, onTransfer: (() -> Unit)?, onWithdraw: (() -> Unit)?, onDelete: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
@@ -1068,17 +1077,18 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
             Box(
                 Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.36f), accent.copy(alpha = 0.10f)))),
                 contentAlignment = Alignment.Center,
-            ) { WalletMark(lncurl, 24.dp) }
+            ) { DeckMark(w, 24.dp) }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                Txt(listOfNotNull(if (lncurl) "LNCurl" else "NWC", balance?.let { "$it sats" }).joinToString(" · "), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
+                Txt(listOfNotNull(if (w.isPlugin) stringResource(R.string.plugins_wallet_kind) else if (lncurl) "LNCurl" else "NWC", balance?.let { "$it sats" }).joinToString(" · "), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
             }
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
         SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "home-wallet-menu-details") { then(onDetails) }
-        SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "home-wallet-menu-rename") { then(onRename) }
+        if (onRename != null) SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "home-wallet-menu-rename") { then(onRename) }
         if (onTransfer != null) SheetAction(L.drawable.lucide_ic_arrow_down_left, stringResource(R.string.transfer_menu), brand.t400, "home-wallet-menu-transfer") { then(onTransfer) }
+        if (onWithdraw != null) SheetAction(L.drawable.lucide_ic_arrow_up_right, stringResource(R.string.withdraw_to_active_menu), brand.t400, "home-wallet-menu-withdraw") { then(onWithdraw) }
         if (canSweep) SheetAction(L.drawable.lucide_ic_arrow_right_left, stringResource(R.string.sweep_menu), brand.t400, "home-wallet-menu-sweep") { then(onSweep) }
         SheetAction(L.drawable.lucide_ic_trash_2, stringResource(R.string.rw_delete), Lw.Red, "home-wallet-menu-delete", Lw.Red) { then(onDelete) }
         Spacer(Modifier.height(16.dp).navigationBarsPadding())
@@ -1102,7 +1112,7 @@ private fun AddWalletSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
             Txt(stringResource(R.string.rw_add_title), size = 17.sp, weight = FontWeight.SemiBold)
             MutedText(stringResource(R.string.rw_add_subtitle))
             Spacer(Modifier.height(4.dp))
-            AddWalletChoices(onNwc = { then("nwc") }, onLncurl = { then("lncurl") })
+            AddWalletChoices(onNwc = { then("nwc") }, onLncurl = { then("lncurl") }, onPlugin = { then("plugin:${it.id}") })
         }
     }
 }

@@ -34,6 +34,11 @@ class FlowStore {
         val result: SendResult? = null,
         /** Tapped from an NFC tag / POS rather than scanned or typed. */
         val viaNfc: Boolean = false,
+        /** The wallet paying, when it isn't the one in use: a remote wallet id or `plugin:<id>` (Withdraw to active wallet). */
+        val source: String? = null,
+        val sourceLabel: String? = null,
+        /** The destination is the wallet in use: its invoice comes from the open connection, no LaWallet call needed. */
+        val toActive: Boolean = false,
     )
 
     data class SendResult(val amountSats: Long, val feesSats: Long, val preimage: String?, val paymentHash: String?, val to: String, val note: String?, val at: Long)

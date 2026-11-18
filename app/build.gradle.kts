@@ -63,6 +63,10 @@ android {
         // Beta: crash reports are always on (no opt-out). Flip to false at the stable release.
         buildConfigField("boolean", "BETA", "true")
         buildConfigField("String", "SENTRY_DSN", "\"${findProperty("sentryDsn") ?: ""}\"")
+        // Settings → Plugins (docs/plugins.md): debug builds, or `-Pplugins` for a release build to try them on a phone.
+        buildConfigField("boolean", "PLUGINS", "${hasProperty("plugins")}")
+        // Debug builds list the plugins scripts/plugins-dev.py serves from plugins-dev/ (adb reverse makes it localhost).
+        buildConfigField("String", "PLUGINS_DEV_URL", "\"${findProperty("pluginsDevUrl") ?: "http://localhost:8787"}\"")
     }
 
     signingConfigs {
@@ -206,6 +210,7 @@ dependencies {
     implementation(libs.lucide)
     implementation(libs.haze)
     implementation(libs.reorderable)
+    implementation(libs.quickjs.android)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.sentry.android.core)
@@ -220,6 +225,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso)
     androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.compose.ui.test.manifest)
     debugImplementation(libs.leakcanary)
     baselineProfile(project(":baselineprofile"))

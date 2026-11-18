@@ -14,3 +14,6 @@ keystore.properties
 # Local performance pulls (scripts/perf-report.py)
 /perf-data/
 .kotlin/
+
+# Local plugin development (scripts/plugins-dev.py): a checkout of the plugins repo, never committed here
+/plugins-dev/
