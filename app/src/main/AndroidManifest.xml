@@ -59,6 +59,8 @@
                 <data android:scheme="lnurlp" />
                 <data android:scheme="lnurlc" />
                 <data android:scheme="keyauth" />
+                <!-- Plugin install links: lawallet:plugin?url=<GitHub plugin folder> (opens Add Plugin, never installs) -->
+                <data android:scheme="lawallet" />
             </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
