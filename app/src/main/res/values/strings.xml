@@ -51,6 +51,8 @@
     <string name="scan_camera_permission">Allow camera access to scan QR codes.</string>
     <string name="scan_grant">Allow camera</string>
     <string name="scan_paste">Paste from clipboard</string>
+    <string name="scan_plugins_unavailable">Plugins aren\'t available in this build. Install a debug build of LaWallet to use them.</string>
+    <string name="scan_plugin_bad_url">This isn\'t a plugin from GitHub. Only https://github.com plugin links can be installed.</string>
     <string name="nfc_tap_card">Tap a card to the back of your phone to charge this invoice.</string>
     <string name="nfc_charging">Charging card…</string>
     <string name="nfc_charged">Card accepted — waiting for payment…</string>
