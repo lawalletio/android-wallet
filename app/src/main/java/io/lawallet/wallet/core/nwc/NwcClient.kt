@@ -7,6 +7,7 @@ import io.lawallet.wallet.core.nostr.Nip44
 import io.lawallet.wallet.core.nostr.NostrEvent
 import io.lawallet.wallet.core.nostr.randomBytes
 import io.lawallet.wallet.core.nostr.toHex
+import io.lawallet.wallet.core.wallet.Wallet
 import io.sentry.Sentry
 import io.sentry.SpanStatus
 import kotlinx.coroutines.CoroutineStart
@@ -39,7 +40,7 @@ import okhttp3.OkHttpClient
  * NIP-47 client — the Kotlin counterpart of @getalby/sdk `NWCClient` the web wallet uses.
  * Talks straight to the wallet's relay; the LaWallet server is never in the payment path.
  */
-class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: Long = 10_000) {
+class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: Long = 10_000) : Wallet {
     // ponytail: first relay only (same as the web SDK default); fan out if wallets start listing several.
     // Shared socket (RelayPool): switching wallets swaps subscriptions, never the connection.
     val relay = RelayPool.get(uri.relays.first(), http)
@@ -51,37 +52,17 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: 
     private val conversationKey by lazy { Nip44.conversationKey(keys, uri.walletPubkey) }
     private val nip04Secret by lazy { keys.sharedX(uri.walletPubkey) }
 
-    suspend fun getBalanceMsat(): Long = request<BalanceResult>("get_balance").balance
+    override val connected get() = relay.connected
+    override val lastError get() = relay.lastError
 
-    suspend fun payInvoice(invoice: String, amountMsat: Long? = null): PayResult =
-        request("pay_invoice", buildJsonObject {
-            put("invoice", invoice)
-            if (amountMsat != null) put("amount", amountMsat)
-        })
-
-    suspend fun makeInvoice(amountMsat: Long, description: String?): NwcTransaction =
-        request("make_invoice", buildJsonObject {
-            put("amount", amountMsat)
-            if (!description.isNullOrBlank()) put("description", description)
-        })
-
-    suspend fun lookupInvoice(paymentHash: String): NwcTransaction =
-        request("lookup_invoice", buildJsonObject { put("payment_hash", paymentHash) })
-
-    suspend fun listTransactions(limit: Int? = null, from: Long? = null, until: Long? = null, type: String? = null): List<NwcTransaction> =
-        request<TxList>("list_transactions", buildJsonObject {
-            if (limit != null) put("limit", limit)
-            if (from != null) put("from", from)
-            if (until != null) put("until", until)
-            if (type != null) put("type", type)
-        }).transactions
+    override suspend fun request(method: String, params: JsonObject, timeoutMs: Long): JsonElement = requestRaw(method, params, timeoutMs)
 
     /**
      * payment_received / payment_sent notifications, on the one kind matching the negotiated
      * encryption (23197 NIP-44, else 23196 NIP-04) like @getalby/sdk: a wallet that publishes
      * every notification on both kinds would otherwise deliver each payment twice.
      */
-    fun notifications(): Flow<NwcNotification> {
+    override fun notifications(): Flow<NwcNotification> {
         // Same wallet + client key → same id: a second collector shares the REQ (refcounted) instead of opening another.
         val subId = "ntf-" + keys.pubkey.take(8) + uri.walletPubkey.take(8)
         return relay.messages
@@ -111,17 +92,12 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: 
             .flowOn(Dispatchers.Default)
     }
 
-    private suspend inline fun <reified T> request(method: String, params: JsonObject = JsonObject(emptyMap())): T {
-        val raw = requestRaw(method, params)
-        return json.decodeFromJsonElement(kotlinx.serialization.serializer<T>(), raw)
-    }
-
     /**
      * One NIP-47 round trip, recorded in the [Trail] by method, outcome and duration (balance polls only when slow).
      * A payment may take a while to route; anything else a live wallet answers in seconds, so one that stays silent
      * (offline, or no longer knows this connection) fails while the user is still looking at the spinner.
      */
-    suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = if (method == "pay_invoice") 60_000 else 20_000): JsonElement {
+    suspend fun requestRaw(method: String, params: JsonObject, timeoutMs: Long = Wallet.defaultTimeout(method)): JsonElement {
         val started = System.currentTimeMillis()
         // Child of the current screen's transaction (Diagnostics.screen), if one is open: op + method only.
         val span = Sentry.getSpan()?.startChild("nwc.request", method)
@@ -228,8 +204,6 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: 
 
     @Serializable private data class Response(@SerialName("result_type") val resultType: String? = null, val error: NwcError? = null, val result: JsonElement? = null)
     @Serializable private data class NwcError(val code: String = "INTERNAL", val message: String = "Wallet error")
-    @Serializable private data class BalanceResult(val balance: Long = 0)
-    @Serializable private data class TxList(val transactions: List<NwcTransaction> = emptyList())
     @Serializable private data class NotificationEnvelope(@SerialName("notification_type") val type: String, val notification: NwcTransaction)
 }
 

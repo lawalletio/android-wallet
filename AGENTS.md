@@ -23,6 +23,7 @@ User-facing overview: [README.md](README.md).
 ./gradlew assembleDebug                    # debug APK → app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs on every PR
 scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # performance data from a device
+scripts/plugins-dev.py                     # serve plugins-dev/ (gitignored) to debug builds: docs/plugins.md
 ```
 
 - Run a single test class: `./gradlew testDebugUnitTest --tests 'io.lawallet.wallet.core.NwcClientTest'`.

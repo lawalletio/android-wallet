@@ -68,6 +68,7 @@ import io.lawallet.wallet.ui.components.AmountKeypad
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.CurrencyToggle
 import io.lawallet.wallet.ui.components.ErrorText
+import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
@@ -133,6 +134,12 @@ suspend fun startSend(c: io.lawallet.wallet.app.AppContainer, dest: Destination,
         }
         is Destination.Npub -> throw DestinationException("unsupported", "Paying a Nostr profile is not supported yet")
     }
+}
+
+/** Withdraw to active wallet: [from]'s sats into [to], the wallet in use. Same amount → preview flow as a transfer. */
+fun startWithdraw(c: io.lawallet.wallet.app.AppContainer, from: io.lawallet.wallet.core.api.RemoteWallet, to: io.lawallet.wallet.core.api.RemoteWallet): String {
+    c.flow.send = FlowStore.Send(destination = Destination.Wallet(to.id, to.name), recipientLabel = to.name, source = from.id, sourceLabel = from.name, toActive = true)
+    return R0.SEND_AMOUNT
 }
 
 @Composable
@@ -329,8 +336,10 @@ fun SendAmountScreen() {
     val sats = Currencies.parseToSats(raw, code, rates)
     val meta = s.meta
     val outOfRange = meta != null && sats != null && (sats * 1000 < meta.minSendableMsat || sats * 1000 > meta.maxSendableMsat)
-    // Unknown balance (loading / offline) neither caps nor offers Max.
-    val balance by c.wallet.balance.collectAsState()
+    // Unknown balance (loading / offline) neither caps nor offers Max. A withdrawal counts its source wallet's.
+    val accountBalance by c.wallet.balance.collectAsState()
+    val sourceBalance by produceState<Long?>(null, s.source) { value = s.source?.let { sourceBalance(c, it) } }
+    val balance = if (s.source == null) accountBalance else sourceBalance
     val overBalance = balance != null && sats != null && sats > balance!!
     val maxSats = balance?.let { b -> meta?.let { minOf(b, it.maxSendableMsat / 1000) } ?: b }?.takeIf { it > 0 }
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -394,8 +403,25 @@ fun SendPreviewScreen() {
     val now by produceState(System.currentTimeMillis(), invoice?.expiresAtMs) { while (invoice?.expiresAtMs != null) { delay(1000); value = System.currentTimeMillis() } }
     val leftMs = invoice?.expiresAtMs?.minus(now)
     val expired = leftMs != null && leftMs <= 0
+    // Where the sats come from: the account's wallet, or a signed-in wallet plugin picked here. A plugin
+    // wallet is local, never the app's wallet, so paying from it is chosen per payment.
+    val pluginsInstalled by c.plugins.installed.collectAsState()
+    val pluginAccounts by c.plugins.accounts.collectAsState()
+    // (deck wallet id, label): a withdrawal's own source first, then the signed-in plugins that can pay. Never the
+    // wallet the sats are going to.
+    val sources = (listOfNotNull(s.source?.takeIf { pluginOf(it) == null }?.let { it to (s.sourceLabel ?: it) }) +
+        pluginsInstalled.filter { it.enabled && it.manifest.isWallet && "pay_invoice" in it.manifest.wallet?.methods.orEmpty() && pluginAccounts[it.id]?.signedIn != false }
+            .map { "plugin:${it.id}" to it.manifest.name })
+        .filter { it.first != (s.destination as? Destination.Wallet)?.id }
+    // A deck wallet id (`plugin:<id>` for a plugin), or null for the wallet in use. A withdrawal starts on its source.
+    var from by rememberSaveable { mutableStateOf(s.source) }
+    var picking by remember { mutableStateOf(false) }
+    var signInFor by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val fromBalance by produceState<Long?>(null, from) { value = from?.let { sourceBalance(c, it) } }
     // Unknown balance (still loading / offline) doesn't block; fees aren't quoted, so this only catches the obvious case.
-    val balance by c.wallet.balance.collectAsState()
+    val accountBalance by c.wallet.balance.collectAsState()
+    val balance = if (from == null) accountBalance else fromBalance
     val short = balance?.let { amount > it } == true && !paying && !done
     val paymentGate = rememberPaymentGate()
     val locked by c.lock.locked.collectAsState()
@@ -408,14 +434,15 @@ fun SendPreviewScreen() {
         scope.launch {
             if (!paymentGate(amount)) { paying = false; return@launch }
             runCatching {
-                val nwc = c.wallet.freshClient() ?: throw IllegalStateException(noWallet)
+                val nwc = from?.let { walletById(c, it) } ?: c.wallet.freshClient() ?: throw IllegalStateException(noWallet)
                 var sentComment = s.comment
                 val (invoice, amountMsat) = when (val d = s.destination) {
                     is Destination.Invoice -> d.bolt11 to (if (d.amountSats == null) amount * 1000 else null)
                     is Destination.LnurlPay -> c.lnurl.requestInvoice(d.lnurlpUrl, amount, s.comment).also { sentComment = it.comment }.paymentRequest to null
-                    is Destination.Wallet -> c.session.api.value.remoteWalletConnectionString(d.id).let { uri ->
-                        NwcClient(NwcUri.parse(uri), c.http).makeInvoice(amount * 1000, transferTo).invoice ?: throw IllegalStateException(failed)
-                    } to null
+                    is Destination.Wallet -> {
+                        val to = if (s.toActive) c.wallet.client.value ?: c.wallet.freshClient() else walletById(c, d.id)
+                        ((to ?: throw IllegalStateException(noWallet)).makeInvoice(amount * 1000, transferTo).invoice ?: throw IllegalStateException(failed)) to null
+                    }
                     else -> throw IllegalStateException(failed)
                 }
                 val res = nwc.payInvoice(invoice, amountMsat)
@@ -433,11 +460,15 @@ fun SendPreviewScreen() {
                 val to = s.destination as? Destination.Wallet
                 if (to != null) {
                     // Between the account's own wallets: straight back to the wallet list, which plays the move.
-                    c.flow.transfer = FlowStore.Transfer(to.id, amount, c.flow.send.result?.feesSats ?: 0L)
+                    c.flow.transfer = FlowStore.Transfer(to.id, amount, c.flow.send.result?.feesSats ?: 0L, from = from)
                     c.flow.revealWallets = true
                     if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
                 } else nav.navigate(R0.SEND_SUMMARY) { popUpTo(R0.HOME) }
-            }.onFailure { error = it.message ?: failed; paying = false }
+            }.onFailure {
+                error = it.message ?: failed; paying = false
+                // The plugin's session ran out: offer its sign-in right here, then the user swipes again.
+                signInFor = from?.let(::pluginOf)?.takeIf { _ -> (it as? io.lawallet.wallet.core.nwc.NwcException)?.code == "UNAUTHORIZED" }
+            }
         }
     }
 
@@ -479,6 +510,16 @@ fun SendPreviewScreen() {
                 else PreviewRow(stringResource(R.string.send_preview_description), invoice!!.description!!)
                 PreviewRow(stringResource(R.string.send_preview_type), stringResource(kindLabel(s.destination)))
                 s.comment?.let { PreviewRow(stringResource(R.string.send_note), it) }
+                if (sources.isNotEmpty()) {
+                    val fromName = sources.find { it.first == from }?.second ?: stringResource(R.string.send_pay_from_account)
+                    Row(Modifier.fillMaxWidth().clickable(enabled = !paying && !done) { picking = true }.testTag("pay-from"), verticalAlignment = Alignment.CenterVertically) {
+                        Txt(stringResource(R.string.send_pay_from), size = 14.sp, color = Lw.MutedFg)
+                        Spacer(Modifier.weight(1f))
+                        from?.let(::pluginOf)?.let { PluginIcon(it, size = 18.dp); Spacer(Modifier.width(6.dp)) }
+                        Txt(fromName, size = 14.sp)
+                        LwIcon(L.drawable.lucide_ic_chevron_down, size = 16.dp, tint = Lw.MutedFg)
+                    }
+                }
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Txt(stringResource(R.string.send_preview_quote), size = 15.sp, weight = FontWeight.SemiBold)
@@ -487,7 +528,27 @@ fun SendPreviewScreen() {
                 PreviewRow(stringResource(R.string.send_preview_total), stringResource(R.string.send_preview_plusFee, Currencies.formatSats(amount)))
             }
             ErrorText(error, Modifier.fillMaxWidth())
+            signInFor?.let { id -> c.plugins.get(id) }?.let { p ->
+                LwButton(stringResource(R.string.plugins_sign_in_to, p.manifest.name), {
+                    signInFor = null; error = null
+                    signIn(c, context, p.manifest)
+                }, Modifier.fillMaxWidth().testTag("pay-from-sign-in"), BtnVariant.Secondary, leading = { PluginIcon(p.id, size = 20.dp) })
+            }
         }
+        if (picking) LwAlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Txt(stringResource(R.string.send_pay_from), size = 16.sp) },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LwButton(stringResource(R.string.send_pay_from_account), { from = null; error = null; signInFor = null; picking = false }, Modifier.fillMaxWidth().testTag("pay-from-account"),
+                        if (from == null) BtnVariant.Theme else BtnVariant.Secondary)
+                    sources.forEach { (id, label) ->
+                        LwButton(label, { from = id; error = null; signInFor = null; picking = false }, Modifier.fillMaxWidth().testTag("pay-from-$id"),
+                            if (from == id) BtnVariant.Theme else BtnVariant.Secondary, leading = pluginOf(id)?.let { pid -> { PluginIcon(pid, size = 20.dp) } })
+                    }
+                }
+            },
+        )
         if (slideToPay) SwipeButton(stringResource(if (short) R.string.send_preview_notEnoughBalance else R.string.send_preview_swipeToPay), ::pay, loading = paying, done = done, modifier = Modifier.padding(16.dp), enabled = !expired && !short)
         else Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LwButton(stringResource(R.string.common_cancel), { nav.goHome() }, Modifier.weight(1f).testTag("pay-cancel"), BtnVariant.Secondary, enabled = !paying && !done)
@@ -532,6 +593,16 @@ private fun NfcTappedBadge() {
         Txt(stringResource(R.string.nfc_tapped), size = 12.sp, weight = FontWeight.Medium, color = Lw.Green)
     }
 }
+
+/** A deck wallet by id: a plugin's own wallet (`plugin:<id>`), else a LaWallet remote wallet's NWC connection. */
+internal suspend fun walletById(c: io.lawallet.wallet.app.AppContainer, id: String): io.lawallet.wallet.core.wallet.Wallet =
+    pluginOf(id)?.let { c.plugins.wallet(it) ?: throw IllegalStateException("${c.plugins.get(it)?.manifest?.name ?: it} is off") }
+        ?: NwcClient(NwcUri.parse(c.session.api.value.remoteWalletConnectionString(id)), c.http)
+
+/** What [id] can spend, in sats: live when it answers, else the last figure the wallet list saw; null if unknown. */
+internal suspend fun sourceBalance(c: io.lawallet.wallet.app.AppContainer, id: String): Long? =
+    runCatching { pluginOf(id)?.let { c.plugins.wallet(it)?.getBalanceMsat()?.div(1000) } ?: c.session.api.value.remoteWalletBalance(id) }.getOrNull()
+        ?: cachedWalletBalances(c)[id]
 
 @Composable
 private fun PreviewRow(k: String, v: String) {

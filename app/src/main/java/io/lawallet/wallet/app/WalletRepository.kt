@@ -6,6 +6,7 @@ import io.lawallet.wallet.core.nwc.NwcClient
 import io.lawallet.wallet.core.nwc.NwcException
 import io.lawallet.wallet.core.nwc.NwcTransaction
 import io.lawallet.wallet.core.nwc.NwcUri
+import io.lawallet.wallet.core.wallet.Wallet
 import io.lawallet.wallet.core.store.Prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -91,8 +92,8 @@ class WalletRepository(
 ) {
     private companion object { const val SWITCH_DEBOUNCE_MS = 400L }
     private val json = Json { ignoreUnknownKeys = true }
-    private val _client = MutableStateFlow<NwcClient?>(null)
-    val client: StateFlow<NwcClient?> = _client
+    private val _client = MutableStateFlow<Wallet?>(null)
+    val client: StateFlow<Wallet?> = _client
     private var nwcKey: String? = null
     private var currentNwc: String? = "<unset>"
 
@@ -243,14 +244,14 @@ class WalletRepository(
             scope.launch { delay(settle); notificationLoop(c, key) },
             scope.launch {
                 // Every reconnect after the current state: catch up on payments missed while offline.
-                c.relay.connected.drop(1).filter { it }.collect { catchUp(c, key) }
+                c.connected.drop(1).filter { it }.collect { catchUp(c, key) }
             },
-            scope.launch { c.relay.lastError.collect { if (it != null && _balance.value == null) _error.value = it } },
+            scope.launch { c.lastError.collect { if (it != null && _balance.value == null) _error.value = it } },
             scope.launch { delay(settle); refreshActivity() },
         )
     }
 
-    private suspend fun pollLoop(c: NwcClient) {
+    private suspend fun pollLoop(c: Wallet) {
         while (scope.isActive) {
             if (active.value) refreshBalance(c)
             delay(30_000)
@@ -258,16 +259,16 @@ class WalletRepository(
     }
 
     /** The balance read in flight, shared: callers asking at once (Home opening, foreground, a payment) wait for one. */
-    private var balanceRead: Pair<NwcClient, kotlinx.coroutines.Deferred<Unit>>? = null
+    private var balanceRead: Pair<Wallet, kotlinx.coroutines.Deferred<Unit>>? = null
 
-    suspend fun refreshBalance(c: NwcClient? = _client.value) {
+    suspend fun refreshBalance(c: Wallet? = _client.value) {
         c ?: return
         val read = balanceRead?.takeIf { it.first === c && it.second.isActive }?.second
             ?: scope.async { readBalance(c) }.also { balanceRead = c to it }
         read.await()
     }
 
-    private suspend fun readBalance(c: NwcClient) {
+    private suspend fun readBalance(c: Wallet) {
         try {
             val sats = c.getBalanceMsat() / 1000
             _balance.value = sats
@@ -305,7 +306,7 @@ class WalletRepository(
         nwcKey?.let { prefs.setActivityCache(it, json.encodeToString(ListSerializer(Tx.serializer()), merged)) }
     }
 
-    private suspend fun notificationLoop(c: NwcClient, key: String) {
+    private suspend fun notificationLoop(c: Wallet, key: String) {
         var backoff = 1000L
         while (scope.isActive) {
             try {
@@ -321,7 +322,7 @@ class WalletRepository(
         }
     }
 
-    private suspend fun catchUp(c: NwcClient, key: String) {
+    private suspend fun catchUp(c: Wallet, key: String) {
         val since = prefs.lastSeen(key).takeIf { it > 0 } ?: return
         runCatching { c.listTransactions(from = since, limit = 50) }.getOrNull()
             ?.map(Tx::from)?.filter { it.state == "settled" }
@@ -368,13 +369,13 @@ class WalletRepository(
      * rotated the selected address's) and returns the client for the wallet Home shows — wallet-nwc.ts
      * `getFreshWalletNwc`, per address.
      */
-    suspend fun freshClient(): NwcClient? {
+    suspend fun freshClient(): Wallet? {
         runCatching { session.refreshMe() }.onSuccess { connect(resolveSelected(it, fresh = true)) }
         return _client.value
     }
 
     /** Receive with no wallet + lncurl_auto_create → mint a courtesy wallet (receive/amount-step.tsx). */
-    suspend fun ensureWallet(): NwcClient? {
+    suspend fun ensureWallet(): Wallet? {
         freshClient()?.let { return it }
         // The selected address has a wallet of its own that just didn't resolve: not a reason to mint the account a new default.
         if (walletOf(_selected.value, _addresses.value) != null) return null
