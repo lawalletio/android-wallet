@@ -59,7 +59,7 @@ private fun jsonStr(s: String) = JsonPrimitive(s).toString()
 
 /**
  * One plugin's JS: a QuickJS context on its own thread (QuickJS isn't thread-safe), built on first use. Only JSON strings
- * cross the bridge. Kotlin → JS is [call]; JS → Kotlin is `host.*` (docs/plugins.md), async ones resolved by callback id.
+ * cross the bridge. Kotlin → JS is [call]; JS → Kotlin is `host.*` (docs/plugin-api.md), async ones resolved by callback id.
  */
 class JsPlugin(val manifest: PluginManifest, private val code: String, private val host: PluginHost, private val scope: CoroutineScope) : Closeable {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "plugin-${manifest.id}").apply { isDaemon = true } }
@@ -217,7 +217,7 @@ class JsPlugin(val manifest: PluginManifest, private val code: String, private v
 }
 
 /**
- * What a plugin can reach (docs/plugins.md "Host API"): HTTPS to its manifest's hosts (no redirects, so it can't bounce
+ * What a plugin can reach (docs/plugin-api.md "Host API"): HTTPS to its manifest's hosts (no redirects, so it can't bounce
  * elsewhere), its own key-value store and Keystore-wrapped secrets, and a web login on its declared origin.
  */
 class PluginHost(

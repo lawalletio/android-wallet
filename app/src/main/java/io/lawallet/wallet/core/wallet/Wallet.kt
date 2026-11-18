@@ -15,7 +15,7 @@ import kotlinx.serialization.json.put
 /**
  * A wallet the app can spend from and receive into. The ABI is NIP-47 (method names, params, result JSON, error codes
  * via [io.lawallet.wallet.core.nwc.NwcException]), so an NWC connection, a JS plugin and a native module all answer the
- * same [request]. The typed calls below are shared by every kind. Contract: docs/plugins.md.
+ * same [request]. The typed calls below are shared by every kind. Contract: docs/plugin-api.md.
  */
 interface Wallet {
     /** One NIP-47 call. Throws [io.lawallet.wallet.core.nwc.NwcException] with the NIP-47 error code. */

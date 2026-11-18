@@ -68,120 +68,34 @@ The loop:
 
 Users then install the plugin from that repo's GitHub URL.
 
-## manifest.json
+## Writing a plugin
 
-```json
-{
-  "id": "io.example.wallet",
-  "name": "Example",
-  "description": "Your Example balance as a Lightning wallet",
-  "version": "0.1.0",
-  "api": 1,
-  "main": "index.js",
-  "icon": "icon.png",
-  "provides": ["wallet"],
-  "wallet": { "methods": ["get_balance", "pay_invoice", "make_invoice", "lookup_invoice", "list_transactions"] },
-  "background": { "pollSec": 60 },
-  "permissions": {
-    "hosts": ["api.example.com"],
-    "secrets": true,
-    "webLogin": { "url": "https://login.example.com" }
-  }
-}
-```
-
-| Field | Rule |
-|---|---|
-| `id` | Reverse-DNS, lowercase (`^[a-z0-9]+(\.[a-z0-9-]+)+$`). It's the plugin's identity: storage, updates and a future native version all key on it. |
-| `api` | `1`. A manifest with another value isn't installed. |
-| `main`, `icon` | Paths inside the plugin's folder (no `..`, no URL). |
-| `provides` | `"wallet"` for now. |
-| `wallet.methods` | The NIP-47 methods it answers. Others fail with `NOT_IMPLEMENTED` before reaching the plugin. |
-| `background.pollSec` | How often `poll()` runs while the app (or its payment listener) is alive. 0 or missing = never; values under 15 are raised to 15. |
-| `permissions.hosts` | Exact hostnames `host.fetch` may call, over HTTPS. No wildcards, no subdomains. |
-| `permissions.secrets` | Allows `host.secrets`. |
-| `permissions.webLogin.url` | An HTTPS page the plugin may open for the user to sign in. |
-
-Unknown fields are ignored, so new ones can be added without breaking old apps.
-
-The install sheet shows the user every permission before anything runs.
-
-## index.js
-
-One ES module whose default export is an object. Every function receives the host API as its last argument (also on
-`globalThis.host`).
+A plugin is a `manifest.json` (id, version, the hosts it may call, whether it signs in on a website) and one
+`index.js` whose default export answers NIP-47 wallet calls:
 
 ```js
 export default {
-  // NIP-47: same method names, params and result JSON as a Nostr Wallet Connect wallet. Amounts in msat, times in
-  // unix seconds. Throw { code, message } with a NIP-47 error code on failure.
   async request(method, params, host) {
-    switch (method) {
-      case 'get_balance': return { balance: 21000000 };
-      case 'make_invoice': return { type: 'incoming', invoice: 'lnbc…', payment_hash: '…', amount: params.amount, created_at: 1700000000 };
-      default: throw { code: 'NOT_IMPLEMENTED', message: method };
+    if (method === 'get_balance') {
+      const r = await host.fetch('https://api.example.com/balance', { headers: { Authorization: host.secrets.get('token') } });
+      return { balance: JSON.parse(r.body).sats * 1000 };
     }
+    throw { code: 'NOT_IMPLEMENTED', message: method };
   },
-
-  // Background tick, every background.pollSec. Return NIP-47 notifications for payments since the last call.
-  async poll(host) {
-    return [{ notification_type: 'payment_received', notification: { type: 'incoming', payment_hash: '…', amount: 1000, created_at: 1700000000, settled_at: 1700000005 } }];
-  },
-
-  // Optional: who's signed in, shown in Settings → Plugins (email and a check). Read local state, don't call the network.
-  async account(host) {
-    const session = host.secrets.get('session');
-    return session ? { signedIn: true, label: 'satoshi@example.com' } : { signedIn: false };
-  },
-
-  // Optional: Settings → Plugins → Sign out (shown instead of Sign in while account() says signedIn). Forget the
-  // session. Without it, the app wipes everything the plugin stored.
-  async logout(host) {
-    host.secrets.set('session', null);
-  },
-
-  // Optional: Settings → Plugins → Sign in, and right after install when the manifest has webLogin.
   async login(host) {
-    const session = await host.webLogin('https://login.example.com', `localStorage.TOKEN || null`);
-    host.secrets.set('session', session);
+    host.secrets.set('token', await host.webLogin('https://login.example.com', 'localStorage.TOKEN || null'));
   },
 };
 ```
 
-Methods the app calls through `request`: `get_balance`, `pay_invoice` (`invoice`, optional `amount`), `make_invoice`
-(`amount`, optional `description`), `lookup_invoice` (`payment_hash`), `list_transactions` (`limit`, `from`, `until`,
-`type`). Transactions use the NIP-47 shape:
-`{ type, state, invoice, description, payment_hash, preimage, amount, fees_paid, created_at, settled_at, expires_at }`.
-
-Error codes are NIP-47's (`RATE_LIMITED`, `INSUFFICIENT_BALANCE`, `NOT_FOUND`, `UNAUTHORIZED`, `INTERNAL`, …) plus the
-host's own: `NETWORK` (offline: the app retries and catches up later), `FORBIDDEN` (a permission the manifest doesn't
-grant), `TIMEOUT`, `CANCELLED` (the user closed the web login).
-
-The app never lets a plugin confirm a payment: Send's own confirm screen is the only gate before `pay_invoice`.
-
-## Host API
-
-| Call | Returns | Notes |
-|---|---|---|
-| `host.fetch(url, { method, headers, body })` | `Promise<{ status, headers, body }>` | Only `permissions.hosts`, HTTPS. Redirects are **not** followed (you get the 3xx). `body` is a string (send JSON yourself); responses over 2 MB are cut. Headers are yours to set, User-Agent included. Rejects with `FORBIDDEN` or `NETWORK`. |
-| `host.store.get(key)` / `.set(key, value)` | string or `null` | Plain storage for this plugin. `set(key, null)` deletes. |
-| `host.secrets.get(key)` / `.set(key, value)` | string or `null` | Encrypted with the device's Keystore key; needs `permissions.secrets`. Written to disk before `set` returns, so a rotated refresh token survives a crash. |
-| `host.webLogin(url, extractJs)` | `Promise<string>` | Opens `url` (its host must match `permissions.webLogin.url`) full screen. The user signs in there; the app never sees the password. `extractJs` is an expression evaluated in that page about once a second; the first string it returns resolves the promise and closes the page. Navigating the page to another host is blocked. Cookies and web storage are wiped when it closes. Rejects with `CANCELLED` if the user backs out. |
-| `host.prompt({ title, message, input, error, actions })` | `Promise<{ value } \| { action: "resend" }>` | Asks the user for something the plugin needs to go on, like a security code before a payment. Shown as a dialog over whatever is on screen, with the plugin's icon and "Requested by <name>". `input: "code"` gives a number keyboard and keeps letters and digits only; `error` shows under the field (a wrong code); `actions: ["resend"]` adds a Resend button, answered as `{ action: "resend" }`. Rejects with `CANCELLED` if the user cancels. While it's open, the call's timeout is paused. |
-| `host.uuid()` | string | Random UUID. |
-| `host.now()` | number | `Date.now()`. |
-
-There are no timers, sockets, `console` or other globals. Each plugin runs on its own thread with a 32 MB heap. A call
-that never answers fails with `TIMEOUT` (20 s, 60 s for `pay_invoice`, 15 min for `login`). A plugin that blocks its thread
-(a busy loop) is stopped; the app starts a fresh copy the next time it connects to the wallet (before any send or
-receive).
+Every field, export, method, error code and host call is specified in the **[Plugin API reference](plugin-api.md)**.
 
 Plugins never get the user's keys, NWC connections, Lightning address or LaWallet session. What they store is theirs
 alone and is deleted with them.
 
 ## Isolation
 
-A plugin only gets what the host API above hands it:
+A plugin only gets what the [host API](plugin-api.md#host-api) hands it:
 
 - **Code:** one QuickJS context on its own thread, with a 32 MB heap. It has no file system, no `std`/`os` modules and no
   imports, and no access to the app's objects. A stuck plugin is stopped without affecting the app.
@@ -212,8 +126,8 @@ A plugin only gets what the host API above hands it:
   signed in. It defaults to the account's wallet; picking the plugin pays that one payment through its `pay_invoice`.
   A wall on the way never leaves the user stuck: a security code is asked with `host.prompt` and the payment goes on,
   and an `UNAUTHORIZED` (session expired) offers **Sign in to <name>** right there, after which they swipe again.
-- **Background**: with the payment listener on (Settings → Background notifications), `poll()` keeps running while the app
-  is closed, and its notifications show like any other payment.
+- **Background**: not yet. Only the active wallet's payments reach the payment listener, and a plugin wallet is never
+  active, so `poll()` isn't scheduled today (see [Notifications](plugin-api.md#notifications-poll)).
 - **Diagnostics**: breadcrumbs and performance records hold the plugin id, method, outcome and duration. Never params,
   results, URLs or anything the plugin returns.
 
@@ -226,7 +140,8 @@ by id. The iOS app will mirror this with a Swift protocol and run the same `inde
 
 ## Later
 
-- Create `github.com/lawalletio/mobile-plugins` (today `plugins-dev/` is a local repo with no remote) and suggest it in Add Plugin.
+- Suggest `github.com/lawalletio/mobile-plugins` in Add Plugin.
+- Schedule `poll()` for plugin wallets, so their payments notify in the background.
 - Signed manifests (a Nostr event by the author's npub) with updates pinned to that key, before release builds get
   plugins. Nostr/Blossom as a second source.
 - A `scan` capability, so a plugin can take payloads the scanner doesn't know (e.g. Mercado Pago or PIX QRs).

@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** `manifest.json` of a plugin. Contract: docs/plugins.md. */
+/** `manifest.json` of a plugin. Contract: docs/plugin-api.md. */
 @Serializable
 data class PluginManifest(
     val id: String,
