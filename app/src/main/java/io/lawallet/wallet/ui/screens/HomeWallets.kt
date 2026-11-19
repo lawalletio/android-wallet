@@ -721,9 +721,8 @@ private fun WalletRevealCard(
             ) { Txt(it, size = 12.sp, weight = FontWeight.Medium, color = if (w.status == "DEAD") Lw.Red.copy(alpha = 0.8f) else accent) }
             // Where its credentials are kept, right after its kind.
             Row(
-                Modifier.padding(start = 2.dp).clip(CircleShape)
-                    .clickable(enabled = !picking, onClickLabel = custodyLabel) { custodySheet = true }
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                // Just the icons are the target, so a tap beside them is still the card's.
+                Modifier.padding(start = 6.dp).clickable(enabled = !picking, onClickLabel = custodyLabel) { custodySheet = true },
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) { CustodyIcons(w.custody, w.name, 12.dp, accent.copy(alpha = 0.85f)) }
             }
