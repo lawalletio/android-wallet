@@ -149,6 +149,7 @@ class Prefs(context: Context) {
     /** Same, Keystore-wrapped — for responses carrying an NWC secret. Blocking (Keystore IPC): call off the main thread. */
     fun secretCached(name: String): String? = sp.getString("cache:$name", null)?.let { runCatching { SecretStore.decrypt(it) }.getOrNull() }
     fun setSecretCached(name: String, v: String) = sp.edit { putString("cache:$name", SecretStore.encrypt(v)) }
+    fun clearSecretCached(name: String) = sp.edit { remove("cache:$name") }
 
     private val _destinations = MutableStateFlow(
         sp.getString("payment-destinations", null)?.let { runCatching { json.decodeFromString(DESTINATIONS, it) }.getOrNull() } ?: emptyMap(),

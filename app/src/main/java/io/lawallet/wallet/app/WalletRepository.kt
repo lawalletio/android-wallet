@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import io.lawallet.wallet.core.api.BackendCustodyException
 import io.lawallet.wallet.core.api.CurrentUser
+import io.lawallet.wallet.core.api.Custody
 import io.lawallet.wallet.core.api.WalletAddress
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -185,7 +187,8 @@ class WalletRepository(
         me.nwc?.let { return it }
         return runCatching {
             val api = session.api.value
-            val wallet = api.remoteWallets().filter { it.status == "ACTIVE" && it.type == "NWC" }
+            // A backend-custody wallet's connection never comes to the phone: it can't be the one the app uses.
+            val wallet = api.remoteWallets().filter { it.status == "ACTIVE" && it.type == "NWC" && it.custody != Custody.BACKEND }
                 .sortedByDescending { it.isDefault }.firstOrNull() ?: return null
             api.remoteWalletConnectionString(wallet.id)
         }.fold(
@@ -206,9 +209,11 @@ class WalletRepository(
         val key = "nwc:$walletId"
         val cached = withContext(Dispatchers.IO) { prefs.secretCached(key) }
         if (cached != null && !fresh) return cached
-        return runCatching { session.api.value.remoteWalletConnectionString(walletId) }.getOrNull()
-            ?.also { withContext(Dispatchers.IO) { prefs.setSecretCached(key, it) } }
-            ?: cached
+        return runCatching { session.api.value.remoteWalletConnectionString(walletId) }.fold(
+            { nwc -> nwc.also { withContext(Dispatchers.IO) { prefs.setSecretCached(key, it) } } },
+            // Offline: the last one resolved. Backend custody now: drop the copy this phone kept from before.
+            { e -> if (e is BackendCustodyException) withContext(Dispatchers.IO) { prefs.clearSecretCached(key); null } else cached },
+        )
     }
 
     /** [resolveFor] the address selected right now. */

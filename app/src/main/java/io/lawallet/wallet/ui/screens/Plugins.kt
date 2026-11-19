@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.app.AppContainer
+import io.lawallet.wallet.core.api.Custody
 import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.plugin.InstalledPlugin
 import io.lawallet.wallet.core.plugin.WebLoginRequest
@@ -112,7 +113,8 @@ internal fun pluginOf(walletId: String) = walletId.takeIf { it.startsWith("plugi
  */
 internal fun withPlugins(server: List<RemoteWallet>?, plugins: List<InstalledPlugin>, accounts: Map<String, PluginAccount> = emptyMap()): List<RemoteWallet>? {
     val mine = plugins.filter { it.enabled && it.manifest.isWallet && accounts[it.id]?.signedIn != false }.map {
-        RemoteWallet("plugin:${it.id}", it.manifest.name, type = PLUGIN_WALLET, status = "ACTIVE", provider = it.id)
+        // Its session never leaves the phone (the plugin's own secrets): local custody.
+        RemoteWallet("plugin:${it.id}", it.manifest.name, type = PLUGIN_WALLET, status = "ACTIVE", provider = it.id, custodyName = Custody.LOCAL.name)
     }
     if (mine.isEmpty()) return server
     return server.orEmpty() + mine
@@ -253,6 +255,8 @@ private fun PluginActions(p: InstalledPlugin, onDismiss: () -> Unit) {
         )
         return
     }
+    // Asked again on open: the session can change while the screen sits (a login elsewhere, a token that expired).
+    LaunchedEffect(p.id) { c.plugins.refreshAccount(p.id) }
     LwAlertDialog(
         onDismissRequest = onDismiss,
         icon = { PluginIcon(p.id, url = p.candidate.iconUrl) },
@@ -276,8 +280,9 @@ private fun PluginActions(p: InstalledPlugin, onDismiss: () -> Unit) {
         },
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val signedIn = c.plugins.accounts.collectAsState().value[p.id]?.signedIn == true
-                if (signedIn) {
+                // Unknown (no `account()`, or it failed) is neither: offering Sign in would claim it's signed out.
+                val signedIn = c.plugins.accounts.collectAsState().value[p.id]?.signedIn
+                if (signedIn == true) {
                     LwButton(stringResource(R.string.plugins_sign_out), {
                         busy = true
                         c.scope.launch {
@@ -286,7 +291,7 @@ private fun PluginActions(p: InstalledPlugin, onDismiss: () -> Unit) {
                             busy = false
                         }
                     }, Modifier.fillMaxWidth().testTag("plugin-sign-out"), BtnVariant.Secondary, loading = busy)
-                } else if (p.manifest.permissions.webLogin != null) {
+                } else if (signedIn == false && p.manifest.permissions.webLogin != null) {
                     ModalAction(stringResource(R.string.plugins_sign_in), { onDismiss(); signIn(c, context, p.manifest) }, Modifier.testTag("plugin-sign-in"))
                 }
                 LwButton(stringResource(R.string.plugins_check_update), {
@@ -381,7 +386,8 @@ fun PluginPromptDialog(r: PromptRequest) = key(r) {
 @Composable
 internal fun PluginIcon(id: String?, modifier: Modifier = Modifier, url: String? = null, size: Dp = 40.dp) {
     val c = LocalContainer.current
-    val file = remember(id) { id?.let { c.plugins.icon(it) } }
+    val icons by c.plugins.iconVersion.collectAsState() // an icon fetched after this was first shown
+    val file = remember(id, icons) { id?.let { c.plugins.icon(it) } }
     Box(modifier.size(size).clip(RoundedCornerShape(size / 4)), contentAlignment = Alignment.Center) {
         if (file != null || url != null) AsyncImage(file ?: url, null, Modifier.fillMaxSize())
         else LwIcon(L.drawable.lucide_ic_puzzle, size = size * 0.55f)
