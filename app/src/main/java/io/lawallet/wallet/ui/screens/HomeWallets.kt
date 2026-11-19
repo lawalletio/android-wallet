@@ -48,6 +48,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.AnimatedVisibility
 import io.lawallet.wallet.ui.components.LwButton
@@ -125,6 +126,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import io.lawallet.wallet.core.api.Custody
 import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.fx.Rates
@@ -379,7 +381,13 @@ internal fun WalletsReveal(
         empty = { DeckEmpty(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle)) },
         footer = {
             val many = sorted.orEmpty().count { !folded(it) } > 1
-            if (many || footerStart != null) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal, many, footerStart)
+            // Lock / Unlock wallet: first thing bottom-left, opposite the total.
+            val canLock = onLock != null && sorted.orEmpty().any { it.isDefault && it.status == "ACTIVE" }
+            if (many || footerStart != null || canLock) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal, many) {
+                if (canLock) LockWalletButton(locked) { onLock?.invoke() }
+                if (canLock && footerStart != null) Spacer(Modifier.width(8.dp))
+                footerStart?.invoke()
+            }
         },
     ) { w ->
         val adding = pending != null && keyOf(w) == pending.key
@@ -389,7 +397,6 @@ internal fun WalletsReveal(
                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
                 sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
                 onWithdraw = onWithdraw?.takeIf { canWithdraw(w) }?.let { f -> { f(w) } },
-                lock = if (w.isDefault && onLock != null && w.status == "ACTIVE") locked else null, onLock = { onLock?.invoke() },
                 delta = deltas[w.id],
             )
         }
@@ -581,8 +588,8 @@ internal fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boole
             }.testTag("home-wallets-total"),
         verticalAlignment = Alignment.Bottom,
     ) {
-        start?.invoke()
-        Spacer(Modifier.weight(1f))
+        // The total keeps its width; the left gets what's left, on this one line (its labels ellipsize rather than wrap).
+        if (start != null) Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) { start() } else Spacer(Modifier.weight(1f))
         if (!total) return@Row
         Txt(stringResource(R.string.send_preview_total), Modifier.padding(end = 8.dp, bottom = 2.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         if (hidden) Txt("•••••", size = CARD_FIGURE, weight = FontWeight.SemiBold)
@@ -625,14 +632,14 @@ private fun WalletRevealCard(
     w: RemoteWallet, balance: Long?, loading: Boolean, code: String, rates: Rates?, hidden: Boolean,
     reveal: HomeReveal, onOpen: () -> Unit, onSetPrimary: () -> Unit,
     sweepFrom: String?, onSweep: () -> Unit, onSweepTo: () -> Unit, onRename: (String) -> Unit, onTransfer: () -> Unit, onDelete: () -> Unit,
-    /** The selected card's lock: whether its address is locked to it; null shows no lock. */
-    lock: Boolean? = null, onLock: () -> Unit = {},
     /** A transfer's change to this figure, shown beside it (red out, green in) while the figure rolls. */
     delta: Long? = null,
     onWithdraw: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    var custodySheet by remember { mutableStateOf(false) }
+    if (custodySheet) CustodySheet(w) { custodySheet = false }
     LaunchedEffect(reveal.menuFor) { if (reveal.menuFor == w.id) { reveal.menuFor = null; menu = true } }
     val picking = sweepFrom != null
     val isSource = w.id == sweepFrom
@@ -681,19 +688,26 @@ private fun WalletRevealCard(
             .testTag("home-wallet-${w.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The wallet's kind (its mark) and its custody icons both explain where its credentials are kept. Not while
+        // picking a sweep destination: then the tap is the card's. Holding still opens the wallet's menu.
+        val custodyLabel = stringResource(w.custody.title)
         Box(
             Modifier.onGloballyPositioned { parts[1] = it; measureParts() }.size(44.dp).clip(RoundedCornerShape(14.dp))
-                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel)))),
+                .combinedClickable(
+                    enabled = !picking, onClickLabel = custodyLabel,
+                    onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
+                ) { custodySheet = true }
+                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel))))
+                .testTag("home-wallet-mark-${w.name}"),
             contentAlignment = Alignment.Center,
         ) {
             DeckMark(w, 20.dp)
         }
         Spacer(Modifier.width(14.dp))
-        // The name takes what it needs (truncating only when it must) and the lock follows it, centred on the card.
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f, fill = false)) {
+        Column(Modifier.weight(1f)) {
             Crossfade(w.name, Modifier.onGloballyPositioned { parts[2] = it; measureParts() }, label = "name") { Txt(it, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel)) }
             Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
             Crossfade(
                 when {
                     settingUp -> stringResource(R.string.rw_setting_up)
@@ -705,8 +719,13 @@ private fun WalletRevealCard(
                 },
                 label = "kind",
             ) { Txt(it, size = 12.sp, weight = FontWeight.Medium, color = if (w.status == "DEAD") Lw.Red.copy(alpha = 0.8f) else accent) }
-        }
-        if (lock != null) LockButton(lock) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onLock() }
+            // Where its credentials are kept, right after its kind.
+            Row(
+                // Just the icons are the target, so a tap beside them is still the card's.
+                Modifier.padding(start = 6.dp).clickable(enabled = !picking, onClickLabel = custodyLabel) { custodySheet = true },
+                horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
+            ) { CustodyIcons(w.custody, w.name, 12.dp, accent.copy(alpha = 0.85f)) }
+            }
         }
         Spacer(Modifier.width(12.dp))
         // Kept through the exit, so the amount fades out as it was.
@@ -745,7 +764,7 @@ private fun WalletRevealCard(
         w, if (hidden || balance == null) null else Currencies.formatBalance(balance, code, rates),
         // A plugin wallet lives in its plugin: LaWallet can't sweep or rename it.
         canSweep = active && !w.isPlugin && (balance ?: 0L) > 0L,
-        onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep,
+        onDismiss = { menu = false }, onDetails = onOpen, onSweep = onSweep, onCustody = { custodySheet = true },
         onRename = if (w.isPlugin) null else ({ renaming = true }),
         // Paid from the primary, so the primary can't be its own destination.
         onTransfer = if (active && !w.isDefault) onTransfer else null,
@@ -760,20 +779,99 @@ private fun WalletRevealCard(
     }
 }
 
-/** Locks the address to this wallet (or unlocks it): a small icon button next to the selected card's name. */
+/** Locks the address to the primary wallet (or unlocks it): a text button under the list, the icon showing what a tap does. */
 @Composable
-private fun LockButton(locked: Boolean, onClick: () -> Unit) {
-    val label = stringResource(if (locked) R.string.rw_unlock else R.string.rw_lock)
-    Box(
-        Modifier.padding(start = 4.dp).size(44.dp).clip(CircleShape)
-            .clickable(onClickLabel = label, onClick = onClick).testTag("home-wallet-lock"),
-        contentAlignment = Alignment.Center,
+private fun LockWalletButton(locked: Boolean, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier.height(32.dp).clip(CircleShape)
+            .clickable { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onClick() }
+            .padding(horizontal = 8.dp).testTag("home-wallet-lock"),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Crossfade(locked, label = "lock") { l ->
-            LwIcon(if (l) L.drawable.lucide_ic_lock else L.drawable.lucide_ic_lock_open, size = 24.dp, tint = if (l) Lw.Foreground else Lw.MutedFg, contentDescription = label)
+            LwIcon(if (l) L.drawable.lucide_ic_lock_open else L.drawable.lucide_ic_lock, size = 14.dp, tint = Lw.Foreground.copy(alpha = 0.7f))
+        }
+        Spacer(Modifier.width(6.dp))
+        Txt(stringResource(if (locked) R.string.rw_unlock else R.string.rw_lock), size = 13.sp, weight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+private val Custody.title get() = when (this) {
+    Custody.LOCAL -> R.string.custody_local
+    Custody.BACKEND -> R.string.custody_backend
+    Custody.BOTH -> R.string.custody_both
+}
+private val Custody.body get() = when (this) {
+    Custody.LOCAL -> R.string.custody_local_body
+    Custody.BACKEND -> R.string.custody_backend_body
+    Custody.BOTH -> R.string.custody_both_body
+}
+
+/** Where a wallet's credentials are kept: a cloud when the LaWallet instance holds them, a phone when this phone does. */
+@Composable
+private fun CustodyIcons(custody: Custody, name: String, size: Dp, tint: Color) {
+    val label = stringResource(custody.title)
+    if (custody != Custody.LOCAL) LwIcon(L.drawable.lucide_ic_cloud, Modifier.testTag("home-wallet-custody-cloud-$name"), size = size, tint = tint, contentDescription = label)
+    if (custody != Custody.BACKEND) LwIcon(L.drawable.lucide_ic_smartphone, Modifier.testTag("home-wallet-custody-phone-$name"), size = size, tint = tint, contentDescription = label)
+}
+
+/** The custody icons as round badges, top right of a sheet's header; [onClick] explains them, null only shows. */
+@Composable
+internal fun CustodyBadges(custody: Custody, name: String, onClick: (() -> Unit)? = null) {
+    val label = stringResource(custody.title)
+    Row(
+        Modifier.height(32.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.06f)).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = label, onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp).testTag("custody-badges-$name"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+    ) { CustodyIcons(custody, name, 14.dp, Lw.Foreground.copy(alpha = 0.85f)) }
+}
+
+/** What a wallet's custody means: where its credentials are kept (this phone, the LaWallet instance) and what follows. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CustodySheet(w: RemoteWallet, onDismiss: () -> Unit) {
+    val c = io.lawallet.wallet.ui.LocalContainer.current
+    val custody = w.custody
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Glass.Dialog,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
+        modifier = Modifier.testTag("home-wallet-custody-sheet"),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Lw.MutedFg.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                    DeckMark(w, 20.dp)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Txt(stringResource(R.string.custody_sheet_kicker, w.name), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
+                    Txt(stringResource(custody.title), size = 17.sp, weight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.width(12.dp))
+                CustodyBadges(custody, w.name)
+            }
+            MutedText(stringResource(custody.body))
+            Spacer(Modifier.height(2.dp))
+            Txt(stringResource(R.string.custody_where), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+            CustodyPlace(L.drawable.lucide_ic_smartphone, stringResource(R.string.custody_place_phone), held = custody != Custody.BACKEND, "custody-phone")
+            CustodyPlace(L.drawable.lucide_ic_cloud, stringResource(R.string.custody_place_instance, c.session.instanceHost), held = custody != Custody.LOCAL, "custody-instance")
         }
     }
 }
+
+@Composable
+private fun CustodyPlace(icon: Int, label: String, held: Boolean, tag: String) =
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+        LwIcon(icon, size = 18.dp, tint = Lw.MutedFg)
+        Spacer(Modifier.width(12.dp))
+        Txt(label, Modifier.weight(1f), size = 15.sp, maxLines = 1)
+        LwIcon(if (held) L.drawable.lucide_ic_check else L.drawable.lucide_ic_x, size = 16.dp, tint = if (held) Lw.Green else Lw.MutedFg)
+        Spacer(Modifier.width(6.dp))
+        Txt(stringResource(if (held) R.string.custody_held else R.string.custody_not_held), size = 13.sp, color = if (held) Lw.Foreground else Lw.MutedFg)
+    }
 
 internal val CARD_FIGURE = 18.sp
 /** A wallet card still being set up by LaWallet (see [FlowStore.PendingWallet]). */
@@ -1060,7 +1158,7 @@ private fun SweepPickBanner(onCancel: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onRename: (() -> Unit)?, onTransfer: (() -> Unit)?, onWithdraw: (() -> Unit)?, onDelete: () -> Unit) {
+private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Boolean, onDismiss: () -> Unit, onDetails: () -> Unit, onSweep: () -> Unit, onCustody: () -> Unit, onRename: (() -> Unit)?, onTransfer: (() -> Unit)?, onWithdraw: (() -> Unit)?, onDelete: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
@@ -1083,6 +1181,9 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
                 Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)
                 Txt(listOfNotNull(if (w.isPlugin) stringResource(R.string.plugins_wallet_kind) else if (lncurl) "LNCurl" else "NWC", balance?.let { "$it sats" }).joinToString(" · "), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
             }
+            Spacer(Modifier.width(12.dp))
+            // Opens over the menu, so closing it comes back here.
+            CustodyBadges(w.custody, w.name, onCustody)
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
         SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "home-wallet-menu-details") { then(onDetails) }

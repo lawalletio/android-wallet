@@ -35,6 +35,9 @@ class ApiException(val status: Int, message: String, val code: String? = null, v
     val reason: String? get() = (details as? JsonObject)?.get("reason")?.jsonPrimitive?.contentOrNull
 }
 
+/** Asked for the credentials of a [Custody.BACKEND] wallet: they stay on the LaWallet instance. */
+class BackendCustodyException(val walletId: String) : IllegalStateException("This wallet's credentials stay on LaWallet: it can't pay from this phone")
+
 /**
  * LaWallet REST client for one instance. Auth = NIP-98-signed `POST /api/jwt` → Bearer.
  * There is no refresh endpoint: the session is re-minted ~5 min before `exp`, and once on a 401.
@@ -181,7 +184,14 @@ class LaWalletApi(
         }, RemoteWallet.serializer())
     suspend fun deleteRemoteWallet(id: String, permanent: Boolean = false) =
         send("DELETE", "/api/remote-wallets/${enc(id)}" + if (permanent) "?permanent=true" else "", null, JsonElement.serializer())
-    suspend fun remoteWalletConnectionString(id: String) = get("/api/remote-wallets/${enc(id)}/connection-string", ConnectionString.serializer()).connectionString
+    /**
+     * A remote wallet's NWC connection: the one way its credentials reach the phone. A [Custody.BACKEND] wallet's never
+     * do, so this asks for the wallet first and refuses it (the instance should refuse it too).
+     */
+    suspend fun remoteWalletConnectionString(id: String): String {
+        if (remoteWallet(id).custody == Custody.BACKEND) throw BackendCustodyException(id)
+        return get("/api/remote-wallets/${enc(id)}/connection-string", ConnectionString.serializer()).connectionString
+    }
     suspend fun remoteWalletBalance(id: String) = get("/api/remote-wallets/${enc(id)}/balance", WalletBalance.serializer()).balanceSats
     suspend fun remoteWalletNotifications(id: String) =
         get("/api/remote-wallets/${enc(id)}/notifications", JsonElement.serializer()).let { el ->

@@ -11,6 +11,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -90,6 +92,15 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
 
     private val wallets = mutableMapOf<String, Pair<JsPlugin, JsWallet>>()
 
+    private val _iconVersion = MutableStateFlow(0)
+    /** Bumps when an icon lands on the device, so whatever shows it picks it up. */
+    val iconVersion: StateFlow<Int> = _iconVersion
+
+    init {
+        // The install's icon fetch is best effort (offline, a timeout): retry the missing ones, or their cards keep a puzzle piece.
+        scope.launch(Dispatchers.IO) { _installed.value.filter { icon(it.id) == null }.forEach { fetchIcon(it.candidate) } }
+    }
+
     private fun save(list: List<InstalledPlugin>) {
         _installed.value = list
         sp.edit { putString("installed", json.encodeToString(ser, list)) }
@@ -113,19 +124,12 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
             unload(other.id)
             host.clear(other.id)
             forgetAccount(other.id)
+            File(dir, other.id).resolve("icon").delete() // the other plugin's: never shown under this one
             Trail.add("plugin", "${other.id} installed from another source: its data was wiped")
         }
         val folder = File(dir, c.manifest.id).apply { mkdirs() }
-        folder.resolve("icon").delete()
         folder.resolve("index.js").writeBytes(bytes)
-        // Its icon, kept on the device (the add-wallet choices and wallet cards show it offline). Best effort.
-        c.iconUrl?.toHttpUrlOrNull()?.takeIf { it.isHttps || allowHttp }?.let { icon ->
-            runCatching {
-                http.newCall(Request.Builder().url(icon).build()).execute().use { r ->
-                    if (r.isSuccessful) r.body.bytes().takeIf { it.size <= MAX_ICON }?.let { folder.resolve("icon").writeBytes(it) }
-                }
-            }
-        }
+        if (c.iconUrl == null) folder.resolve("icon").delete() else fetchIcon(c)
         unload(c.manifest.id)
         val p = InstalledPlugin(c, hash, enabled = get(c.manifest.id)?.enabled ?: true)
         save(_installed.value.filter { it.id != p.id } + p)
@@ -145,6 +149,20 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
 
     /** The plugin's icon on this device, if it has one. */
     fun icon(id: String): File? = File(dir, "$id/icon").takeIf { it.isFile }
+
+    /**
+     * Keeps [c]'s icon on the device (the add-wallet choices and wallet cards show it offline). Best effort: a failed
+     * fetch keeps the icon it has. Only into an installed plugin's folder, so a removal racing it leaves nothing behind.
+     */
+    private fun fetchIcon(c: PluginCandidate) {
+        val url = c.iconUrl?.toHttpUrlOrNull()?.takeIf { it.isHttps || allowHttp } ?: return
+        val folder = File(dir, c.manifest.id).takeIf { it.isDirectory } ?: return
+        runCatching {
+            http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (r.isSuccessful) r.body.bytes().takeIf { it.size <= MAX_ICON }?.let { folder.resolve("icon").writeBytes(it); _iconVersion.update { v -> v + 1 } }
+            }
+        }
+    }
 
     fun setEnabled(id: String, on: Boolean) {
         if (!on) unload(id)

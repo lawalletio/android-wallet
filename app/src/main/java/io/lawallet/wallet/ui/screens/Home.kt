@@ -1405,7 +1405,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
               ) {
                   LwIcon(L.drawable.lucide_ic_unlink, size = 14.dp, tint = Lw.Foreground.copy(alpha = 0.7f))
                   Spacer(Modifier.width(6.dp))
-                  Txt(stringResource(R.string.home_freeAddress), size = 13.sp, weight = FontWeight.SemiBold)
+                  Txt(stringResource(R.string.home_freeAddress), size = 13.sp, weight = FontWeight.SemiBold, maxLines = 1)
               }
           }) else null,
       )

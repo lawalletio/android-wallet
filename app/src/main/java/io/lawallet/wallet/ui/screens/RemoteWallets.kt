@@ -641,6 +641,7 @@ fun RemoteWalletDetailScreen(id: String) {
     var deleting by remember { mutableStateOf(false) }
     var editingPlan by remember { mutableStateOf(false) }
     var addingHook by remember { mutableStateOf(false) }
+    var custodySheet by remember { mutableStateOf(false) }
     val copied = stringResource(R.string.common_copied)
     val planSaved = stringResource(R.string.remoteWallets_forwarding_planSaved)
     suspend fun load() {
@@ -691,6 +692,9 @@ fun RemoteWalletDetailScreen(id: String) {
                         .semantics { contentDescription = if (lncurl) "LNCurl" else "NWC" }.testTag("wallet-kind"),
                     contentAlignment = Alignment.Center,
                 ) { WalletMark(lncurl, 16.dp) }
+                // Where its credentials are kept, opposite its kind; a tap explains it.
+                Box(Modifier.align(Alignment.TopEnd).padding(14.dp)) { CustodyBadges(w.custody, w.name) { custodySheet = true } }
+                if (custodySheet) CustodySheet(w) { custodySheet = false }
                 w.receiveCapabilities?.let { caps ->
                     Row(Modifier.align(Alignment.BottomEnd).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ProtocolBadge(L.drawable.lucide_ic_badge_check, "LUD-21 (verify)", w.status == "ACTIVE", null)

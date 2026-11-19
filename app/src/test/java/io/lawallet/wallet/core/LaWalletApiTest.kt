@@ -1,7 +1,10 @@
 package io.lawallet.wallet.core
 
 import io.lawallet.wallet.core.api.ApiException
+import io.lawallet.wallet.core.api.BackendCustodyException
+import io.lawallet.wallet.core.api.Custody
 import io.lawallet.wallet.core.api.LaWalletApi
+import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.ui.screens.RECOVERY_MERGE_REQUIRED
 import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.LocalSigner
@@ -34,6 +37,27 @@ class LaWalletApiTest {
 
     private fun jwt(expSecondsFromNow: Long) =
         "h." + Base64.getUrlEncoder().withoutPadding().encodeToString("""{"exp":${System.currentTimeMillis() / 1000 + expSecondsFromNow}}""".toByteArray()) + ".s"
+
+    @Test fun custodyIsBothUnlessTheInstanceSaysOtherwise() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        fun custody(extra: String) = json.decodeFromString(RemoteWallet.serializer(), """{"id":"w","name":"n"$extra}""").custody
+        assertEquals(Custody.BOTH, custody(""))
+        assertEquals(Custody.BACKEND, custody(""","custody":"backend""""))
+        assertEquals(Custody.LOCAL, custody(""","custody":"LOCAL""""))
+        assertEquals(Custody.BOTH, custody(""","custody":"vault"""")) // unknown: today's behaviour, not a crash
+    }
+
+    @Test fun backendCustodyNeverFetchesTheConnection() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"token":"${jwt(86_400)}","expiresIn":"24h","type":"Bearer"}"""))
+        server.enqueue(MockResponse().setBody("""{"id":"w1","name":"Vault","custody":"backend"}"""))
+        assertThrows(BackendCustodyException::class.java) { runBlocking { api.remoteWalletConnectionString("w1") } }
+        server.enqueue(MockResponse().setBody("""{"id":"w2","name":"Mine"}"""))
+        server.enqueue(MockResponse().setBody("""{"connectionString":"nostr+walletconnect://x"}"""))
+        assertEquals("nostr+walletconnect://x", api.remoteWalletConnectionString("w2"))
+        val paths = List(server.requestCount) { server.takeRequest().path.orEmpty() }
+        assertFalse(paths.toString(), paths.any { it.endsWith("w1/connection-string") })
+        assertTrue(paths.toString(), paths.any { it.endsWith("w2/connection-string") })
+    }
 
     @Test fun mintsJwtWithNip98AndReusesIt() = runBlocking {
         val token = jwt(86_400)

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.api
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -98,7 +99,22 @@ data class RemoteWallet(
     val lncurlServerUrl: String? = null,
     val receiveCapabilities: ReceiveCapabilities? = null,
     val isOwner: Boolean? = null,
-)
+    /** Where its credentials are kept, as the instance says ("local" / "backend" / "both"); read through [custody]. */
+    @SerialName("custody") val custodyName: String? = null,
+) {
+    /** Who holds this wallet's credentials. The instance's own wallets (NWC, LNCurl) are [Custody.BOTH] unless it says otherwise. */
+    val custody: Custody get() = Custody.entries.find { it.name.equals(custodyName, ignoreCase = true) } ?: Custody.BOTH
+}
+
+/** Where a remote wallet's credentials (its NWC connection, a plugin's session) are kept. The backend is always the LaWallet instance. */
+enum class Custody {
+    /** Only on this phone: the instance never holds a copy (a plugin wallet, like Fiwind). */
+    LOCAL,
+    /** Only on the instance, never revealed: the phone can't fetch them, so it can't pay from it. */
+    BACKEND,
+    /** On both: the instance keeps them, and the phone fetches and caches them to pay. */
+    BOTH,
+}
 
 @Serializable data class ReceiveCapabilities(val lud21: Boolean = true, val nip57: Boolean = false, val receiptPubkey: String? = null, val reason: String? = null)
 @Serializable data class ConnectionString(val connectionString: String)
