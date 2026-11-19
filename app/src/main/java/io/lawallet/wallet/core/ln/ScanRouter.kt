@@ -6,11 +6,12 @@ import java.net.URLDecoder
 
 /**
  * What a scanned/pasted/tapped payload means. Mirrors scan-screen.tsx's order:
- * activation URL → LNURL (network) → parseDestination.
+ * activation URL → Cashu token → LNURL (network) → parseDestination.
  */
 sealed interface ScanResult {
     data class Activate(val tokenId: String, val sameInstance: Boolean, val url: String) : ScanResult
     data class Withdraw(val params: WithdrawParams) : ScanResult
+    data class Cashu(val token: CashuToken) : ScanResult
     data class Pay(val destination: Destination) : ScanResult
     /** A plugin to offer through Add Plugin (resolver + permissions sheet). Never installed straight from a scan. */
     data class InstallPlugin(val url: String) : ScanResult
@@ -31,6 +32,7 @@ class ScanRouter(private val lnurl: Lnurl, private val plugins: Boolean = false)
         ActivationUrl.parse(text)?.let { a ->
             return ScanResult.Activate(a.tokenId, instanceHosts.any { it.equals(a.host, ignoreCase = true) }, text)
         }
+        CashuToken.parse(text)?.let { return ScanResult.Cashu(it) }
         if (Lnurl.looksLikeLnurl(text)) {
             return try {
                 when (val r = lnurl.resolve(text)) {

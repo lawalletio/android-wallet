@@ -526,4 +526,17 @@
     <string name="plugins_prompt_resend">Resend code</string>
     <string name="plugins_sign_in_to">Sign in to %1$s</string>
     <string name="withdraw_to_active_menu">Withdraw to active wallet</string>
+    <string name="scan_hintCashu">Point your camera at a Lightning invoice, address, LNURL, card or Cashu QR.</string>
+    <string name="scan_animated">Animated QR</string>
+    <string name="scan_animatedHint">Keep the camera on the code until it\'s complete</string>
+    <string name="cashu_title">Claim ecash</string>
+    <string name="cashu_fees">The mint keeps a small Lightning fee</string>
+    <string name="cashu_cta">Claim %1$s sats</string>
+    <string name="cashu_eyebrowClaiming">Cashu claim</string>
+    <string name="cashu_eyebrowClaimed">Ecash claimed</string>
+    <string name="cashu_melting">Melting the ecash</string>
+    <string name="cashu_meltingBody">Turning %1$s sats of ecash into Lightning.</string>
+    <string name="cashu_won">Sats unlocked!</string>
+    <string name="cashu_pendingBody">The mint is still paying. The sats will join your balance shortly.</string>
+    <string name="cashu_mint">Mint</string>
 </resources>

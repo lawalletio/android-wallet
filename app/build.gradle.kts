@@ -207,6 +207,8 @@ dependencies {
     implementation(libs.coil.svg)
     implementation(libs.coil.network)
     implementation(libs.lottie.compose)
+    implementation(libs.hummingbird)
+    implementation(libs.cbor)
     implementation(libs.lucide)
     implementation(libs.haze)
     implementation(libs.reorderable)

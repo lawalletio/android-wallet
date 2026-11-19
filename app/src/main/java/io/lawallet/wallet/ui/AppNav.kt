@@ -190,6 +190,7 @@ object R0 {
     const val RECEIVE_SUMMARY = "receive/summary"
     const val SCAN = "scan"
     const val WITHDRAW = "withdraw"
+    const val CASHU = "cashu"
     const val CLAIM = "claim-username"
     const val SETTINGS = "settings"
     const val CARDS = "settings/cards"
@@ -462,6 +463,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.RECEIVE_SUMMARY) { ReceiveSummaryScreen() }
                 composable(R0.SCAN) { ScanScreen() }
                 composable(R0.WITHDRAW) { WithdrawScreen() }
+                composable(R0.CASHU) { CashuScreen() }
                 composable("${R0.CLAIM}?from={from}&bonus={bonus}") { ClaimUsernameScreen(it.arguments?.getString("from"), it.arguments?.getString("bonus") == "1") }
                 composable("activate/{id}") { ActivateScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.SETTINGS) { TrackTab(R0.SETTINGS, tabShown); SettingsScreen() }

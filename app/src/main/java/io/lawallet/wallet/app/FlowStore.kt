@@ -48,6 +48,7 @@ class FlowStore {
     var send = Send()
     var receive = Receive()
     var withdraw: WithdrawParams? = null
+    var cashu: io.lawallet.wallet.core.ln.CashuToken? = null
     var activityDetail: Tx? = null
 
     fun resetSend() { send = Send() }

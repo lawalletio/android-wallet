@@ -38,6 +38,9 @@ playAppUpdate = "2.1.0"
 reorderable = "3.1.0"
 # 16 KB-aligned .so (Play, targetSdk 35+); quickjs-kt 1.0.0-alpha13 is 4 KB-aligned.
 quickjs = "3.2.3"
+# Cashu: animated QR (BC-UR fountain codes, NUT-16) and cashuB (CBOR) tokens.
+hummingbird = "1.7.6"
+cbor = "0.9"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -73,6 +76,8 @@ zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+hummingbird = { module = "com.sparrowwallet:hummingbird", version.ref = "hummingbird" }
+cbor = { module = "co.nstant.in:cbor", version.ref = "cbor" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 quickjs-android = { module = "wang.harlon.quickjs:wrapper-android", version.ref = "quickjs" }
 lucide = { module = "com.composables:icons-lucide-android", version.ref = "lucide" }
