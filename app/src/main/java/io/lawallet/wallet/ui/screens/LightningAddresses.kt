@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
 import io.lawallet.wallet.ui.components.toastError
 import io.lawallet.wallet.ui.components.ConfirmDialog
 import io.lawallet.wallet.ui.components.LwBottomSheet
@@ -132,7 +133,7 @@ fun LightningAddressesScreen() {
                 } else if (addresses == null) Spinner() else MutedText(stringResource(R.string.addresses_empty))
             }
             val list = addresses
-            if (list == null && error == null) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
+            if (list == null && error == null) LoadingBox()
             if (!list.isNullOrEmpty()) SettingsGroup(stringResource(R.string.addresses_all)) {
                 list.forEachIndexed { i, a ->
                     if (i > 0) GroupDivider()

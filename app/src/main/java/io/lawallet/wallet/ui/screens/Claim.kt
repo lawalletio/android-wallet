@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
 import io.lawallet.wallet.ui.components.lwFieldColors
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
@@ -207,7 +208,7 @@ fun ClaimUsernameScreen(from: String?, bonus: Boolean) {
                 }
                 "payment" -> {
                     val inv = invoice
-                    if (inv == null) Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Spinner() }
+                    if (inv == null) LoadingBox(Modifier.padding(32.dp))
                     else {
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             MutedText(stringResource(R.string.claim_toClaim) + " $username@$domain")

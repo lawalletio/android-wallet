@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
 import io.lawallet.wallet.ui.components.TextPrompt
 import io.lawallet.wallet.ui.components.LwBottomSheet
 import kotlinx.serialization.builtins.serializer
@@ -421,7 +422,7 @@ internal fun <T> RevealDeck(
     ) {
         header()
         when {
-            items == null -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) { Spinner() }
+            items == null -> LoadingBox(Modifier.padding(top = 32.dp))
             items.isEmpty() -> { if (hasTop) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { top() }; empty() }
             else -> {
                 Column(Modifier.weight(1f, fill = false)) {
@@ -557,6 +558,23 @@ internal fun DeckEmpty(icon: Int, text: String) = Column(Modifier.fillMaxWidth()
     MutedText(text)
 }
 
+/** A remote wallet's colour: LNCurl green, else NWC purple. */
+internal fun walletAccent(w: RemoteWallet) = if (w.isLncurl) Lw.LncurlGreen else Lw.NwcPurple
+
+/**
+ * A wallet's mark on a gradient tile of its colour, lit from muted by [selected] (0..1). [modifier] sits inside the
+ * tile's clip, so a click there ripples in its rounded shape.
+ */
+@Composable
+internal fun WalletTile(w: RemoteWallet, size: Dp, selected: Float = 1f, modifier: Modifier = Modifier) {
+    val accent = lerp(Lw.MutedFg, walletAccent(w), selected)
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(size / 3.2f)).then(modifier)
+            .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.2f * selected), accent.copy(alpha = 0.06f + 0.04f * selected)))),
+        contentAlignment = Alignment.Center,
+    ) { DeckMark(w, size * 0.45f) }
+}
+
 /** Bottom right of the list: every active wallet's balance summed, rolling like the cards as figures arrive. */
 @Composable
 internal fun WalletsTotal(sats: Long, code: String, rates: Rates?, hidden: Boolean, reveal: HomeReveal, total: Boolean = true, start: (@Composable () -> Unit)? = null) {
@@ -631,7 +649,7 @@ private fun WalletRevealCard(
     val target = picking && !isSource && w.isActive
     val sel by animateFloatAsState(if (if (picking) target else w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
     val pulse = if (target) rememberInfiniteTransition(label = "pick").animateFloat(0.35f, 0.85f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "ring").value else 0.6f
-    val accent = lerp(Lw.MutedFg, if (lncurl) Lw.LncurlGreen else Lw.NwcPurple, sel)
+    val accent = lerp(Lw.MutedFg, walletAccent(w), sel)
     val shape = RoundedCornerShape(24.dp)
     val settingUp = w.status == PENDING
     val rest by animateFloatAsState(if (isSource) 0.35f else if (active || settingUp) 0.7f else 0.35f, tween(400), label = "rest")
@@ -671,18 +689,15 @@ private fun WalletRevealCard(
         // The wallet's kind (its mark) and its custody icons both explain where its credentials are kept. Not while
         // picking a sweep destination: then the tap is the card's. Holding still opens the wallet's menu.
         val custodyLabel = stringResource(w.custody.title)
-        Box(
-            Modifier.onGloballyPositioned { parts[1] = it; measureParts() }.size(44.dp).clip(RoundedCornerShape(14.dp))
+        WalletTile(
+            w, 44.dp, sel,
+            Modifier.onGloballyPositioned { parts[1] = it; measureParts() }
                 .combinedClickable(
                     enabled = !picking, onClickLabel = custodyLabel,
                     onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true },
                 ) { custodySheet = true }
-                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.18f * sel), accent.copy(alpha = 0.06f + 0.04f * sel))))
                 .testTag("home-wallet-mark-${w.name}"),
-            contentAlignment = Alignment.Center,
-        ) {
-            DeckMark(w, 20.dp)
-        }
+        )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Crossfade(w.name, Modifier.onGloballyPositioned { parts[2] = it; measureParts() }, label = "name") { Txt(it, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel)) }
@@ -890,7 +905,7 @@ private fun Modifier.pillGlass() = clip(PillShape).background(PillFill).border(1
 
 @Composable
 private fun PillMark(w: RemoteWallet, modifier: Modifier = Modifier) = Box(
-    modifier.size(24.dp).clip(CircleShape).background((if (w.isPlugin) Lw.Foreground else if (w.isLncurl) Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.12f)),
+    modifier.size(24.dp).clip(CircleShape).background((if (w.isPlugin) Lw.Foreground else walletAccent(w)).copy(alpha = 0.12f)),
     contentAlignment = Alignment.Center,
 ) { DeckMark(w, 13.dp, Modifier.alpha(0.8f)) }
 
@@ -1013,14 +1028,10 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
     val lncurl = w.isLncurl
-    val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
     LwBottomSheet(onDismiss, "home-wallet-menu", state) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.36f), accent.copy(alpha = 0.10f)))),
-                contentAlignment = Alignment.Center,
-            ) { DeckMark(w, 24.dp) }
+            WalletTile(w, 52.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold, maxLines = 1)

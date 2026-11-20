@@ -48,6 +48,7 @@ import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.R0
+import io.lawallet.wallet.ui.components.LoadingBox
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.PaymentReceipt
 import androidx.compose.foundation.layout.PaddingValues
@@ -340,7 +341,7 @@ fun ActivityDetailScreen(hash: String) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(null, { nav.popBackStack() }, close = true)
         val t = tx
-        if (t == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
+        if (t == null) LoadingBox(Modifier.weight(1f))
         else {
             val title = stringResource(when { t.state == "pending" -> R.string.activity_detail_pending; t.state == "failed" -> R.string.activity_detail_failed; t.incoming -> R.string.activity_detail_received; else -> R.string.activity_detail_sent })
             val dest = if (t.incoming) null else destinations[t.paymentHash]

@@ -1,7 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
 import androidx.compose.animation.core.Animatable
-import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -13,14 +12,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.layout.layout
-import io.lawallet.wallet.ui.components.GroupDivider
-import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.theme.GlassLevel
+import io.lawallet.wallet.ui.components.SettingsGroup
+import io.lawallet.wallet.ui.components.SettingsRow
 import com.composables.icons.lucide.R as L
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -35,7 +31,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -82,7 +77,6 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -167,29 +161,16 @@ fun CashuScreen() {
         }
         AnimatedVisibility(form, enter = fadeIn() + expandVertically(), exit = fadeOut(tween(180)) + shrinkVertically(tween(420, easing = FastOutSlowInEasing))) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp))) {
-                    DetailRow(L.drawable.lucide_ic_landmark, stringResource(R.string.cashu_mint), host, token.mint, Modifier.testTag("cashu-mint"))
-                    GroupDivider()
-                    DetailRow(L.drawable.lucide_ic_info, null, stringResource(R.string.cashu_fees), null)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsGroup(stringResource(R.string.cashu_mint)) {
+                        SettingsRow(host, null, Modifier.testTag("cashu-mint"), icon = L.drawable.lucide_ic_landmark, subtitle = token.mint.takeIf { it != host })
+                    }
+                    MutedText(stringResource(R.string.cashu_fees), Modifier.padding(horizontal = 6.dp), size = 12.sp)
                 }
                 if (client == null) NoWalletCard()
                 ErrorText(error, Modifier.fillMaxWidth())
                 MorphButton(stringResource(R.string.cashu_cta, Currencies.formatSats(token.amount)), loading, client != null, ::claim, Modifier.testTag("cashu-cta"))
             }
-        }
-    }
-}
-
-/** Icon tile + optional label over a value, with an optional muted line under it. */
-@Composable
-private fun DetailRow(@DrawableRes icon: Int, label: String?, value: String, sub: String?, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(32.dp).glass(RoundedCornerShape(10.dp), GlassLevel.Strong), contentAlignment = Alignment.Center) { LwIcon(icon, size = 17.dp) }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            if (label != null) Txt(label, size = 12.sp, color = Lw.MutedFg)
-            Txt(value, size = if (label != null) 16.sp else 14.sp, weight = if (label != null) FontWeight.SemiBold else FontWeight.Normal, color = if (label != null) Lw.Foreground else Lw.MutedFg, maxLines = 2)
-            if (sub != null && sub != value) Txt(sub, size = 12.sp, color = Lw.MutedFg, maxLines = 1)
         }
     }
 }

@@ -46,7 +46,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -69,6 +68,7 @@ import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.CurrencyToggle
 import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.LwAlertDialog
+import io.lawallet.wallet.ui.components.KeyValueRow
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
@@ -484,12 +484,8 @@ fun SendPreviewScreen() {
                 Txt(stringResource(R.string.send_preview_sending), size = 14.sp, color = Lw.MutedFg)
                 // Same toggle as Receive; without a rate the fiat view falls back to sats rather than "—".
                 val shown = code.takeIf { Currencies.format(amount, it, rates) != "—" } ?: "SAT"
-                Row(verticalAlignment = Alignment.Bottom) {
-                    val text = Currencies.format(amount, shown, rates)
-                    Txt(text, size = if (text.length > 8) 44.sp else 60.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("preview-amount"))
-                    Spacer(Modifier.width(8.dp))
-                    Txt(Currencies.unitLabel(shown), Modifier.padding(bottom = 10.dp), size = 18.sp, color = Lw.MutedFg)
-                }
+                val text = Currencies.format(amount, shown, rates)
+                AmountDisplay(text, Currencies.unitLabel(shown), size = if (text.length > 8) 44.sp else 60.sp, figureTag = "preview-amount")
                 if (shown != "SAT") MutedText(stringResource(R.string.common_sats, Currencies.formatSats(amount)))
                 if (currencies.active.size > 1) {
                     Spacer(Modifier.height(12.dp))
@@ -503,10 +499,10 @@ fun SendPreviewScreen() {
                 }
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (invoice?.description.isNullOrBlank()) PreviewRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
-                else PreviewRow(stringResource(R.string.send_preview_description), invoice!!.description!!)
-                PreviewRow(stringResource(R.string.send_preview_type), stringResource(kindLabel(s.destination)))
-                s.comment?.let { PreviewRow(stringResource(R.string.send_note), it) }
+                if (invoice?.description.isNullOrBlank()) KeyValueRow(stringResource(R.string.send_to), s.recipientLabel ?: "—")
+                else KeyValueRow(stringResource(R.string.send_preview_description), invoice!!.description!!)
+                KeyValueRow(stringResource(R.string.send_preview_type), stringResource(kindLabel(s.destination)))
+                s.comment?.let { KeyValueRow(stringResource(R.string.send_note), it) }
                 if (sources.isNotEmpty()) {
                     val fromName = sources.find { it.first == from }?.second ?: stringResource(R.string.send_pay_from_account)
                     Row(Modifier.fillMaxWidth().clickable(enabled = !paying && !done) { picking = true }.testTag("pay-from"), verticalAlignment = Alignment.CenterVertically) {
@@ -520,9 +516,9 @@ fun SendPreviewScreen() {
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Txt(stringResource(R.string.send_preview_quote), size = 15.sp, weight = FontWeight.SemiBold)
-                PreviewRow(stringResource(R.string.send_preview_amount), stringResource(R.string.common_sats, Currencies.formatSats(amount)))
-                PreviewRow(stringResource(R.string.send_networkFee), stringResource(R.string.send_preview_feeNotQuoted))
-                PreviewRow(stringResource(R.string.send_preview_total), stringResource(R.string.send_preview_plusFee, Currencies.formatSats(amount)))
+                KeyValueRow(stringResource(R.string.send_preview_amount), stringResource(R.string.common_sats, Currencies.formatSats(amount)))
+                KeyValueRow(stringResource(R.string.send_networkFee), stringResource(R.string.send_preview_feeNotQuoted))
+                KeyValueRow(stringResource(R.string.send_preview_total), stringResource(R.string.send_preview_plusFee, Currencies.formatSats(amount)))
             }
             ErrorText(error, Modifier.fillMaxWidth())
             signInFor?.let { id -> c.plugins.get(id) }?.let { p ->
@@ -588,14 +584,6 @@ private fun NfcTappedBadge() {
         }
         Spacer(Modifier.width(6.dp))
         Txt(stringResource(R.string.nfc_tapped), size = 12.sp, weight = FontWeight.Medium, color = Lw.Green)
-    }
-}
-
-@Composable
-private fun PreviewRow(k: String, v: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Txt(k, size = 14.sp, color = Lw.MutedFg)
-        Txt(v, Modifier.weight(1f), size = 14.sp, align = TextAlign.End, maxLines = 2)
     }
 }
 

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.Callout
 import io.lawallet.wallet.ui.components.TextPrompt
 import io.lawallet.wallet.ui.components.toastError
 import io.lawallet.wallet.ui.components.ConfirmDialog
@@ -1272,18 +1273,10 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                     Box(Modifier.size(16.dp).clickable { c.prefs.bonusSats = 0; bonus = null }) { LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg) }
                 }
             }
-            if (me != null && me?.lightningAddress == null) Row(
-                    Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = Lw.NwcPurple.copy(alpha = 0.10f))
-                        .clickable { nav.navigate("${R0.CLAIM}?from=&bonus=0") }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("claim-cta"),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(40.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Thin, tint = Lw.NwcPurple.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
-                        LwIcon(L.drawable.lucide_ic_sparkles, size = 18.dp, tint = Lw.NwcPurple)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Txt(stringResource(R.string.home_claimAddress), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
-                    LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
-                }
+            if (me != null && me?.lightningAddress == null) Callout(
+                L.drawable.lucide_ic_sparkles, stringResource(R.string.home_claimAddress), Lw.NwcPurple, { nav.navigate("${R0.CLAIM}?from=&bonus=0") },
+                Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).testTag("claim-cta"),
+            )
             if (me != null && !hasNwc) {
                 Column(Modifier.revealAside(reveal).riseIn(3, intro).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().glass(RoundedCornerShape(24.dp), GlassLevel.Thin).padding(18.dp)) {
                     Txt(stringResource(if (autoCreate) R.string.home_autoCreateTitle else R.string.home_noWalletTitle), size = 15.sp, weight = FontWeight.SemiBold)

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.Callout
 import io.lawallet.wallet.ui.components.Pill
 import io.lawallet.wallet.ui.components.TextPrompt
 import io.lawallet.wallet.ui.components.DialogTitle
@@ -20,7 +21,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -235,19 +235,10 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
             below = {
                 when {
                     wallets.isEmpty() -> OnchainCta(Modifier.revealAside(reveal), { nav.navigate(R0.ONCHAIN_CREATE) }, { nav.navigate(R0.ONCHAIN_IMPORT) })
-                    primary?.backedUp == false -> Row(
-                        Modifier.revealAside(reveal).padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth()
-                            .glass(RoundedCornerShape(24.dp), tint = Lw.Bitcoin.copy(alpha = 0.10f))
-                            .clickable { nav.navigate(R0.onchainBackup(primary.id)) }.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp).testTag("onchain-backup-nudge"),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(40.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Thin, tint = Lw.Bitcoin.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
-                            LwIcon(L.drawable.lucide_ic_shield_alert, size = 18.dp, tint = Lw.Bitcoin)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Txt(stringResource(R.string.onchain_backup_nudge), Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
-                        LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
-                    }
+                    primary?.backedUp == false -> Callout(
+                        L.drawable.lucide_ic_shield_alert, stringResource(R.string.onchain_backup_nudge), Lw.Bitcoin, { nav.navigate(R0.onchainBackup(primary.id)) },
+                        Modifier.revealAside(reveal).padding(start = 16.dp, end = 16.dp, top = 12.dp).testTag("onchain-backup-nudge"),
+                    )
                 }
             },
             sheetContent = {

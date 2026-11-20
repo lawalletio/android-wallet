@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
+import io.lawallet.wallet.ui.components.EmptyState
 import io.lawallet.wallet.ui.components.SettingsPage
 import io.lawallet.wallet.ui.components.lwFieldColors
 import io.lawallet.wallet.ui.components.toastError
@@ -185,13 +187,8 @@ fun CardsScreen() {
         val list = cards
         when {
             list == null && failed -> Column { Txt(stringResource(R.string.settings_cardsScreen_errorTitle), weight = FontWeight.SemiBold); MutedText(stringResource(R.string.settings_cardsScreen_tryAgain)) }
-            list == null -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
-            list.isEmpty() -> Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                LwIcon(L.drawable.lucide_ic_credit_card, size = 40.dp, tint = Lw.MutedFg)
-                Spacer(Modifier.height(12.dp))
-                Txt(stringResource(R.string.settings_cardsScreen_emptyTitle), weight = FontWeight.SemiBold)
-                MutedText(stringResource(R.string.settings_cardsScreen_emptyBody))
-            }
+            list == null -> LoadingBox()
+            list.isEmpty() -> EmptyState(L.drawable.lucide_ic_credit_card, stringResource(R.string.settings_cardsScreen_emptyTitle), stringResource(R.string.settings_cardsScreen_emptyBody), Modifier.padding(top = 32.dp))
             else -> list.forEach { card ->
                 val name = card.title ?: fallback
                 val status = when { card.blocked -> R.string.settings_cardsScreen_status_Blocked; card.disabled -> R.string.settings_cardsScreen_status_Disabled; else -> R.string.settings_cardsScreen_status_Active }
@@ -431,33 +428,31 @@ fun CurrenciesScreen() {
     }
     SettingsPage(stringResource(R.string.settings_currenciesScreen_title)) {
         SettingsGroup(stringResource(R.string.settings_currenciesScreen_activeAssets)) {
-            val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
+            val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 60.dp.toPx() } // a SettingsRow's height
             var dragging by remember { mutableStateOf<String?>(null) }
             var dragY by remember { mutableStateOf(0f) }
             state.active.forEachIndexed { i, code ->
                 if (i > 0) GroupDivider()
-                Row(
-                    Modifier.fillMaxWidth().height(56.dp).then(if (dragging == code) Modifier.offset { IntOffset(0, dragY.roundToInt()) }.background(Color.White.copy(alpha = 0.10f)) else Modifier).padding(horizontal = 12.dp).testTag("active-$code"),
-                    verticalAlignment = Alignment.CenterVertically,
+                SettingsRow(
+                    code, null,
+                    Modifier.then(if (dragging == code) Modifier.offset { IntOffset(0, dragY.roundToInt()) }.background(Color.White.copy(alpha = 0.10f)) else Modifier).testTag("active-$code"),
+                    subtitle = if (code == "SAT") stringResource(R.string.settings_currenciesScreen_alwaysActive) else Currencies.displayName(code),
+                    leading = {
+                        if (code == "SAT") LwIcon(L.drawable.lucide_ic_lock, size = 18.dp, tint = Lw.MutedFg)
+                        else Box(Modifier.size(28.dp).pointerInput(state.active) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { dragging = code; dragY = 0f },
+                                onDragEnd = {
+                                    val from = state.active.indexOf(code)
+                                    val to = (from + (dragY / rowPx).roundToInt()).coerceIn(1, state.active.size - 1)
+                                    if (to != from) update(state.active.toMutableList().apply { add(to, removeAt(from)) })
+                                    dragging = null; dragY = 0f
+                                },
+                                onDragCancel = { dragging = null; dragY = 0f },
+                            ) { _, d -> dragY += d.y }
+                        }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_grip_vertical, size = 18.dp, tint = Lw.MutedFg) }
+                    },
                 ) {
-                    if (code == "SAT") LwIcon(L.drawable.lucide_ic_lock, size = 18.dp, tint = Lw.MutedFg)
-                    else Box(Modifier.size(28.dp).pointerInput(state.active) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { dragging = code; dragY = 0f },
-                            onDragEnd = {
-                                val from = state.active.indexOf(code)
-                                val to = (from + (dragY / rowPx).roundToInt()).coerceIn(1, state.active.size - 1)
-                                if (to != from) update(state.active.toMutableList().apply { add(to, removeAt(from)) })
-                                dragging = null; dragY = 0f
-                            },
-                            onDragCancel = { dragging = null; dragY = 0f },
-                        ) { _, d -> dragY += d.y }
-                    }, contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_grip_vertical, size = 18.dp, tint = Lw.MutedFg) }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Txt(code, size = 15.sp, weight = FontWeight.SemiBold)
-                        Txt(if (code == "SAT") stringResource(R.string.settings_currenciesScreen_alwaysActive) else Currencies.displayName(code), size = 12.sp, color = Lw.MutedFg)
-                    }
                     if (code != "SAT") Box(Modifier.size(28.dp).clip(CircleShape).background(Lw.Red.copy(alpha = 0.15f)).clickable { update(state.active - code) }.testTag("remove-$code"), contentAlignment = Alignment.Center) {
                         LwIcon(L.drawable.lucide_ic_minus, size = 16.dp, tint = Lw.Red)
                     }
@@ -534,11 +529,7 @@ private fun PaymentSoundGroup() {
                 "off" to (R.string.settings_paymentSoundScreen_sounds_off_label to R.string.settings_paymentSoundScreen_sounds_off_description),
             ).forEachIndexed { i, (k, labels) ->
                 if (i > 0) GroupDivider()
-                Row(Modifier.fillMaxWidth().clickable { c.prefs.setPaymentSound(k); PaymentSound.play(context, k) }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("sound-$k"), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Txt(stringResource(labels.first), size = 16.sp, weight = FontWeight.Medium)
-                        Txt(stringResource(labels.second), size = 12.sp, color = Lw.MutedFg)
-                    }
+                SettingsRow(stringResource(labels.first), { c.prefs.setPaymentSound(k); PaymentSound.play(context, k) }, Modifier.testTag("sound-$k"), subtitle = stringResource(labels.second)) {
                     RadioButton(sound == k, null, colors = RadioButtonDefaults.colors(selectedColor = LocalBrand.current.t400))
                 }
             }
@@ -671,10 +662,7 @@ fun DiagnosticsScreen() {
                     exits.isEmpty() -> MutedText(stringResource(R.string.diag_exits_empty), Modifier.padding(16.dp))
                     else -> exits.forEachIndexed { i, e ->
                         if (i > 0) GroupDivider()
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).testTag("exit-$i")) {
-                            Txt(e.reason.replace('_', ' ').uppercase(), size = 14.sp, weight = FontWeight.SemiBold, color = if (e.abnormal) Lw.Red else Lw.Foreground)
-                            Txt(Diagnostics.summary(e), size = 12.sp, color = Lw.MutedFg)
-                        }
+                        SettingsRow(e.reason.replace('_', ' ').uppercase(), null, Modifier.testTag("exit-$i"), labelColor = if (e.abnormal) Lw.Red else Lw.Foreground, subtitle = Diagnostics.summary(e))
                     }
                 }
             }

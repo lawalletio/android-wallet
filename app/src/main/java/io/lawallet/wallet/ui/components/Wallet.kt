@@ -16,6 +16,7 @@ import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
 import androidx.compose.animation.Crossfade
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
@@ -77,7 +78,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -206,13 +206,14 @@ private fun ActionItem(icon: Int, label: String, tag: String, enabled: Boolean, 
     }
 }
 
-/** amount-display.tsx — 48sp semibold value + 18sp muted unit. */
+/** amount-display.tsx — semibold value ([size], tagged [figureTag]) + muted unit, sat on the figure's baseline. */
 @Composable
-fun AmountDisplay(value: String, unit: String, modifier: Modifier = Modifier) {
+fun AmountDisplay(value: String, unit: String, modifier: Modifier = Modifier, size: TextUnit = 48.sp, unitSize: TextUnit = 18.sp, figureTag: String = "amount-value") {
+    val gap = (size.value / 6).dp // 8dp at 48sp: the unit's lift to the baseline, and the space before it
     Row(modifier, verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
-        Txt(value, size = 48.sp, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag("amount-value"))
-        Spacer(Modifier.width(8.dp))
-        Txt(unit, Modifier.padding(bottom = 8.dp), size = 18.sp, color = Lw.MutedFg)
+        Txt(value, size = size, weight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.testTag(figureTag))
+        Spacer(Modifier.width(gap))
+        Txt(unit, Modifier.padding(bottom = gap), size = unitSize, color = Lw.MutedFg)
     }
 }
 
@@ -562,14 +563,7 @@ fun PaymentReceiptCard(
             }
             if (rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
                 Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    rows.forEach { (k, v) ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Txt(k, size = 14.sp, color = Lw.MutedFg)
-                            val node = valueNodes[k]
-                            if (node != null) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { node() }
-                            else Txt(v, Modifier.weight(1f), size = 14.sp, align = TextAlign.End, maxLines = 3)
-                        }
-                    }
+                    rows.forEach { (k, v) -> KeyValueRow(k, v, maxLines = 3, content = valueNodes[k]) }
                 }
             }
         }
