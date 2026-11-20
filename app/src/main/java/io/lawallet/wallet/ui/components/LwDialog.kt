@@ -20,6 +20,8 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -64,6 +66,8 @@ fun LwAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = { DialogWindowAnimation(); confirmButton() },
         modifier = modifier
+            // Its own window: tags must be resource ids here too, as at the root, for UiAutomator (baselineprofile).
+            .semantics { testTagsAsResourceId = true }
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .graphicsLayer {

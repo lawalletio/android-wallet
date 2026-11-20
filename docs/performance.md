@@ -60,8 +60,13 @@ slower without them. Use them to compare before/after on the same build type, no
 smooth enough. To check a release build on a phone without losing its data, sign it with the installed app's key
 (see AGENTS.md → Signing and devices).
 
-For controlled, repeatable runs (cold start, onboarding frames) there is also the Macrobenchmark module:
-`./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest`.
+For controlled, repeatable runs (cold start, onboarding and logged-in frames) there is also the Macrobenchmark module:
+`./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest`. The same journeys generate the release baseline
+profile: `./gradlew :app:generateReleaseBaselineProfile`. Both run every connected device, so pin one with
+`ANDROID_SERIAL=<serial>` when a phone is plugged in. The logged-in journey signs in with a throwaway key against
+`FakeInstance`, a stub LaWallet instance on the device that the `.bench` build points at, so no real instance or account
+is involved. Regenerate the profile whenever screens change a lot: code the profile doesn't cover runs interpreted on
+first use.
 
 ## Targets
 
