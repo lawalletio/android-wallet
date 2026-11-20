@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.DialogTitle
 import android.Manifest
 import android.content.ClipboardManager
 import android.content.Intent
@@ -64,7 +65,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,7 +99,6 @@ import io.lawallet.wallet.core.ln.PluginLink
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
-import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.rememberSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.BtnVariant
@@ -244,26 +243,24 @@ fun ScanScreen() {
     foreign?.let { f ->
         LwAlertDialog(
         onDismissRequest = { foreign = null },
-        title = { Txt(stringResource(R.string.scan_differentCommunity), size = 16.sp) },
+        title = { DialogTitle(stringResource(R.string.scan_differentCommunity)) },
         text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
         confirmButton = { ModalAction(stringResource(R.string.scan_openLink), { foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) },
-        containerColor = Glass.Dialog,
     )
     }
 }
 
 /** Square camera preview that reports QR payloads; requests the camera permission itself. */
 @Composable
-fun QrCamera(busy: Boolean, onError: (String?) -> Unit, onCode: (String) -> Unit) {
+fun QrCamera(onError: (String?) -> Unit, onCode: (String) -> Unit) {
     val granted = rememberCameraPermission()
     // The camera (CameraX bind, ML Kit init) starts once the screen has landed: mid-slide it drops frames.
     val settled = rememberSettled()
     Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
         if (granted.value && !settled) Spinner(32.dp)
         else if (granted.value) {
-            CameraFeed(busy, onError, onCode, textureView = false, Modifier.fillMaxSize())
+            CameraFeed(false, onError, onCode, textureView = false, Modifier.fillMaxSize())
             Box(Modifier.fillMaxWidth(0.75f).aspectRatio(1f).border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
-            if (busy) Spinner(32.dp)
         } else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(24.dp)) {
             MutedText(stringResource(R.string.scan_camera_permission), align = TextAlign.Center)
             LwButton(stringResource(R.string.scan_grant), { granted.request() }, variant = BtnVariant.Secondary)

@@ -7,6 +7,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +18,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -48,6 +49,12 @@ object RelayPool {
 
     /** App left: drop sockets nobody listens on (a wallet's notification stream keeps its relay up). */
     fun background() = relays.values.forEach { it.disconnectIfIdle() }
+
+    /** Publishes [event] to every relay in [urls] at once; succeeds when any accepts it, else throws the first error. */
+    suspend fun publishAny(http: OkHttpClient, urls: List<String>, event: NostrEvent, timeoutMs: Long = 10_000) = kotlinx.coroutines.coroutineScope {
+        val results = urls.map { get(it, http) }.map { r -> async { runCatching { r.publish(event, timeoutMs) } } }.awaitAll()
+        if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
+    }
 }
 
 /**

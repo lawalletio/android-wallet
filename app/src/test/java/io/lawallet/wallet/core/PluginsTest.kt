@@ -9,7 +9,7 @@ import io.lawallet.wallet.core.plugin.PluginResolver
 import io.lawallet.wallet.core.plugin.PluginSource
 import io.lawallet.wallet.core.plugin.PluginSourceException
 import io.lawallet.wallet.core.plugin.hostAllowed
-import io.lawallet.wallet.ui.screens.withPlugins
+import io.lawallet.wallet.app.withPlugins
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse

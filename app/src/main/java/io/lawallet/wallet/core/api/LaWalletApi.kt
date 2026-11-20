@@ -11,7 +11,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -84,8 +83,6 @@ class LaWalletApi(
     /** Mints a fresh 24h JWT with the current signer. */
     suspend fun login(): String = mintLock.withLock { mint() }
 
-    fun hasSession() = tokenStore.load() != null
-    fun logout() = tokenStore.save(null)
 
     private suspend fun mint(): String {
         val signer = signerProvider() ?: throw ApiException(401, "Not signed in")
@@ -300,7 +297,7 @@ class LaWalletApi(
     }
 
     companion object {
-        val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
+        val json = io.lawallet.wallet.core.apiJson
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
         /** The API's own path words; any other segment (ids, usernames, keys) is logged as `:id`. */
         private val PATH_WORDS = setOf(

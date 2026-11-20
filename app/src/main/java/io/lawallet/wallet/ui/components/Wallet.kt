@@ -740,11 +740,6 @@ fun PaymentNoticePill(type: String, amountSats: Long, haze: HazeState?, modifier
     }
 }
 
-/** A full-height screen column with the standard 16dp gutters. */
-@Composable
-fun ScreenColumn(modifier: Modifier = Modifier, padding: PaddingValues = PaddingValues(horizontal = 16.dp), content: @Composable ColumnScope.() -> Unit) =
-    Column(modifier.fillMaxSize().padding(padding), content = content)
-
 @Composable
 fun AspectCard(url: String?, modifier: Modifier = Modifier) {
     // Drawn drop shadow: an elevation shadow() under translucent glass rendered as dark

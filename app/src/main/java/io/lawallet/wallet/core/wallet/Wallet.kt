@@ -45,6 +45,19 @@ interface Wallet {
     suspend fun lookupInvoice(paymentHash: String): NwcTransaction =
         decode(request("lookup_invoice", buildJsonObject { put("payment_hash", paymentHash) }))
 
+    /**
+     * Polls [lookupInvoice] until [paymentHash] settles or [timeoutMs] passes: for payments the other side finishes
+     * on its own time (an LNURL withdraw, a Cashu melt) when the wallet may never notify. True once settled.
+     */
+    suspend fun awaitSettled(paymentHash: String, timeoutMs: Long = 45_000, everyMs: Long = 3_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            kotlinx.coroutines.delay(everyMs)
+            if (runCatching { lookupInvoice(paymentHash).settledAt != null }.getOrDefault(false)) return true
+        }
+        return false
+    }
+
     suspend fun listTransactions(limit: Int? = null, from: Long? = null, until: Long? = null, type: String? = null): List<NwcTransaction> =
         decode<TxList>(request("list_transactions", buildJsonObject {
             if (limit != null) put("limit", limit)

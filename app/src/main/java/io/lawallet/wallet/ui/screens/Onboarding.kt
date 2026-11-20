@@ -1,8 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.app.Activity
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +25,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
@@ -38,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
@@ -81,7 +79,6 @@ import com.airbnb.lottie.compose.rememberLottieAnimatable
 import com.airbnb.lottie.compose.rememberLottieComposition
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
@@ -305,20 +302,6 @@ fun LoginScreen() {
         }
     }
 }
-
-@Composable
-fun lwFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = LocalBrand.current.t400, unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-    focusedContainerColor = Color.White.copy(alpha = 0.06f), unfocusedContainerColor = Color.White.copy(alpha = 0.04f),
-    cursorColor = Lw.Foreground, focusedTextColor = Lw.Foreground, unfocusedTextColor = Lw.Foreground,
-    focusedPlaceholderColor = Lw.MutedFg, unfocusedPlaceholderColor = Lw.MutedFg,
-    // Fields are disabled while their form submits: still readable, visibly on hold.
-    disabledTextColor = Lw.Foreground.copy(alpha = 0.55f), disabledBorderColor = Color.White.copy(alpha = 0.06f),
-    disabledContainerColor = Color.White.copy(alpha = 0.02f), disabledPlaceholderColor = Lw.MutedFg.copy(alpha = 0.5f),
-    disabledLabelColor = Lw.MutedFg.copy(alpha = 0.6f), disabledPrefixColor = Lw.MutedFg.copy(alpha = 0.6f),
-    disabledSuffixColor = Lw.MutedFg.copy(alpha = 0.6f), disabledSupportingTextColor = Lw.MutedFg.copy(alpha = 0.6f),
-    disabledTrailingIconColor = Lw.MutedFg.copy(alpha = 0.5f),
-)
 
 @Composable
 fun NostrLoginScreen() {

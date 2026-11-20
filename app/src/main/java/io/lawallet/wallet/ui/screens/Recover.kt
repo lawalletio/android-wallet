@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,7 +44,6 @@ import io.lawallet.wallet.ui.components.LwCard
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Txt
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
 import kotlinx.coroutines.launch
@@ -83,7 +81,6 @@ fun RecoverMergeDialog(existing: RecoverySide, incoming: RecoverySide, onConfirm
         confirmButton = {
             ModalAction(stringResource(R.string.activate_recover_merge_confirm), onConfirm, Modifier.testTag("recover-merge-confirm"))
         },
-        containerColor = Glass.Dialog,
     )
 }
 
@@ -227,6 +224,5 @@ fun AccountTransferredDialog(transfer: AccountTransfer) {
                 }
             }, Modifier.testTag("account-transfer-dismiss"), enabled = !busy)
         },
-        containerColor = Glass.Dialog,
     )
 }

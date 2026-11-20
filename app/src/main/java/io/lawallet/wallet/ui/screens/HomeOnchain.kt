@@ -1,5 +1,9 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.Pill
+import io.lawallet.wallet.ui.components.TextPrompt
+import io.lawallet.wallet.ui.components.DialogTitle
+import io.lawallet.wallet.ui.components.LwBottomSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -32,16 +36,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -90,7 +91,6 @@ import io.lawallet.wallet.ui.components.ModalAction
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.holdProgress
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
@@ -370,12 +370,7 @@ private fun OnchainActionsSheet(w: OnchainWallet, onDismiss: () -> Unit, onDetai
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
-        modifier = Modifier.testTag("onchain-wallet-menu"),
-    ) {
+    LwBottomSheet(onDismiss, "onchain-wallet-menu", state) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             OnchainMark(w, 52)
             Spacer(Modifier.width(14.dp))
@@ -396,8 +391,8 @@ private fun OnchainActionsSheet(w: OnchainWallet, onDismiss: () -> Unit, onDetai
 /** Removing a wallet that holds keys says what's at stake; a watch-only one is easy to bring back. */
 @Composable
 internal fun RemoveOnchainDialog(w: OnchainWallet, onDismiss: () -> Unit, onConfirm: () -> Unit) = LwAlertDialog(
-    onDismissRequest = onDismiss, containerColor = Glass.Dialog,
-    title = { Txt(w.name, size = 17.sp, weight = FontWeight.SemiBold) },
+    onDismissRequest = onDismiss,
+    title = { DialogTitle(w.name) },
     text = {
         Txt(
             stringResource(when { w.watchOnly -> R.string.onchain_remove_watch; !w.backedUp -> R.string.onchain_remove_notBackedUp; else -> R.string.onchain_remove_seed }),

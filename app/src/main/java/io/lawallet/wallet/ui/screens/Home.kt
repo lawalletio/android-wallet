@@ -1,5 +1,10 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.TextPrompt
+import io.lawallet.wallet.ui.components.toastError
+import io.lawallet.wallet.ui.components.ConfirmDialog
+import io.lawallet.wallet.ui.components.DialogTitle
+import io.lawallet.wallet.app.withPlugins
 import io.lawallet.wallet.core.nwc.Lncurl
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.chrisbanes.haze.hazeSource
@@ -13,14 +18,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.material3.HorizontalDivider
 import io.lawallet.wallet.ui.theme.LocalHaze
 import io.lawallet.wallet.ui.theme.frosted
 import io.lawallet.wallet.ui.components.WalletMark
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.annotation.DrawableRes
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.ui.layout.onSizeChanged
 import io.lawallet.wallet.core.api.WalletAddress
 import androidx.compose.foundation.gestures.draggable
@@ -61,7 +64,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.contentDescription
-import io.lawallet.wallet.ui.theme.Prism
 import kotlin.math.abs
 import io.lawallet.wallet.ui.theme.Inter
 import androidx.compose.ui.text.TextStyle
@@ -103,24 +105,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -146,8 +143,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -161,7 +156,6 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.lawallet.wallet.ui.components.rememberAddressProfile
 import io.lawallet.wallet.R
-import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.ui.LocalContainer
@@ -173,11 +167,9 @@ import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.LoadingDots
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.LocalBrand
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
@@ -247,7 +239,6 @@ internal class HomePages {
     var width by mutableFloatStateOf(0f)
     /** The activity panel's rise, blended across the swipe: what the fixed header and dots fade with. */
     fun sheetAt(position: Float) = blend(position) { sheet[it]?.progress ?: 0f }
-    fun revealAt(position: Float) = blend(position) { reveal[it]?.progress ?: 0f }
     private inline fun blend(position: Float, v: (Int) -> Float) = (0 until PAGES).sumOf { (HomePager.weight(it, position) * v(it)).toDouble() }.toFloat()
 }
 
@@ -643,9 +634,9 @@ private fun HomeHeader(intro: Boolean, pages: HomePages) {
         // Hold an address in the switcher: its actions sheet, as on the addresses screen.
         if (address != null) menuFor?.let { a ->
             val domain = address.substringAfter('@')
-            AddressMenu(a, "${a.username}@$domain", c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty(), { block ->
+            AddressMenu(a, "${a.username}@$domain", c.remoteWallets.cached.orEmpty(), { block ->
                 scope.launch {
-                    runCatching { block() }.onFailure { context.toast(it.message ?: "") }
+                    runCatching { block() }.onFailure { context.toastError(it) }
                     c.wallet.refreshAddresses(); runCatching { c.session.refreshMe() }
                 }
             }) { menuFor = null }
@@ -674,7 +665,7 @@ internal fun addressKind(a: WalletAddress, wallets: List<RemoteWallet>?): Addres
     "ALIAS", "PROXY_ALIAS" -> AddressKind.FORWARD
     "CUSTOM_NWC" -> when {
         wallets == null -> AddressKind.NWC
-        else -> wallets.find { it.id == a.remoteWalletId && it.status == "ACTIVE" }?.let { if (it.provider == "lncurl") AddressKind.LNCURL else AddressKind.NWC } ?: AddressKind.IDLE
+        else -> wallets.find { it.id == a.remoteWalletId && it.isActive }?.let { if (it.isLncurl) AddressKind.LNCURL else AddressKind.NWC } ?: AddressKind.IDLE
     }
     else -> AddressKind.IDLE
 }
@@ -713,7 +704,7 @@ private fun BoxScope.AddressPicker(open: Boolean, onDismiss: () -> Unit, list: L
     val haze = LocalHaze.current
     val primaryLabel = stringResource(R.string.remoteWallets_list_primary)
     // Re-read on open and kept through the closing animation (dropping it there flashed LNCurl marks as NWC).
-    val wallets = remember(open) { c.prefs.cached("remote-wallets", remoteWalletsSer) }
+    val wallets = remember(open) { c.remoteWallets.cached }
     BackHandler(open, onDismiss)
     val shape = RoundedCornerShape(24.dp)
     // Under the pill (the header row's 12dp top + 44dp pill + a gap), inset like the pill, and as tall as it needs up to
@@ -957,7 +948,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     reveal.bottomReserve = with(density) { 158.dp.toPx() } // floating tab bar (~110dp) plus breathing room
     reveal.minTravel = with(density) { 48.dp.toPx() }
     val open by remember { derivedStateOf { reveal.open } }
-    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer)) }
+    var wallets by remember { mutableStateOf(c.remoteWallets.cached) }
     val newWallet = rememberNewWallet()
     val walletBalances = rememberWalletBalances() // cached figures first, then live
     // Plugin wallets join the server's list as cards of their own (`plugin:<id>`): listed only, never the primary.
@@ -1000,7 +991,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
             c.wallet.active.first { it }
             // One round at a time: a slow wallet (reads time out at 20–45 s) mustn't pile up reads, each holding a thread.
             kotlinx.coroutines.coroutineScope {
-                currentDeck.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+                currentDeck.orEmpty().filter { it.isActive }.forEach { w ->
                     launch { readWalletBalance(c, w.id, walletBalances) }
                 }
             }
@@ -1008,7 +999,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     }
     // A payment on the main connection (NWC notification) re-reads the primary card at once, from its own endpoint.
     LaunchedEffect(open, balance) {
-        val primary = deck?.firstOrNull { it.isDefault && it.status == "ACTIVE" } ?: return@LaunchedEffect
+        val primary = deck?.firstOrNull { it.isDefault && it.isActive } ?: return@LaunchedEffect
         if (open && walletBalances.containsKey(primary.id)) readWalletBalance(c, primary.id, walletBalances)
     }
     // Sweep: hold a wallet → "Sweep funds" → pick the destination among the others (Cancel or back leaves).
@@ -1054,7 +1045,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val detached = forwardTo != null || unlinked
     // The wallet in use, shown as a pill in the balance label's place (none for a free or alias address): tap opens
     // the list, hold its menu; opening the list morphs it into that wallet's card.
-    val pillWallet = if (detached) null else deck?.let { ws -> if (picked == null) ws.find { it.isDefault && it.status == "ACTIVE" } else ws.find { it.id == shownWallet } }
+    val pillWallet = if (detached) null else deck?.let { ws -> if (picked == null) ws.find { it.isDefault && it.isActive } else ws.find { it.id == shownWallet } }
     // The address in use, locked to its wallet: the list then shows only that wallet (a free or alias one has none to lock).
     val lockedAddresses by c.prefs.lockedAddresses.collectAsState()
     val lockUser = if (detached) null else (picked?.username ?: addressList.find { it.isPrimary }?.username)
@@ -1102,7 +1093,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                revert(); heldBalance = null; context.toast(e.message ?: "")
+                revert(); heldBalance = null; context.toastError(e)
             }
         }
     }
@@ -1127,7 +1118,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                 { c.session.api.value.updateRemoteWallet(w.id, isDefault = true) },
                 {
                     c.prefs.notePrimary(w.id)
-                    wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                    wallets?.let { c.remoteWallets.cache(it) }
                     runCatching { c.session.refreshMe() }
                 },
                 { wallets = savedWallets },
@@ -1337,33 +1328,29 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           )
       }
       confirmLink?.let { w ->
-          LwAlertDialog(
-              onDismissRequest = { confirmLink = null },
-              text = { Txt(stringResource(R.string.home_aliasToWallet, forwardTo.orEmpty())) },
-              confirmButton = { ModalAction(stringResource(R.string.home_aliasToWallet_confirm), { confirmLink = null; linkPicked(w) }) },
-              modifier = Modifier.testTag("home-alias-to-wallet"),
+          ConfirmDialog(
+              stringResource(R.string.home_aliasToWallet, forwardTo.orEmpty()), stringResource(R.string.home_aliasToWallet_confirm), { confirmLink = null; linkPicked(w) }, { confirmLink = null },
+              Modifier.testTag("home-alias-to-wallet"),
           )
       }
-      if (freeing && picked != null) LwAlertDialog(
-          onDismissRequest = { freeing = false },
-          title = { Txt(stringResource(R.string.home_freeAddress_title, picked.username)) },
-          text = { Txt(stringResource(R.string.home_freeAddress_text)) },
-          confirmButton = { ModalAction(stringResource(R.string.home_freeAddress), {
+      if (freeing && picked != null) ConfirmDialog(
+          stringResource(R.string.home_freeAddress_text), stringResource(R.string.home_freeAddress), onDismiss = { freeing = false },
+          title = stringResource(R.string.home_freeAddress_title, picked.username), destructive = true, onConfirm = {
               freeing = false
               scope.launch {
                   runCatching { c.session.api.value.freeAddress(picked.username) }
-                      .onSuccess { c.wallet.refreshAddresses() }.onFailure { context.toast(it.message ?: "") }
+                      .onSuccess { c.wallet.refreshAddresses() }.onFailure { context.toastError(it) }
               }
-          }, destructive = true) },
+          },
       )
       // Optimistic: the card shows the new name at once; a failed save puts the old one back.
       val renameWallet: (RemoteWallet, String) -> Unit = { w, name ->
           val before = wallets
           wallets = wallets?.map { if (it.id == w.id) it.copy(name = name) else it }
           scope.launch {
-              runCatching { withFreeName(c, name) { n -> c.session.api.value.updateRemoteWallet(w.id, name = n) } }
-                  .onSuccess { saved -> wallets = wallets?.map { if (it.id == w.id) it.copy(name = saved.name) else it }; wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) } }
-                  .onFailure { wallets = before; context.toast(it.message ?: "") }
+              runCatching { c.remoteWallets.withFreeName(name) { n -> c.session.api.value.updateRemoteWallet(w.id, name = n) } }
+                  .onSuccess { saved -> wallets = wallets?.map { if (it.id == w.id) it.copy(name = saved.name) else it }; wallets?.let { c.remoteWallets.cache(it) } }
+                  .onFailure { wallets = before; context.toastError(it) }
           }
       }
       WalletsReveal(
@@ -1381,7 +1368,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                   val provider = c.prefs.lncurlProvider ?: Lncurl.DEFAULT
                   val name = unlinkedPickedAddress(c)
                   // Named automatically so it's instant; once it exists, Home asks for a name (prefilled).
-                  addWalletOptimistic(c, context.applicationContext, name ?: Lncurl.host(provider), lncurl = true, askName = true) { createLncurl(c, provider, name, it) }
+                  addWalletOptimistic(c, context.applicationContext, name ?: Lncurl.host(provider), lncurl = true, askName = true) { c.remoteWallets.createLncurl(provider, name, it) }
               } else nav.navigate(R0.addRemoteWallet(step))
           },
           newWalletId = newWallet,
@@ -1396,7 +1383,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           onTransfer = { w -> scope.launch { nav.navigate(startSend(c, Destination.Wallet(w.id, w.name))) } },
           onWithdraw = pillWallet?.let { active -> { w -> nav.navigate(startWithdraw(c, from = w, to = active)) } },
           // A plugin can only be withdrawn from when it pays (its manifest lists pay_invoice).
-          canWithdraw = { w -> pluginOf(w.id)?.let { id -> "pay_invoice" in c.plugins.get(id)?.manifest?.wallet?.methods.orEmpty() } ?: true },
+          canWithdraw = { w -> RemoteWallet.pluginIdOf(w.id)?.let { id -> "pay_invoice" in c.plugins.get(id)?.manifest?.wallet?.methods.orEmpty() } ?: true },
           onRename = { w, name -> if (!w.isPlugin) renameWallet(w, name) },
           leaving = leaving,
           deltas = deltas,
@@ -1429,33 +1416,31 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           }
       }
       sweepFirst?.let { (w, bal) ->
-          LwAlertDialog(
-              onDismissRequest = { sweepFirst = null },
-              title = { Txt(stringResource(R.string.rw_delete)) },
-              text = { Txt(stringResource(R.string.rw_delete_sweepFirst, Currencies.formatSats(bal))) },
-              confirmButton = { ModalAction(stringResource(R.string.sweep_menu), { sweepFirst = null; Sweeps.deleteAfter = w.id; sweepFrom = w.id }) },
+          ConfirmDialog(
+              stringResource(R.string.rw_delete_sweepFirst, Currencies.formatSats(bal)), stringResource(R.string.sweep_menu), { sweepFirst = null; Sweeps.deleteAfter = w.id; sweepFrom = w.id }, { sweepFirst = null },
+              title = stringResource(R.string.rw_delete),
           )
       }
       // The wallet in use is a disposable LNCurl one that stopped answering: offer to regenerate it (once per wallet).
       val silent by c.wallet.walletSilent.collectAsState()
       val inUse = deck?.let { ws -> if (picked != null) ws.find { it.id == shownWallet } else ws.find { it.isDefault } }
-      inUse?.takeIf { silent && current && it.provider == "lncurl" && it.lncurlServerUrl != null && it.id !in regenSkipped }?.let { w ->
+      inUse?.takeIf { silent && current && it.isLncurl && it.lncurlServerUrl != null && it.id !in regenSkipped }?.let { w ->
           LwAlertDialog(
               onDismissRequest = { if (!regenerating) regenSkipped = regenSkipped + w.id },
-              title = { Txt(stringResource(R.string.rw_regen_title)) },
+              title = { DialogTitle(stringResource(R.string.rw_regen_title)) },
               text = { Txt(stringResource(R.string.rw_regen_text, w.name, Lncurl.host(w.lncurlServerUrl!!))) },
               confirmButton = {
                   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                       ModalAction(stringResource(R.string.rw_regen), {
                           regenerating = true
                           scope.launch {
-                              runCatching { regenerateLncurlWallet(c, w) }
+                              runCatching { c.remoteWallets.regenerateLncurl(w) }
                                   .onSuccess { id ->
                                       regenSkipped = regenSkipped + w.id + id // the new one still reads silent until it connects
                                       fetchRemoteWallets(c, { wallets = it }, walletBalances)
                                       context.toast(regenDone)
                                   }
-                                  .onFailure { context.toast(it.message ?: "") }
+                                  .onFailure { context.toastError(it) }
                               regenerating = false
                           }
                       }, loading = regenerating, destructive = true)
@@ -1465,11 +1450,8 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
           )
       }
       deleting?.let { w ->
-          LwAlertDialog(
-              onDismissRequest = { deleting = null },
-              title = { Txt(w.name) },
-              text = { Txt(stringResource(R.string.rw_delete_confirm)) },
-              confirmButton = { ModalAction(stringResource(R.string.rw_delete), {
+          ConfirmDialog(
+              stringResource(R.string.rw_delete_confirm), stringResource(R.string.rw_delete), onDismiss = { deleting = null }, title = w.name, destructive = true, onConfirm = {
                   deleting = null
                   val before = wallets
                   // The card folds away at once (the rest close over it), and leaves the list once it has.
@@ -1480,16 +1462,16 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                           // A just-added wallet's card goes with it (else the list would put it back as still being added).
                           c.flow.pendingWallet.update { p -> if (p?.created?.id == w.id) null else p }
                       }
-                      runCatching { c.session.api.value.deleteRemoteWallet(w.id, permanent = w.status != "ACTIVE") }
+                      runCatching { c.session.api.value.deleteRemoteWallet(w.id, permanent = !w.isActive) }
                           .onSuccess {
                               fold.join()
-                              wallets = wallets?.let { ensurePrimary(c, it) } // deleting the primary hands it on
-                              wallets?.let { c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+                              wallets = wallets?.let { c.remoteWallets.ensurePrimary(it) } // deleting the primary hands it on
+                              wallets?.let { c.remoteWallets.cache(it) }
                               runCatching { c.session.refreshMe() }
                           }
-                          .onFailure { fold.cancel(); leaving = leaving - w.id; wallets = before; context.toast(it.message ?: "") }
+                          .onFailure { fold.cancel(); leaving = leaving - w.id; wallets = before; context.toastError(it) }
                   }
-              }, destructive = true) },
+              },
           )
       }
       SideEffect { reveal.hero = pillWallet != null }
@@ -1612,9 +1594,8 @@ fun RelayBadge(hasCached: Boolean, error: String, onRetry: () -> Unit) {
     }
     if (open) LwAlertDialog(
         onDismissRequest = { open = false },
-        title = { Txt(stringResource(R.string.shared_relay_title), weight = FontWeight.SemiBold, size = 16.sp) },
+        title = { DialogTitle(stringResource(R.string.shared_relay_title)) },
         text = { Txt(if (error.contains("time", true)) stringResource(R.string.shared_relay_timeout) else stringResource(R.string.shared_relay_generic), color = Lw.MutedFg) },
         confirmButton = { ModalAction(stringResource(R.string.common_retry), { open = false; onRetry() }) },
-        containerColor = Glass.Dialog,
     )
 }

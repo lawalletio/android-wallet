@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.SettingsPage
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.SettingsSwitchRow
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
@@ -25,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,7 +57,6 @@ import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.SettingsGroup
-import io.lawallet.wallet.ui.components.SettingsRow
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.theme.LocalBrand
@@ -103,7 +104,7 @@ fun LockingScreen() {
 
 @Composable
 private fun LockToggle(label: Int, tag: String, checked: Boolean, onChange: (Boolean) -> Unit) =
-    SettingsRow(stringResource(label), { onChange(!checked) }) { Switch(checked, onChange, Modifier.testTag(tag), colors = lwSwitchColors()) }
+    SettingsSwitchRow(stringResource(label), checked, onChange, switchModifier = Modifier.testTag(tag))
 
 /**
  * Covers the app while [AppLock.locked]; asks at once ([prompt]) and again from the button. The system prompt is a

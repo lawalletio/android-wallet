@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.nfc.NfcAdapter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -67,11 +68,8 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
-import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter

@@ -5,7 +5,6 @@ import androidx.core.content.edit
 import io.lawallet.wallet.core.diag.Trail
 import io.lawallet.wallet.core.nostr.sha256
 import io.lawallet.wallet.core.nostr.toHex
-import io.lawallet.wallet.core.wallet.Wallet
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -55,7 +53,7 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
     private val sp = context.getSharedPreferences("plugins", Context.MODE_PRIVATE)
     private val dir = File(context.filesDir, "plugins")
     private val http = http
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
     private val ser = ListSerializer(InstalledPlugin.serializer())
     val resolver = PluginResolver(http)
 

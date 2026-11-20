@@ -24,7 +24,6 @@ import io.lawallet.wallet.core.api.LaWalletApi
 import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.NostrEvent
 import io.lawallet.wallet.core.nostr.randomBytes
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull

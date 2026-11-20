@@ -1,5 +1,6 @@
 package io.lawallet.wallet.app
 
+import io.lawallet.wallet.core.nostr.toHex
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -27,7 +28,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -259,7 +259,7 @@ class Updater(private val context: Context, private val http: OkHttpClient) {
         private const val PLAY_STORE = "com.android.vending"
         private const val RELEASES_PAGE = "https://github.com/lawalletio/android-wallet/releases/latest"
         private const val SUMS = "SHA256SUMS.txt"
-        private val json = Json { ignoreUnknownKeys = true }
+        private val json = io.lawallet.wallet.core.relaxedJson
 
         /** "1.0.10" > "1.0.9"; anything after '-' (CI's "0.0.0-abc1234") is ignored. */
         fun isNewer(candidate: String, current: String): Boolean {
@@ -287,7 +287,7 @@ class Updater(private val context: Context, private val http: OkHttpClient) {
         private fun sha256(f: File): String {
             val md = MessageDigest.getInstance("SHA-256")
             f.inputStream().use { input -> val buf = ByteArray(64 * 1024); while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n) } }
-            return md.digest().joinToString("") { "%02x".format(it) }
+            return md.digest().toHex()
         }
 
         private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->

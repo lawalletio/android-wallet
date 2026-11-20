@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.ConfirmDialog
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,8 +48,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import io.lawallet.wallet.ui.components.LwAlertDialog
-import io.lawallet.wallet.ui.components.ModalAction
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -99,7 +99,6 @@ import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.decodeForCrop
 import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.sharedAvatar
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
@@ -319,19 +318,14 @@ fun ProfileScreen() {
         )
     }
 
-    if (nostrOnly) LwAlertDialog(
-        onDismissRequest = { nostrOnly = false },
-        confirmButton = { ModalAction(stringResource(R.string.common_ok), { nostrOnly = false }) },
-        title = { Txt(stringResource(R.string.profile_nostrOnly_title), weight = FontWeight.SemiBold) },
-        text = { Txt(stringResource(R.string.profile_nostrOnly_body)) },
-        containerColor = Glass.Dialog,
+    if (nostrOnly) ConfirmDialog(
+        stringResource(R.string.profile_nostrOnly_body), stringResource(R.string.common_ok), { nostrOnly = false }, { nostrOnly = false },
+        title = stringResource(R.string.profile_nostrOnly_title),
     )
 
-    if (confirmLogout) LwAlertDialog(
-        onDismissRequest = { confirmLogout = false },
-        confirmButton = { ModalAction(stringResource(R.string.home_logOut), { confirmLogout = false; c.session.logout() }, destructive = true) },
-        text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
-        containerColor = Glass.Dialog,
+    if (confirmLogout) ConfirmDialog(
+        stringResource(R.string.settings_removeWalletConfirm), stringResource(R.string.home_logOut), { confirmLogout = false; c.session.logout() }, { confirmLogout = false },
+        destructive = true,
     )
 }
 

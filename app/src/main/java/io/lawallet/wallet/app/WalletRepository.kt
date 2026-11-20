@@ -32,7 +32,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 
 /** UI transaction (transactions.ts `NwcTransactionItem`): sats + milliseconds. */
@@ -93,7 +92,7 @@ class WalletRepository(
     private val scope: CoroutineScope,
 ) {
     private companion object { const val SWITCH_DEBOUNCE_MS = 400L }
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
     private val _client = MutableStateFlow<Wallet?>(null)
     val client: StateFlow<Wallet?> = _client
     private var nwcKey: String? = null
@@ -188,7 +187,7 @@ class WalletRepository(
         return runCatching {
             val api = session.api.value
             // A backend-custody wallet's connection never comes to the phone: it can't be the one the app uses.
-            val wallet = api.remoteWallets().filter { it.status == "ACTIVE" && it.type == "NWC" && it.custody != Custody.BACKEND }
+            val wallet = api.remoteWallets().filter { it.isActive && it.type == "NWC" && it.custody != Custody.BACKEND }
                 .sortedByDescending { it.isDefault }.firstOrNull() ?: return null
             api.remoteWalletConnectionString(wallet.id)
         }.fold(

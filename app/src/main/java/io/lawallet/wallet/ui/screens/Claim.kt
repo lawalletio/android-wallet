@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -93,7 +94,6 @@ import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.autoFocus
 import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.LwButton
-import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.QrDisplay
 import io.lawallet.wallet.ui.components.ScreenHeader
@@ -433,10 +433,10 @@ private fun CacheDrawScope.lightning(clock: Animatable<Float, *>, t400: Color, t
 internal suspend fun provisionLncurl(c: io.lawallet.wallet.app.AppContainer, username: String) {
     val api = c.session.api.value
     runCatching {
-        val hasPrimary = api.remoteWallets().any { it.isDefault && it.status == "ACTIVE" }
+        val hasPrimary = api.remoteWallets().any { it.isDefault && it.isActive }
         val w = api.createLncurlWallet(name = username, isDefault = !hasPrimary)
         api.routeAddressToWallet(username, w.id)
         // Into the cached list Home reads: without it Home showed the address as free until the list reloaded.
-        cacheCreatedWallet(c, w)
+        c.remoteWallets.upsert(w)
     }
 }

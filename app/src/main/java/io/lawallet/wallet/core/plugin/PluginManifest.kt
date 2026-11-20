@@ -1,7 +1,6 @@
 package io.lawallet.wallet.core.plugin
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** `manifest.json` of a plugin. Contract: docs/plugin-api.md. */
@@ -33,7 +32,7 @@ data class PluginManifest(
         const val API = 1
         const val MIN_POLL_SEC = 15
         private val ID = Regex("^[a-z0-9]+(\\.[a-z0-9-]+)+$")
-        private val json = Json { ignoreUnknownKeys = true }
+        private val json = io.lawallet.wallet.core.relaxedJson
 
         /** Parses and validates; null when the manifest isn't one this app can run. */
         fun parse(text: String): PluginManifest? = runCatching { json.decodeFromString(serializer(), text) }.getOrNull()?.takeIf { it.valid() }

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.content.Intent
 import android.util.Patterns
 import androidx.activity.compose.BackHandler

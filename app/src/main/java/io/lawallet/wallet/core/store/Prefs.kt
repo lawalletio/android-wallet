@@ -11,7 +11,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
 
 @Serializable data class CurrencyState(val active: List<String> = Currencies.DEFAULT_ACTIVE, val selected: String = Currencies.DEFAULT_SELECTED, val localEdit: Boolean = false)
 /** What we knew about a Lightning Address send at pay time (payment-destinations.ts) — NWC only returns the invoice description. */
@@ -25,7 +24,7 @@ import kotlinx.serialization.json.Json
 /** Small typed wrapper over SharedPreferences — the Android twin of the web wallet's localStorage keys. */
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("lawallet", Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
 
     var instanceUrl: String
         get() = sp.getString("instance", null) ?: BuildConfig.DEFAULT_INSTANCE

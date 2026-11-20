@@ -1,6 +1,5 @@
 package io.lawallet.wallet.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -48,10 +46,7 @@ import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** withdraw-screen.tsx — LUD-03: mint an invoice via NWC, hand it to the voucher's callback, watch it settle. */
@@ -105,11 +100,7 @@ fun WithdrawScreen() {
                 AmountDisplay(keypadDisplay(raw, "SAT"), "sats")
                 MutedText(if (fixed) stringResource(R.string.withdraw_fixedAmount) else stringResource(R.string.withdraw_range, Currencies.formatSats(p.minSats), Currencies.formatSats(p.maxSats)))
             }
-            if (client == null) Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp)).padding(16.dp)) {
-                Txt(stringResource(R.string.withdraw_noWallet), weight = FontWeight.Medium)
-                MutedText(stringResource(R.string.withdraw_noWalletBody), size = 12.sp)
-                LwButton(stringResource(R.string.withdraw_manageWallets), { nav.navigate(R0.REMOTE_WALLETS) }, Modifier.padding(top = 12.dp), BtnVariant.Secondary, height = 36.dp)
-            }
+            if (client == null) NoWalletCard()
             if (!fixed) AmountKeypad(raw, { raw = it }, Currencies.keypadMode("SAT"), Modifier.weight(1f).fillMaxWidth()) else Box(Modifier.weight(1f))
             ErrorText(error, Modifier.fillMaxWidth())
         }
@@ -123,13 +114,7 @@ fun WithdrawScreen() {
                         val inv = nwc.makeInvoice(amount * 1000, p.defaultDescription.ifBlank { "LNURL withdraw" })
                         phase = "claiming"
                         c.lnurl.submitWithdraw(p.callback, p.k1, inv.invoice ?: error("no invoice"))
-                        val deadline = System.currentTimeMillis() + 45_000
-                        var settled = false
-                        while (!settled && System.currentTimeMillis() < deadline) {
-                            delay(3000)
-                            settled = runCatching { nwc.lookupInvoice(inv.paymentHash).settledAt != null }.getOrDefault(false)
-                        }
-                        settled
+                        nwc.awaitSettled(inv.paymentHash)
                     }.onSuccess { settled ->
                         phase = if (settled) "won" else "pending"
                         PaymentSound.play(context, "chime")
@@ -147,4 +132,15 @@ private fun backToOrigin(nav: androidx.navigation.NavHostController) {
     if (nav.previousBackStackEntry == null) return nav.goHome()
     nav.popBackStack(R0.WITHDRAW, inclusive = true)
     if (nav.currentDestination?.route == R0.SCAN && nav.previousBackStackEntry != null) nav.popBackStack()
+}
+
+/** No wallet to receive into (Withdraw, Cashu): says so, with the way to add one. */
+@Composable
+internal fun NoWalletCard() {
+    val nav = LocalNav.current
+    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp)).padding(16.dp)) {
+        Txt(stringResource(R.string.withdraw_noWallet), weight = FontWeight.Medium)
+        MutedText(stringResource(R.string.withdraw_noWalletBody), size = 12.sp)
+        LwButton(stringResource(R.string.withdraw_manageWallets), { nav.navigate(R0.REMOTE_WALLETS) }, Modifier.padding(top = 12.dp), BtnVariant.Secondary, height = 36.dp)
+    }
 }

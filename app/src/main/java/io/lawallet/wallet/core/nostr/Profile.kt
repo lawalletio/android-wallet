@@ -3,10 +3,8 @@ package io.lawallet.wallet.core.nostr
 import io.lawallet.wallet.core.nwc.Relay
 import io.lawallet.wallet.core.nwc.RelayPool
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.merge
@@ -82,11 +80,7 @@ object Profiles {
     /** Signs [content] as kind 0 and publishes it; succeeds when any relay accepts. */
     suspend fun publish(http: OkHttpClient, signer: Signer, content: JsonObject, relays: List<String> = RELAYS): NostrEvent {
         val event = signer.sign(0, content.toString(), emptyList())
-        coroutineScope {
-            val conns = relays.map { RelayPool.get(it, http) }
-            val results = conns.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
-            if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
-        }
+        RelayPool.publishAny(http, relays, event)
         return event
     }
 }

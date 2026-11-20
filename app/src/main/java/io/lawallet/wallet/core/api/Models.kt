@@ -104,6 +104,18 @@ data class RemoteWallet(
 ) {
     /** Who holds this wallet's credentials. The instance's own wallets (NWC, LNCurl) are [Custody.BOTH] unless it says otherwise. */
     val custody: Custody get() = Custody.entries.find { it.name.equals(custodyName, ignoreCase = true) } ?: Custody.BOTH
+    val isActive: Boolean get() = status == "ACTIVE"
+    /** A disposable LNCurl wallet (the instance's or one minted here), as opposed to a plain NWC connection. */
+    val isLncurl: Boolean get() = provider == "lncurl"
+    /** A wallet plugin's card in the deck (local, never on LaWallet): id `plugin:<plugin id>`, provider = plugin id. */
+    val isPlugin: Boolean get() = type == PLUGIN
+
+    companion object {
+        const val PLUGIN = "PLUGIN"
+        const val PLUGIN_PREFIX = "plugin:"
+        /** The plugin id behind a deck card id, or null for a LaWallet wallet. */
+        fun pluginIdOf(walletId: String) = walletId.takeIf { it.startsWith(PLUGIN_PREFIX) }?.removePrefix(PLUGIN_PREFIX)
+    }
 }
 
 /** Where a remote wallet's credentials (its NWC connection, a plugin's session) are kept. The backend is always the LaWallet instance. */
@@ -252,8 +264,6 @@ data class WalletNotification(
     val relays: List<String>? = null,
     val nip44: Boolean? = null,
 )
-
-@Serializable data class AccountSummary(val role: String? = null)
 
 @Serializable data class ForwardDestination(val address: String, val allocationBps: Int)
 @Serializable data class ForwardRevision(val number: Int = 0, val feeBps: Int = 0, val baseFeeSats: Double = 0.0, val destinations: List<ForwardDestination> = emptyList())

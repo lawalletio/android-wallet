@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.toastError
+import io.lawallet.wallet.ui.components.ConfirmDialog
+import io.lawallet.wallet.ui.components.LwBottomSheet
 import kotlinx.serialization.builtins.ListSerializer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,10 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,10 +52,8 @@ import io.lawallet.wallet.ui.components.ErrorText
 import io.lawallet.wallet.ui.components.GlassIconButton
 import io.lawallet.wallet.core.ln.DestinationParser
 import io.lawallet.wallet.ui.components.GroupDivider
-import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.LwButton
 import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.components.ModalAction
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.SettingsGroup
 import io.lawallet.wallet.ui.components.SettingsHeader
@@ -62,9 +61,7 @@ import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.WalletMark
 import io.lawallet.wallet.ui.components.copyToClipboard
-import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.sharedAddress
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
@@ -91,7 +88,7 @@ fun LightningAddressesScreen() {
     // Last list seen, shown at once (offline too) while the server's answer comes in.
     val addressesSer = ListSerializer(WalletAddress.serializer())
     var addresses by remember { mutableStateOf(c.prefs.cached("addresses", addressesSer)) }
-    var wallets by remember { mutableStateOf(c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty()) }
+    var wallets by remember { mutableStateOf(c.remoteWallets.cached.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var acting by remember { mutableStateOf<WalletAddress?>(null) }
     var busy by remember { mutableStateOf<String?>(null) } // the username being changed
@@ -99,7 +96,7 @@ fun LightningAddressesScreen() {
     suspend fun load() {
         val api = c.session.api.value
         runCatching { api.addresses() }.onSuccess { addresses = it; error = null; c.wallet.setAddresses(it) }.onFailure { error = it.message }
-        runCatching { api.remoteWallets() }.onSuccess { wallets = it; c.prefs.setCached("remote-wallets", remoteWalletsSer, it) }
+        c.remoteWallets.fetch()?.let { wallets = it } // with the primary fixed up, like every other list read
     }
     // On every return too: an address added through the claim flow shows up when it pops back here.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { load() } }
@@ -108,7 +105,7 @@ fun LightningAddressesScreen() {
         if (busy != null) return
         busy = a.username
         scope.launch {
-            runCatching { block() }.onFailure { context.toast(it.message ?: "") }
+            runCatching { block() }.onFailure { context.toastError(it) }
             load(); runCatching { c.session.refreshMe() }
             busy = null
         }
@@ -116,7 +113,7 @@ fun LightningAddressesScreen() {
     fun full(a: WalletAddress) = "${a.username}@$domain"
 
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(stringResource(R.string.addresses_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.addresses_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             // Hero: the primary, in the pill's shape so the expand reads as the pill growing.
             val primary = addresses?.firstOrNull { it.isPrimary } ?: addresses?.firstOrNull()
@@ -174,15 +171,13 @@ internal fun AddressMenu(a: WalletAddress, full: String, wallets: List<RemoteWal
             onRedirect = { onClose(); nav.navigate(R0.aliasTarget(a.username)) },
             onDelete = { stage = "delete" },
         )
-        "wallet" -> WalletPickerSheet(wallets.filter { it.status == "ACTIVE" }, a.remoteWalletId.takeIf { a.mode == "CUSTOM_NWC" }, onDismiss = onClose) { w ->
+        "wallet" -> WalletPickerSheet(wallets.filter { it.isActive }, a.remoteWalletId.takeIf { a.mode == "CUSTOM_NWC" }, onDismiss = onClose) { w ->
             onClose()
             change { c.session.api.value.routeAddressToWallet(a.username, w.id) }
         }
-        else -> LwAlertDialog(
-            onDismissRequest = onClose,
-            title = { Txt(stringResource(R.string.addresses_delete)) },
-            text = { Txt(stringResource(R.string.addresses_deleteConfirm, full)) },
-            confirmButton = { ModalAction(stringResource(R.string.addresses_delete), { onClose(); change { c.session.api.value.deleteAddress(a.username) } }, destructive = true) },
+        else -> ConfirmDialog(
+            stringResource(R.string.addresses_deleteConfirm, full), stringResource(R.string.addresses_delete), { onClose(); change { c.session.api.value.deleteAddress(a.username) } }, onClose,
+            title = stringResource(R.string.addresses_delete), destructive = true,
         )
     }
 }
@@ -231,7 +226,7 @@ private fun AddressActionsSheet(full: String, isPrimary: Boolean, onDismiss: () 
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
     fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { action() } }
-    AppSheet(state, onDismiss, "address-menu") {
+    LwBottomSheet(onDismiss, "address-menu", state) {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Txt(full.substringBefore('@'), size = 19.sp, weight = FontWeight.SemiBold, maxLines = 1)
@@ -255,7 +250,7 @@ private fun AddressActionsSheet(full: String, isPrimary: Boolean, onDismiss: () 
 private fun WalletPickerSheet(wallets: List<RemoteWallet>, currentId: String?, onDismiss: () -> Unit, onPick: (RemoteWallet) -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val brand = LocalBrand.current
-    AppSheet(state, onDismiss, "address-wallet-picker") {
+    LwBottomSheet(onDismiss, "address-wallet-picker", state) {
         Txt(stringResource(R.string.addresses_pickWallet), Modifier.padding(horizontal = 24.dp, vertical = 12.dp), size = 17.sp, weight = FontWeight.SemiBold)
         if (wallets.isEmpty()) MutedText(stringResource(R.string.remoteWallets_list_emptyTitle), Modifier.padding(24.dp))
         wallets.forEach { w ->
@@ -263,7 +258,7 @@ private fun WalletPickerSheet(wallets: List<RemoteWallet>, currentId: String?, o
                 Modifier.fillMaxWidth().clickable { onPick(w) }.padding(horizontal = 24.dp, vertical = 14.dp).testTag("pick-wallet-${w.name}"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).glass(RoundedCornerShape(12.dp), GlassLevel.Thin), contentAlignment = Alignment.Center) { WalletMark(w.provider == "lncurl", 20.dp) }
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).glass(RoundedCornerShape(12.dp), GlassLevel.Thin), contentAlignment = Alignment.Center) { WalletMark(w.isLncurl, 20.dp) }
                 Spacer(Modifier.width(14.dp))
                 Txt(w.name, Modifier.weight(1f), size = 16.sp, weight = FontWeight.Medium, maxLines = 1)
                 if (w.id == currentId) LwIcon(L.drawable.lucide_ic_check, size = 20.dp, tint = brand.t400)
@@ -272,17 +267,6 @@ private fun WalletPickerSheet(wallets: List<RemoteWallet>, currentId: String?, o
         Spacer(Modifier.height(16.dp).navigationBarsPadding())
     }
 }
-
-/** The app's bottom-sheet chrome (glass, rounded top, slim handle), as on Home's wallet menu. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AppSheet(state: androidx.compose.material3.SheetState, onDismiss: () -> Unit, tag: String, content: @Composable () -> Unit) =
-    ModalBottomSheet(
-        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
-        modifier = Modifier.testTag(tag),
-    ) { content() }
 
 /** Where [username] forwards to: the send recipient entry (suggestions, Nostr faces, contacts, clipboard), then back. */
 @Composable

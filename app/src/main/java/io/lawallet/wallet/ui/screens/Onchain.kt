@@ -1,5 +1,11 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.FieldCaption
+import io.lawallet.wallet.ui.components.Pill
+import io.lawallet.wallet.ui.components.TabSwitch
+import io.lawallet.wallet.ui.components.TextPrompt
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.SettingsSwitchRow
 import android.content.ClipboardManager
 import android.os.Build
 import android.view.WindowManager
@@ -39,7 +45,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -126,7 +131,7 @@ private fun NavHostController.backToOnchain(c: AppContainer) {
 fun AddOnchainWalletScreen() {
     val nav = LocalNav.current
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(stringResource(R.string.onchain_add_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.onchain_add_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OptionCard(L.drawable.lucide_ic_sparkles, stringResource(R.string.onchain_add_create_title), stringResource(R.string.onchain_add_create_body), "onchain-add-create") { nav.navigate(R0.ONCHAIN_CREATE) }
             OptionCard(L.drawable.lucide_ic_import, stringResource(R.string.onchain_add_import_title), stringResource(R.string.onchain_add_import_body), "onchain-add-import") { nav.navigate(R0.ONCHAIN_IMPORT) }
@@ -191,7 +196,7 @@ private fun PassphraseSection(on: Boolean, onToggle: (Boolean) -> Unit, value: S
             LwIcon(if (open) L.drawable.lucide_ic_chevron_up else L.drawable.lucide_ic_chevron_down, size = 16.dp, tint = Lw.MutedFg)
         }
         if (open) SettingsGroup {
-            SettingsRow(stringResource(R.string.onchain_passphrase), { onToggle(!on) }, icon = L.drawable.lucide_ic_lock) { Switch(on, onToggle, colors = lwSwitchColors()) }
+            SettingsSwitchRow(stringResource(R.string.onchain_passphrase), on, onToggle, icon = L.drawable.lucide_ic_lock)
             if (on) Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Txt(stringResource(R.string.onchain_passphrase_body), size = 12.sp, color = Lw.Orange, lineHeight = 17.sp)
                 OutlinedTextField(
@@ -225,7 +230,7 @@ fun CreateOnchainWalletScreen() {
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().imePadding()) {
-        SettingsHeader(stringResource(R.string.onchain_new_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.onchain_new_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             NameField(name, { name = it }, defaultName)
             ScriptPicker(script, { script = it })
@@ -280,7 +285,7 @@ fun OnchainBackupScreen(id: String) {
     Column(Modifier.fillMaxSize()) {
         SettingsHeader(
             stringResource(if (verifying) R.string.onchain_verify_title else R.string.onchain_backup_title),
-            { if (verifying) verifying = false else nav.popBackStack() }, stringResource(R.string.common_back),
+            { if (verifying) verifying = false else nav.popBackStack() },
         )
         val s = secret
         if (w == null || s == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner() }; return@Column }
@@ -439,9 +444,9 @@ fun ImportOnchainWalletScreen() {
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        SettingsHeader(stringResource(R.string.onchain_import_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.onchain_import_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
+            if (scanning) QrCamera({ error = it; scanning = false }) { raw ->
                 if (!scanning) return@QrCamera
                 scanning = false
                 text = TextFieldValue(raw.trim(), TextRange(raw.trim().length))
@@ -550,7 +555,7 @@ fun OnchainWalletDetailScreen(id: String) {
     val copied = stringResource(R.string.common_copied)
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(w.name, { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(w.name, { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(
                 Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp), tint = Lw.Bitcoin.copy(alpha = 0.06f)).padding(vertical = 22.dp, horizontal = 20.dp),

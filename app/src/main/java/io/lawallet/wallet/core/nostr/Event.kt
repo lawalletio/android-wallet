@@ -2,7 +2,6 @@ package io.lawallet.wallet.core.nostr
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 @Serializable
 data class NostrEvent(
@@ -24,7 +23,7 @@ data class NostrEvent(
     fun toJson(): String = json.encodeToString(serializer(), this)
 
     companion object {
-        val json = Json { ignoreUnknownKeys = true }
+        val json = io.lawallet.wallet.core.relaxedJson
 
         fun sign(keys: Keys, kind: Int, content: String, tags: List<List<String>> = emptyList(), createdAt: Long = nowSeconds()): NostrEvent {
             val id = computeId(keys.pubkey, createdAt, kind, tags, content)
