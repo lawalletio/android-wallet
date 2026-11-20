@@ -57,11 +57,11 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 | `core/fx` | currencies, keypad logic, Yadio rates |
 | `core/store` | `Prefs`, `SecretStore` (nsec wrapped with an Android Keystore key), profile cache |
 | `core/diag` | crash-report `Scrubber`, `Trail` breadcrumbs, `Perf` (frames, start, resources, NWC latency) |
-| `app/` | `AppContainer` (the hand-wired object graph), `Session`, `WalletRepository`, `FlowStore`, `Updater` |
+| `app/` | `AppContainer` (the hand-wired object graph), `Session`, `WalletRepository` (the active wallet), `RemoteWalletRepository` (the account's remote and plugin wallets: cached list, balances, primary rules, wallet by id), `FlowStore`, `Updater` |
 | `service/` | foreground payment listener, notifications, payment sounds |
 | `ui/AppNav.kt` | every route (the `R0` constants) and the `NavHost` |
 | `ui/screens` | one file per `/wallet` route or feature |
-| `ui/components` | shared UI: `Basics.kt` (`Txt`, `LwButton`, `LwCard`, `SettingsRow`, …), `LwDialog.kt` |
+| `ui/components` | shared UI: `Basics.kt` (`Txt`, `LwButton`, `LwCard`, `SettingsRow`, `SettingsSwitchRow`, `SettingsPage`, `toastError`, …), `LwDialog.kt` (`LwAlertDialog`, `ConfirmDialog`, `DialogTitle`, `LwBottomSheet`), `Forms.kt` (`lwFieldColors`, `TextPrompt`, `TabSwitch`, `FieldCaption`) |
 | `ui/theme` | `Lw` colours/typography, `Glass` frosted surfaces |
 
 Tests: JVM tests in `app/src/test` (crypto vectors, NWC client against `FakeNwcWallet`, API client with
@@ -72,7 +72,10 @@ MockWebServer, parsers). Compose UI tests in `app/src/androidTest`.
 - **No DI framework.** Dependencies come from `AppContainer`; screens read it with `LocalContainer.current` and
   navigate with `LocalNav.current`. Add new singletons to `AppContainer`.
 - **Reuse before writing.** Look in `ui/components` and `ui/theme` before making a new button, card, dialog or
-  colour. Modals use `LwAlertDialog` / `ModalAction` (one modal style app-wide). A single-field modal autofocuses
+  colour. Modals use `LwAlertDialog` / `ModalAction` (one modal style app-wide); a plain "message + one action" is
+  `ConfirmDialog`, a sheet is `LwBottomSheet`, a switch row is `SettingsSwitchRow`, a failed action's toast is
+  `toastError`. Remote wallets (list cache, balances, primary, wallet by id) go through `c.remoteWallets`, never the
+  prefs cache directly. A single-field modal autofocuses
   with `Modifier.autoFocus()`.
 - **New screen:** add a constant to `R0` in `AppNav.kt`, a `composable(...)` entry, and the screen in `ui/screens`.
 - **Strings:** never hard-code user-facing text. `res/values*/strings_web.xml` is **generated** from the web i18n by

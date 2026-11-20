@@ -33,6 +33,7 @@ class AppContainer(context: Context) {
     }
     val plugins = io.lawallet.wallet.core.plugin.PluginRegistry(context.applicationContext, http, scope, allowHttp = io.lawallet.wallet.BuildConfig.DEBUG)
     val wallet = WalletRepository(session, prefs, http, scope)
+    val remoteWallets = RemoteWalletRepository(session, prefs, plugins, http, wallet)
     val rates = RatesRepository(YadioRates(http), prefs, scope)
     val lnurl = Lnurl(http)
     val scanRouter = ScanRouter(lnurl, plugins = io.lawallet.wallet.BuildConfig.DEBUG || io.lawallet.wallet.BuildConfig.PLUGINS)

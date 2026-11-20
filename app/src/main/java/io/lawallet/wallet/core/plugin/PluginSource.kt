@@ -6,7 +6,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -64,7 +63,7 @@ class PluginResolver(
     private val apiBase: String = "https://api.github.com",
     private val rawBase: String = "https://raw.githubusercontent.com",
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
 
     suspend fun resolve(source: PluginSource): List<PluginCandidate> = when (source) {
         is PluginSource.Manifest -> listOf(manifestAt(source.url, source.url, null))

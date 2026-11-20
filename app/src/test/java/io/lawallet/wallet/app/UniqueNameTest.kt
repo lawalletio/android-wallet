@@ -1,4 +1,4 @@
-package io.lawallet.wallet.ui.screens
+package io.lawallet.wallet.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

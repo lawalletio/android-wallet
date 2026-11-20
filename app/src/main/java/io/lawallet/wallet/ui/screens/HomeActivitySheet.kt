@@ -71,7 +71,6 @@ import io.lawallet.wallet.app.Tx
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope

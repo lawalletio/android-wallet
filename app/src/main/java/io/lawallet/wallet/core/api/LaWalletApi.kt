@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.api
 
+import io.lawallet.wallet.core.diag.Perf
 import io.lawallet.wallet.core.diag.Trail
 import java.io.IOException
 import io.lawallet.wallet.core.nostr.Signer
@@ -10,7 +11,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -83,8 +83,6 @@ class LaWalletApi(
     /** Mints a fresh 24h JWT with the current signer. */
     suspend fun login(): String = mintLock.withLock { mint() }
 
-    fun hasSession() = tokenStore.load() != null
-    fun logout() = tokenStore.save(null)
 
     private suspend fun mint(): String {
         val signer = signerProvider() ?: throw ApiException(401, "Not signed in")
@@ -271,7 +269,9 @@ class LaWalletApi(
 
     private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
         val path = request.url.pathSegments.joinToString("/", "/") { if (it in PATH_WORDS) it else ":id" }
+        val started = android.os.SystemClock.elapsedRealtime()
         val call = try { http.newCall(request).execute() } catch (e: IOException) {
+            Perf.api(request.method, path, android.os.SystemClock.elapsedRealtime() - started, e.javaClass.simpleName)
             Trail.add("api", "${request.method} $path failed ${e.javaClass.simpleName}", error = true)
             onReachable(false)
             throw e
@@ -279,6 +279,7 @@ class LaWalletApi(
         onReachable(true)
         call.use { res ->
             val text = res.body.string()
+            Perf.api(request.method, path, android.os.SystemClock.elapsedRealtime() - started, res.code.toString())
             if (!res.isSuccessful) {
                 val err = runCatching { json.parseToJsonElement(text).jsonObject["error"] }.getOrNull()
                 val message = when (err) {
@@ -287,7 +288,7 @@ class LaWalletApi(
                     else -> null
                 } ?: "Request failed (${res.code})"
                 val code = (err as? JsonObject)?.get("code")?.jsonPrimitive?.contentOrNull
-                android.util.Log.w("LaWalletApi", "${request.method} ${request.url.encodedPath} -> ${res.code} $message")
+                android.util.Log.w("LaWalletApi", "${request.method} $path -> ${res.code}") // never the raw path: it carries usernames and ids
                 Trail.add("api", "${request.method} $path -> ${res.code}${code?.let { " $it" } ?: ""}", error = true)
                 throw ApiException(res.code, message, code, (err as? JsonObject)?.get("details"))
             }
@@ -296,7 +297,7 @@ class LaWalletApi(
     }
 
     companion object {
-        val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
+        val json = io.lawallet.wallet.core.apiJson
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
         /** The API's own path words; any other segment (ids, usernames, keys) is logged as `:id`. */
         private val PATH_WORDS = setOf(

@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.TextPrompt
+import io.lawallet.wallet.ui.components.LwBottomSheet
 import kotlinx.serialization.builtins.serializer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -14,7 +16,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import io.lawallet.wallet.ui.theme.Glass
 import androidx.compose.runtime.remember
@@ -50,13 +51,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.AnimatedVisibility
-import io.lawallet.wallet.ui.components.LwButton
-import io.lawallet.wallet.ui.components.BtnVariant
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -80,17 +78,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.rememberScrollableState
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.toSize
-import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawBehind
@@ -107,8 +99,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -118,7 +108,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,7 +117,6 @@ import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.fx.Rates
 import io.lawallet.wallet.ui.components.LwIcon
-import io.lawallet.wallet.ui.components.WalletMark
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
@@ -327,14 +315,14 @@ internal fun WalletsReveal(
     // When each wallet was last the selected one (kept on this device): the rest sit most recent nearest the primary.
     val c = io.lawallet.wallet.ui.LocalContainer.current
     val usedAt = remember { androidx.compose.runtime.mutableStateMapOf<String, Long>().apply { putAll(c.prefs.cached(PRIMARY_AT, primaryAtSer).orEmpty()) } }
-    val primaryId = all?.find { it.isDefault && it.status == "ACTIVE" }?.id
+    val primaryId = all?.find { it.isDefault && it.isActive }?.id
     LaunchedEffect(primaryId) {
         if (primaryId == null) return@LaunchedEffect
         usedAt[primaryId] = System.currentTimeMillis()
         c.prefs.setCached(PRIMARY_AT, primaryAtSer, usedAt.toMap())
     }
     // Primary last (right above the balance), then the ones being set up or working, then the most recently primary.
-    val sorted = all?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.status == "ACTIVE" || it.status == PENDING }.thenBy { usedAt[it.id] ?: 0L })
+    val sorted = all?.sortedWith(compareBy<RemoteWallet> { it.isDefault }.thenBy { it.isActive || it.status == PENDING }.thenBy { usedAt[it.id] ?: 0L })
 
     val keyOf = { w: RemoteWallet -> if (created != null && w.id == created.id) pending.key else w.id }
     // Locked: just its wallet shows; the rest fold away (and back), so none can be tapped into its place by accident.
@@ -374,8 +362,8 @@ internal fun WalletsReveal(
         footer = {
             val many = sorted.orEmpty().count { !folded(it) } > 1
             // Lock / Unlock wallet: first thing bottom-left, opposite the total.
-            val canLock = onLock != null && sorted.orEmpty().any { it.isDefault && it.status == "ACTIVE" }
-            if (many || footerStart != null || canLock) WalletsTotal(sorted.orEmpty().filter { it.status == "ACTIVE" }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal, many) {
+            val canLock = onLock != null && sorted.orEmpty().any { it.isDefault && it.isActive }
+            if (many || footerStart != null || canLock) WalletsTotal(sorted.orEmpty().filter { it.isActive }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal, many) {
                 if (canLock) LockWalletButton(locked) { onLock?.invoke() }
                 if (canLock && footerStart != null) Spacer(Modifier.width(8.dp))
                 footerStart?.invoke()
@@ -385,9 +373,9 @@ internal fun WalletsReveal(
         val adding = pending != null && keyOf(w) == pending.key
         NewWalletEntrance(w.id == newWalletId || adding, RoundedCornerShape(24.dp), start = { snapshotFlow { reveal.progress >= 0.97f }.first { it }; delay(60) }, ready = w.status != PENDING) {
             WalletRevealCard(
-                w, if (w.status == "ACTIVE") balances[w.id] else null, w.status == PENDING || (w.status == "ACTIVE" && !balances.containsKey(w.id)),
+                w, if (w.isActive) balances[w.id] else null, w.status == PENDING || (w.isActive && !balances.containsKey(w.id)),
                 code, rates, hidden, reveal, { onOpen(w) }, { onSetPrimary(w) },
-                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.status == "ACTIVE") balances[w.id] else null) },
+                sweepFrom, { onSweep(w) }, { onSweepTo(w) }, { name -> onRename(w, name) }, { onTransfer(w) }, { onDelete(w, if (w.isActive) balances[w.id] else null) },
                 onWithdraw = onWithdraw?.takeIf { canWithdraw(w) }?.let { f -> { f(w) } },
                 delta = deltas[w.id],
             )
@@ -637,10 +625,10 @@ private fun WalletRevealCard(
     val isSource = w.id == sweepFrom
     val brand = LocalBrand.current
     val haptics = LocalHapticFeedback.current
-    val lncurl = w.provider == "lncurl"
-    val active = w.status == "ACTIVE"
+    val lncurl = w.isLncurl
+    val active = w.isActive
     // While picking a sweep destination, every eligible target lights up and the source steps back.
-    val target = picking && !isSource && w.status == "ACTIVE"
+    val target = picking && !isSource && w.isActive
     val sel by animateFloatAsState(if (if (picking) target else w.isDefault) 1f else 0f, spring(0.85f, Spring.StiffnessMediumLow), label = "selected")
     val pulse = if (target) rememberInfiniteTransition(label = "pick").animateFloat(0.35f, 0.85f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "ring").value else 0.6f
     val accent = lerp(Lw.MutedFg, if (lncurl) Lw.LncurlGreen else Lw.NwcPurple, sel)
@@ -823,12 +811,7 @@ internal fun CustodyBadges(custody: Custody, name: String, onClick: (() -> Unit)
 internal fun CustodySheet(w: RemoteWallet, onDismiss: () -> Unit) {
     val c = io.lawallet.wallet.ui.LocalContainer.current
     val custody = w.custody
-    ModalBottomSheet(
-        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Glass.Dialog,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
-        modifier = Modifier.testTag("home-wallet-custody-sheet"),
-    ) {
+    LwBottomSheet(onDismiss, "home-wallet-custody-sheet") {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Lw.MutedFg.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
@@ -874,7 +857,7 @@ internal const val PENDING = "PENDING"
 @Composable
 internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float, onOpen: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    val lncurl = w.provider == "lncurl"
+    val lncurl = w.isLncurl
     Row(
         modifier
             .measureRoot { if (reveal.progress == 0f) reveal.pill = it }
@@ -907,7 +890,7 @@ private fun Modifier.pillGlass() = clip(PillShape).background(PillFill).border(1
 
 @Composable
 private fun PillMark(w: RemoteWallet, modifier: Modifier = Modifier) = Box(
-    modifier.size(24.dp).clip(CircleShape).background((if (w.isPlugin) Lw.Foreground else if (w.provider == "lncurl") Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.12f)),
+    modifier.size(24.dp).clip(CircleShape).background((if (w.isPlugin) Lw.Foreground else if (w.isLncurl) Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.12f)),
     contentAlignment = Alignment.Center,
 ) { DeckMark(w, 13.dp, Modifier.alpha(0.8f)) }
 
@@ -951,7 +934,7 @@ internal fun WalletPillMorph(w: RemoteWallet, reveal: HomeReveal) {
         drawPath(path, edge, alpha = a * (0.5f + 0.5f * e), style = Stroke(1.dp.toPx()))
     })
     // The pill's mark and name travel and grow into the card's, which takes over as they land.
-    val lncurl = w.provider == "lncurl"
+    val lncurl = w.isLncurl
     MorphPart(reveal, reveal.pillMark, { reveal.cardMark }) { PillMark(w) }
     MorphPart(reveal, reveal.pillName, { reveal.cardName }, uniform = true) { PillName(w.name) }
 }
@@ -996,50 +979,6 @@ private fun MorphPart(reveal: HomeReveal, from: Rect, to: () -> Rect, uniform: B
 /** Measures [this] node at rest in root space (before any reveal translation applied after it). */
 internal fun Modifier.measureRoot(onRect: (Rect) -> Unit) = onGloballyPositioned { onRect(it.rootRect()) }
 
-/**
- * [from] rolls into [to] like an odometer wheel when [flipped]: only the words that differ roll (the
- * shared prefix/suffix, e.g. " balance", stays put), and the wheel's width eases between the two.
- */
-@Composable
-internal fun RollingLabel(from: String, to: String, flipped: Boolean, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium) {
-    val t = animateFloatAsState(if (flipped) 1f else 0f, tween(560, easing = FastOutSlowInEasing), label = "roll")
-    RollingLabel(from, to, { t.value }, size, color, weight)
-}
-
-/** Same wheel, turned by [t] (0 = [from], 1 = [to]) directly. */
-@Composable
-internal fun RollingLabel(from: String, to: String, t: () -> Float, size: TextUnit, color: Color, weight: FontWeight = FontWeight.Medium) {
-    val fw = from.split(' ')
-    val tw = to.split(' ')
-    val head = fw.zip(tw).takeWhile { (x, y) -> x == y }.size
-    val tail = fw.drop(head).reversed().zip(tw.drop(head).reversed()).takeWhile { (x, y) -> x == y }.size
-    val pre = fw.take(head).joinToString(" ").let { if (it.isEmpty()) it else "$it " }
-    val suf = fw.takeLast(tail).joinToString(" ").let { if (it.isEmpty()) it else " $it" }
-    val a = fw.subList(head, fw.size - tail).joinToString(" ")
-    val b = tw.subList(head, tw.size - tail).joinToString(" ")
-    Row(Modifier.semantics(mergeDescendants = true) {}) {
-        if (pre.isNotEmpty()) Txt(pre, size = size, weight = weight, color = color, maxLines = 1)
-        Layout(
-            content = {
-                Txt(a, size = size, weight = weight, color = color, maxLines = 1)
-                Txt(b, size = size, weight = weight, color = color, maxLines = 1)
-            },
-            modifier = Modifier.clipToBounds(),
-        ) { ms, c ->
-            val t = t().coerceIn(0f, 1f)
-            val pa = ms[0].measure(c.copy(minWidth = 0))
-            val pb = ms[1].measure(c.copy(minWidth = 0))
-            val h = maxOf(pa.height, pb.height)
-            layout((pa.width + (pb.width - pa.width) * t).toInt(), h) {
-                // Old face rolls up and out, new face rolls up from below (the odometer's direction).
-                pa.placeWithLayer(0, 0) { translationY = -t * h; alpha = 1f - t }
-                pb.placeWithLayer(0, 0) { translationY = (1f - t) * h; alpha = t }
-            }
-        }
-        if (suf.isNotEmpty()) Txt(suf, size = size, weight = weight, color = color, maxLines = 1)
-    }
-}
-
 /** Replaces the list title while picking a sweep destination: what to do, and a way out. */
 @Composable
 private fun SweepPickBanner(onCancel: () -> Unit) {
@@ -1073,15 +1012,10 @@ private fun WalletActionsSheet(w: RemoteWallet, balance: String?, canSweep: Bool
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val brand = LocalBrand.current
-    val lncurl = w.provider == "lncurl"
+    val lncurl = w.isLncurl
     val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     fun then(action: () -> Unit) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); action() } }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
-        modifier = Modifier.testTag("home-wallet-menu"),
-    ) {
+    LwBottomSheet(onDismiss, "home-wallet-menu", state) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(accent.copy(alpha = 0.36f), accent.copy(alpha = 0.10f)))),
@@ -1114,12 +1048,7 @@ private fun AddWalletSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     fun then(step: String) { scope.launch { state.hide() }.invokeOnCompletion { onDismiss(); onPick(step) } }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        dragHandle = { Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))) },
-        modifier = Modifier.testTag("home-wallets-add-sheet"),
-    ) {
+    LwBottomSheet(onDismiss, "home-wallets-add-sheet", state) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Txt(stringResource(R.string.rw_add_title), size = 17.sp, weight = FontWeight.SemiBold)
             MutedText(stringResource(R.string.rw_add_subtitle))

@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.nfc.NfcAdapter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -67,14 +68,12 @@ import io.lawallet.wallet.ui.components.ScreenHeader
 import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.keypadDisplay
-import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.goHome
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -206,8 +205,11 @@ fun ReceiveInvoiceScreen() {
     LaunchedEffect(bolt11) { c.wallet.notices.filter { it.type == "payment_received" && it.tx.paymentHash == r.paymentHash }.collect { paid(it.tx) } }
     // Some wallets never emit the notification: poll lookup_invoice (fast after a card tap).
     LaunchedEffect(bolt11) {
-        while (true) {
+        // Until the invoice expires, and only while the app is visible (a payment made meanwhile shows on return).
+        val expires = runCatching { io.lawallet.wallet.core.ln.Bolt11.decode(bolt11).expiresAtMs }.getOrDefault(Long.MAX_VALUE)
+        while (System.currentTimeMillis() < expires) {
             delay(if (pollFast) 1000 else 4000)
+            c.wallet.active.first { it }
             val hash = r.paymentHash ?: continue
             val tx = runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()
             if (tx?.settledAt != null) { paid(Tx.from(tx)); break }

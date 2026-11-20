@@ -1,5 +1,12 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.SettingsPage
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.toastError
+import io.lawallet.wallet.ui.components.ConfirmDialog
+import io.lawallet.wallet.ui.components.DialogTitle
+import io.lawallet.wallet.ui.components.SettingsSwitchRow
+import io.lawallet.wallet.ui.components.lwSwitchColors
 import android.content.Intent
 import android.net.Uri
 import androidx.appcompat.app.AppCompatDelegate
@@ -33,13 +40,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,9 +82,6 @@ import kotlinx.serialization.builtins.serializer
 import io.lawallet.wallet.core.nostr.NostrEvent
 import io.lawallet.wallet.core.nostr.toHex
 import io.lawallet.wallet.core.nwc.RelayPool
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import io.lawallet.wallet.service.PaymentSound
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -101,25 +103,11 @@ import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.toast
 import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.GlassLevel
 import io.lawallet.wallet.ui.theme.Glass
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.launch
-import java.util.Locale
 import kotlin.math.roundToInt
 import com.composables.icons.lucide.R as L
-
-@Composable
-internal fun SettingsPage(title: String, content: @Composable () -> Unit) {
-    val nav = LocalNav.current
-    Column(Modifier.fillMaxSize()) {
-        SettingsHeader(title, { nav.popBackStack() }, stringResource(R.string.common_back))
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) { content() }
-    }
-}
-
-@Composable
-fun lwSwitchColors() = SwitchDefaults.colors(checkedTrackColor = LocalBrand.current.t400, checkedThumbColor = Lw.Foreground, uncheckedTrackColor = Color.White.copy(alpha = 0.08f), uncheckedThumbColor = Lw.MutedFg, uncheckedBorderColor = Color.White.copy(alpha = 0.16f))
 
 @Composable
 fun SettingsScreen() {
@@ -130,7 +118,7 @@ fun SettingsScreen() {
     var confirm by remember { mutableStateOf(false) }
     val bg by c.prefs.backgroundListener.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(stringResource(R.string.settings_title), { nav.popBackStack() }, stringResource(R.string.common_back)) { LanguageMenu() }
+        SettingsHeader(stringResource(R.string.settings_title), { nav.popBackStack() }) { LanguageMenu() }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             SettingsGroup(stringResource(R.string.settings_account)) {
@@ -143,9 +131,7 @@ fun SettingsScreen() {
             SettingsGroup(stringResource(R.string.settings_preferences)) {
                 SettingsRow(stringResource(R.string.payments_title), { nav.navigate(R0.PAYMENTS) }, Modifier.testTag("settings-payments"), icon = L.drawable.lucide_ic_zap)
                 GroupDivider()
-                SettingsRow(stringResource(R.string.bg_listener_title), { c.prefs.setBackgroundListener(!bg) }, icon = L.drawable.lucide_ic_bell) {
-                    Switch(bg, { c.prefs.setBackgroundListener(it) }, colors = lwSwitchColors())
-                }
+                SettingsSwitchRow(stringResource(R.string.bg_listener_title), bg, { c.prefs.setBackgroundListener(it) }, icon = L.drawable.lucide_ic_bell)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.instance_title), { nav.navigate(R0.INSTANCE) }, Modifier.testTag("settings-instance"), icon = L.drawable.lucide_ic_server, value = c.session.instanceHost)
                 // ponytail: debug (or -Pplugins) builds only until plugins are signed (docs/plugins.md "Later").
@@ -174,11 +160,9 @@ fun SettingsScreen() {
             }
         }
     }
-    if (confirm) LwAlertDialog(
-        onDismissRequest = { confirm = false },
-        text = { Txt(stringResource(R.string.settings_removeWalletConfirm)) },
-        confirmButton = { ModalAction(stringResource(R.string.settings_removeWallet), { confirm = false; c.session.logout() }, Modifier.testTag("confirm-remove"), destructive = true) },
-        containerColor = Glass.Dialog,
+    if (confirm) ConfirmDialog(
+        stringResource(R.string.settings_removeWalletConfirm), stringResource(R.string.settings_removeWallet), { confirm = false; c.session.logout() }, { confirm = false },
+        destructive = true, actionModifier = Modifier.testTag("confirm-remove"),
     )
 }
 
@@ -224,7 +208,7 @@ fun CardsScreen() {
                             scope.launch {
                                 runCatching { c.session.api.value.setCardEnabled(card.id, on) }
                                     .onSuccess { updated -> cards = cards?.map { if (it.id == card.id) updated else it }; context.toast((if (on) enabledFmt else disabledFmt).format(name)) }
-                                    .onFailure { context.toast(it.message ?: updateFailed) }
+                                    .onFailure { context.toastError(it, updateFailed) }
                             }
                         }, enabled = !card.blocked, colors = lwSwitchColors())
                     }
@@ -232,7 +216,7 @@ fun CardsScreen() {
                         scope.launch {
                             runCatching { c.session.api.value.linkCardToDefaultWallet(card.id) }
                                 .onSuccess { context.toast(linkedFmt.format(name)); load() }
-                                .onFailure { context.toast(it.message ?: updateFailed) }
+                                .onFailure { context.toastError(it, updateFailed) }
                         }
                     }, Modifier.fillMaxWidth(), BtnVariant.Secondary, height = 40.dp, enabled = !card.blocked)
                 }
@@ -322,7 +306,7 @@ fun SecurityScreen() {
                 scope.launch {
                     runCatching { c.passkeys.register(activity, "Android · ${android.os.Build.MODEL}", authenticated = true) }
                         .onSuccess { context.toast(added); passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull() }
-                        .onFailure { context.toast(it.message ?: addFailed) }
+                        .onFailure { context.toastError(it, addFailed) }
                     busy = false
                 }
             }, icon = L.drawable.lucide_ic_plus)
@@ -344,17 +328,15 @@ fun SecurityScreen() {
         me?.cardRecoveryEnabled?.let { stored ->
             val enabled = recoveryOverride ?: stored
             SettingsGroup(stringResource(R.string.settings_securityScreen_cardRecovery_title)) {
-                SettingsRow(stringResource(R.string.settings_securityScreen_cardRecovery_toggle), null, icon = L.drawable.lucide_ic_life_buoy) {
-                    Switch(enabled, { on ->
+                SettingsSwitchRow(stringResource(R.string.settings_securityScreen_cardRecovery_toggle), enabled, { on ->
                         recoveryOverride = on
                         scope.launch {
                             runCatching { c.session.api.value.setCardRecovery(on); c.session.refreshMe() }
                                 .onSuccess { context.toast(if (on) recoveryOn else recoveryOff) }
-                                .onFailure { context.toast(it.message ?: recoveryFailed) }
+                                .onFailure { context.toastError(it, recoveryFailed) }
                             recoveryOverride = null
                         }
-                    }, Modifier.testTag("card-recovery-toggle"), enabled = recoveryOverride == null, colors = lwSwitchColors())
-                }
+                }, icon = L.drawable.lucide_ic_life_buoy, enabled = recoveryOverride == null, switchModifier = Modifier.testTag("card-recovery-toggle"))
                 MutedText(stringResource(R.string.settings_securityScreen_cardRecovery_hint), Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), size = 13.sp)
             }
         }
@@ -365,7 +347,7 @@ fun SecurityScreen() {
     // Modal while the request runs (back is ignored), so the screen can't be left with the account gone but the session kept.
     if (confirmDelete) LwAlertDialog(
         onDismissRequest = { if (!deleting) confirmDelete = false },
-        title = { Txt(stringResource(R.string.security_delete_account), weight = FontWeight.SemiBold) },
+        title = { DialogTitle(stringResource(R.string.security_delete_account)) },
         text = { Txt(stringResource(R.string.security_delete_confirm)) },
         confirmButton = {
             ModalAction(stringResource(R.string.security_delete_account), {
@@ -373,13 +355,12 @@ fun SecurityScreen() {
                 scope.launch {
                     runCatching { c.session.api.value.deleteAccount() }
                         .onSuccess { ok -> if (ok) { context.toast(deletedMsg); c.session.logout() } else deleteUnsupported = true }
-                        .onFailure { context.toast(it.message ?: deleteFailed) }
+                        .onFailure { context.toastError(it, deleteFailed) }
                     deleting = false
                     confirmDelete = false
                 }
             }, Modifier.testTag("confirm-delete-account"), enabled = !deleting, destructive = true)
         },
-        containerColor = Glass.Dialog,
     )
     if (deleteUnsupported) LwAlertDialog(
         onDismissRequest = { deleteUnsupported = false },
@@ -390,14 +371,11 @@ fun SecurityScreen() {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lawalletio/android-wallet/blob/main/PRIVACY.md#account-deletion")))
             })
         },
-        containerColor = Glass.Dialog,
     )
     editing?.let { pk -> PasskeyDialog(pk, passkeys?.size ?: 0, onDone = { changed -> editing = null; if (changed) scope.launch { passkeys = runCatching { c.session.api.value.passkeys() }.getOrNull() } }) }
-    if (confirmRemove) LwAlertDialog(
-        onDismissRequest = { confirmRemove = false },
-        text = { Txt(stringResource(R.string.settings_securityScreen_removeConfirm)) },
-        confirmButton = { ModalAction(stringResource(R.string.settings_removeWallet), { confirmRemove = false; c.session.logout() }, destructive = true) },
-        containerColor = Glass.Dialog,
+    if (confirmRemove) ConfirmDialog(
+        stringResource(R.string.settings_securityScreen_removeConfirm), stringResource(R.string.settings_removeWallet), { confirmRemove = false; c.session.logout() }, { confirmRemove = false },
+        destructive = true,
     )
 }
 
@@ -420,11 +398,11 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
     fun submit(call: suspend () -> Unit) {
         if (saving) return
         saving = true
-        scope.launch { runCatching { call() }.onSuccess { onDone(true) }.onFailure { saving = false; context.toast(it.message ?: "") } }
+        scope.launch { runCatching { call() }.onSuccess { onDone(true) }.onFailure { saving = false; context.toastError(it) } }
     }
     LwAlertDialog(
         onDismissRequest = { if (!saving) onDone(false) },
-        title = { Txt(stringResource(if (deleting) (if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyTitle else R.string.settings_passkeysScreen_deleteTitle) else R.string.settings_passkeysScreen_manage), size = 16.sp, weight = FontWeight.SemiBold) },
+        title = { DialogTitle(stringResource(if (deleting) (if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyTitle else R.string.settings_passkeysScreen_deleteTitle) else R.string.settings_passkeysScreen_manage)) },
         text = {
             if (deleting) Txt(stringResource(if (total <= 1) R.string.settings_passkeysScreen_deleteOnlyBody else R.string.settings_passkeysScreen_deleteBody), color = Lw.MutedFg)
             else OutlinedTextField(label, { label = it.take(64) }, Modifier.autoFocus(), enabled = !saving, label = { Txt(stringResource(R.string.settings_passkeysScreen_name)) }, singleLine = true, colors = lwFieldColors())
@@ -437,7 +415,6 @@ private fun PasskeyDialog(pk: PasskeyCredential, total: Int, onDone: (Boolean) -
                 TextButton({ deleting = true }, Modifier.padding(top = 4.dp), enabled = !saving) { Txt(stringResource(R.string.settings_passkeysScreen_delete), color = Lw.Red) }
             }
         },
-        containerColor = Glass.Dialog,
     )
 }
 
@@ -506,7 +483,7 @@ fun CurrenciesScreen() {
 /** Settings' top-right language picker: a glass pill with the current language, its options in a dropdown. */
 @Composable
 private fun LanguageMenu() {
-    val current = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" }
+    val current = remember { AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" } } // a binder call on 13+
     var selected by remember { mutableStateOf(current) }
     var open by remember { mutableStateOf(false) }
     val deviceLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
@@ -590,7 +567,7 @@ fun InstanceScreen() {
         }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
-        SettingsHeader(stringResource(R.string.instance_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.instance_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             MutedText(stringResource(R.string.instance_description))
             SettingsGroup { SettingsRow(stringResource(R.string.instance_current), null, value = c.session.instanceUrl) }
@@ -611,11 +588,7 @@ private suspend fun sendFeedback(c: io.lawallet.wallet.app.AppContainer, message
     val keys = Keys.fromHex(c.session.secretHex() ?: error("no local key"))
     val to = Bech32.decodeBytes(FEEDBACK_NPUB).second.toHex()
     val event = NostrEvent.sign(keys, 4, Nip04.encrypt(message, keys, to), listOf(listOf("p", to)))
-    coroutineScope {
-        val relays = FEEDBACK_RELAYS.map { RelayPool.get(it, c.http) }
-        val results = relays.map { r -> async { runCatching { r.publish(event, 10_000) } } }.awaitAll()
-        if (results.none { it.isSuccess }) throw results.first().exceptionOrNull()!!
-    }
+    RelayPool.publishAny(c.http, FEEDBACK_RELAYS, event)
 }
 
 @Composable
@@ -630,7 +603,7 @@ fun FeedbackScreen() {
     val sent = stringResource(R.string.feedback_sent)
     val failed = stringResource(R.string.feedback_failed)
     Column(Modifier.fillMaxSize().imePadding()) {
-        SettingsHeader(stringResource(R.string.feedback_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.feedback_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             MutedText(stringResource(R.string.feedback_description))
             OutlinedTextField(text, { text = it; error = null }, Modifier.fillMaxWidth().weight(1f).testTag("feedback-input"), enabled = !loading, placeholder = { Txt(stringResource(R.string.feedback_placeholder), color = Lw.MutedFg) }, shape = RoundedCornerShape(12.dp), colors = lwFieldColors())
@@ -657,16 +630,12 @@ fun PaymentsScreen() {
     SettingsPage(stringResource(R.string.payments_title)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup {
-                SettingsRow(stringResource(R.string.slide_to_pay_title), { c.prefs.setSlideToPay(!slide) }, Modifier.testTag("slide-to-pay"), icon = L.drawable.lucide_ic_chevrons_right) {
-                    Switch(slide, { c.prefs.setSlideToPay(it) }, colors = lwSwitchColors())
-                }
+                SettingsSwitchRow(stringResource(R.string.slide_to_pay_title), slide, { c.prefs.setSlideToPay(it) }, Modifier.testTag("slide-to-pay"), icon = L.drawable.lucide_ic_chevrons_right)
             }
             MutedText(stringResource(R.string.slide_to_pay_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
             Spacer(Modifier.height(16.dp))
             SettingsGroup {
-                SettingsRow(stringResource(R.string.nfc_autopay_title), { c.prefs.setNfcAutoPay(auto.copy(enabled = !auto.enabled)) }, icon = L.drawable.lucide_ic_nfc) {
-                    Switch(auto.enabled, { c.prefs.setNfcAutoPay(auto.copy(enabled = it)) }, Modifier.testTag("nfc-autopay"), colors = lwSwitchColors())
-                }
+                SettingsSwitchRow(stringResource(R.string.nfc_autopay_title), auto.enabled, { c.prefs.setNfcAutoPay(auto.copy(enabled = it)) }, icon = L.drawable.lucide_ic_nfc, switchModifier = Modifier.testTag("nfc-autopay"))
                 if (auto.enabled) OutlinedTextField(maxText, { v ->
                     maxText = v.filter(Char::isDigit).take(10)
                     c.prefs.setNfcAutoPay(auto.copy(maxSats = maxText.toLongOrNull() ?: 0))
@@ -690,9 +659,8 @@ fun DiagnosticsScreen() {
     SettingsPage(stringResource(R.string.diag_title)) {
         if (Diagnostics.available) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SettingsGroup {
-                SettingsRow(stringResource(R.string.diag_crash_reports), { c.prefs.setCrashReports(!reports) }, Modifier.testTag("diag-reports"), icon = L.drawable.lucide_ic_bug) {
-                    Switch(reports, { c.prefs.setCrashReports(it) }, enabled = !BuildConfig.BETA, colors = lwSwitchColors())
-                }
+                // BETA builds always report: the switch is shown on and locked (the row used to toggle it anyway).
+                SettingsSwitchRow(stringResource(R.string.diag_crash_reports), reports, { c.prefs.setCrashReports(it) }, Modifier.testTag("diag-reports"), icon = L.drawable.lucide_ic_bug, enabled = !BuildConfig.BETA)
             }
             MutedText(stringResource(if (BuildConfig.BETA) R.string.diag_crash_reports_beta else R.string.diag_crash_reports_body), Modifier.padding(horizontal = 6.dp), size = 12.sp)
         }

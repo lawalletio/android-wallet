@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core.ln
 
+import io.lawallet.wallet.core.nostr.toHex
 import co.nstant.`in`.cbor.CborDecoder
 import co.nstant.`in`.cbor.model.Array as CborArray
 import co.nstant.`in`.cbor.model.ByteString
@@ -68,17 +69,16 @@ data class CashuToken(val mint: String, val unit: String, val memo: String?, val
             val root = dec.decode().first() as CborMap
             val proofs = (root["t"] as CborArray).dataItems.flatMap { set ->
                 set as CborMap
-                val id = (set["i"] as ByteString).bytes.hex()
+                val id = (set["i"] as ByteString).bytes.toHex()
                 (set["p"] as CborArray).dataItems.map { p ->
                     p as CborMap
-                    CashuProof(id, (p["a"] as CborNumber).value.toLong(), (p["s"] as UnicodeString).string, (p["c"] as ByteString).bytes.hex(), (p["w"] as? UnicodeString)?.string)
+                    CashuProof(id, (p["a"] as CborNumber).value.toLong(), (p["s"] as UnicodeString).string, (p["c"] as ByteString).bytes.toHex(), (p["w"] as? UnicodeString)?.string)
                 }
             }
             return CashuToken((root["m"] as UnicodeString).string, (root["u"] as? UnicodeString)?.string ?: "sat", (root["d"] as? UnicodeString)?.string, proofs)
         }
 
         private operator fun CborMap.get(key: String): DataItem? = get(UnicodeString(key))
-        private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
         private fun JsonObject.s(k: String) = this[k]?.jsonPrimitive?.contentOrNull
     }
 }

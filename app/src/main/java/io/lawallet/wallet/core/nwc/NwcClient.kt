@@ -26,7 +26,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -199,7 +198,7 @@ class NwcClient(val uri: NwcUri, http: OkHttpClient, private val infoTimeoutMs: 
     companion object {
         /** Per wallet pubkey: switching back to a wallet skips its kind-13194 lookup. */
         private val encryptionCache = java.util.concurrent.ConcurrentHashMap<String, Enc>()
-        val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
+        val json = io.lawallet.wallet.core.apiJson
     }
 
     @Serializable private data class Response(@SerialName("result_type") val resultType: String? = null, val error: NwcError? = null, val result: JsonElement? = null)

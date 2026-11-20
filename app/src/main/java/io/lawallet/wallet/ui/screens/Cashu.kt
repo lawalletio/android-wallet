@@ -72,7 +72,6 @@ import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.service.PaymentSound
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
-import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.AmountDisplay
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.ErrorText
@@ -128,13 +127,7 @@ fun CashuScreen() {
                 }
                 claimed = r.sats
                 // PENDING melt: the mint is still routing; watch our invoice like LUD-03 does.
-                var settled = r.paid
-                val deadline = System.currentTimeMillis() + 45_000
-                while (!settled && r.paymentHash != null && System.currentTimeMillis() < deadline) {
-                    delay(3000)
-                    settled = runCatching { nwc.lookupInvoice(r.paymentHash).settledAt != null }.getOrDefault(false)
-                }
-                settled
+                r.paid || (r.paymentHash != null && nwc.awaitSettled(r.paymentHash))
             }.onSuccess { settled ->
                 phase = if (settled) "won" else "pending"
                 PaymentSound.play(context, "chime")
@@ -179,11 +172,7 @@ fun CashuScreen() {
                     GroupDivider()
                     DetailRow(L.drawable.lucide_ic_info, null, stringResource(R.string.cashu_fees), null)
                 }
-                if (client == null) Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp)).padding(16.dp)) {
-                    Txt(stringResource(R.string.withdraw_noWallet), weight = FontWeight.Medium)
-                    MutedText(stringResource(R.string.withdraw_noWalletBody), size = 12.sp)
-                    LwButton(stringResource(R.string.withdraw_manageWallets), { nav.navigate(R0.REMOTE_WALLETS) }, Modifier.padding(top = 12.dp), BtnVariant.Secondary, height = 36.dp)
-                }
+                if (client == null) NoWalletCard()
                 ErrorText(error, Modifier.fillMaxWidth())
                 MorphButton(stringResource(R.string.cashu_cta, Currencies.formatSats(token.amount)), loading, client != null, ::claim, Modifier.testTag("cashu-cta"))
             }

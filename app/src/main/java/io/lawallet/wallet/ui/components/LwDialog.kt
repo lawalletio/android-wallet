@@ -3,6 +3,9 @@ package io.lawallet.wallet.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
@@ -92,6 +95,32 @@ fun LwAlertDialog(
     )
 }
 
+/**
+ * The common confirmation: a [message], one [action] (red when [destructive]) and the X to back out. [title] is
+ * optional, in [DialogTitle]'s style. [actionModifier] reaches the action button (test tags).
+ */
+@Composable
+fun ConfirmDialog(
+    message: String,
+    action: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    destructive: Boolean = false,
+    actionModifier: Modifier = Modifier,
+) = LwAlertDialog(
+    onDismissRequest = onDismiss,
+    confirmButton = { ModalAction(action, onConfirm, actionModifier, destructive = destructive) },
+    modifier = modifier,
+    title = title?.let { t -> { DialogTitle(t) } },
+    text = { Txt(message) },
+)
+
+/** A modal's title, in the one size every modal uses ([Txt]'s own default would override the dialog's). */
+@Composable
+fun DialogTitle(text: String) = Txt(text, size = 19.sp, weight = FontWeight.SemiBold)
+
 /** A modal's main action: full width, brand colour (red glass when [destructive]). */
 @Composable
 fun ModalAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, destructive: Boolean = false, loading: Boolean = false) =
@@ -116,3 +145,24 @@ fun Modifier.autoFocus(): Modifier {
     LaunchedEffect(Unit) { nav.awaitSettled(); runCatching { focus.requestFocus() }; keyboard?.show() }
     return focusRequester(focus)
 }
+
+/**
+ * The app's bottom sheet: glass, rounded top, a slim handle, fully expanded. [tag] is the sheet's test tag. Hide it
+ * with [state] before running a picked action, so the action starts once the sheet is off screen.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun LwBottomSheet(
+    onDismiss: () -> Unit,
+    tag: String,
+    state: androidx.compose.material3.SheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) = androidx.compose.material3.ModalBottomSheet(
+    onDismissRequest = onDismiss, sheetState = state, containerColor = Glass.Dialog,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    dragHandle = {
+        Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color.White.copy(alpha = 0.25f)))
+    },
+    modifier = Modifier.testTag(tag),
+    content = content,
+)

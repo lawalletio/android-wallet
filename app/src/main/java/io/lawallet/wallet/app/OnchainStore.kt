@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import java.util.UUID
 
 /**
@@ -41,7 +40,7 @@ data class OnchainWallet(
  */
 class OnchainStore(context: Context) {
     private val sp = context.getSharedPreferences("onchain", Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
     private val ser = ListSerializer(OnchainWallet.serializer())
     private val _wallets = MutableStateFlow(sp.getString("wallets", null)?.let { runCatching { json.decodeFromString(ser, it) }.getOrNull() }.orEmpty())
     val wallets: StateFlow<List<OnchainWallet>> = _wallets

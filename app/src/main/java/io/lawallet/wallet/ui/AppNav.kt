@@ -5,7 +5,6 @@ import io.lawallet.wallet.app.Updater
 import io.lawallet.wallet.ui.screens.UpdatesScreen
 import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,14 +41,11 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -88,7 +84,6 @@ import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.app.AuthState
 import io.lawallet.wallet.app.PaymentNotice
-import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.NavTabBar
 import io.lawallet.wallet.ui.components.PaymentNoticePill
 import io.lawallet.wallet.ui.components.Txt

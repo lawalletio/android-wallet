@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.TabSwitch
+import io.lawallet.wallet.ui.components.lwFieldColors
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -181,7 +183,7 @@ fun BunkerLoginScreen() {
 
     androidx.activity.compose.BackHandler(step != null && step != BunkerStep.Done) { reset() }
     Column(Modifier.fillMaxSize()) {
-        SettingsHeader(stringResource(R.string.bunker_title), { if (step != null && step != BunkerStep.Done) reset() else nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.bunker_title), { if (step != null && step != BunkerStep.Done) reset() else nav.popBackStack() })
         AnimatedContent(
             step != null, Modifier.weight(1f),
             transitionSpec = { (fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 12 }) togetherWith fadeOut(tween(200)) },
@@ -195,7 +197,7 @@ fun BunkerLoginScreen() {
                     MutedText(stringResource(R.string.bunker_subtitle))
                     TabSwitch(listOf(stringResource(R.string.bunker_tab_paste), stringResource(R.string.bunker_tab_show)), tab) { tab = it; scanning = it == 0 }
                     if (tab == 0) {
-                        if (scanning) QrCamera(false, { error = it; scanning = false }) { raw ->
+                        if (scanning) QrCamera({ error = it; scanning = false }) { raw ->
                             if (!scanning) return@QrCamera
                             scanning = false; input = raw.trim()
                             connectBunker(input)
@@ -254,22 +256,6 @@ fun BunkerLoginScreen() {
                     enabled = input.isNotBlank(), icon = L.drawable.lucide_ic_plug,
                 )
             }
-        }
-    }
-}
-
-/** Two-segment glass switch; the selected segment takes the brand tint. */
-@Composable
-internal fun TabSwitch(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().glass(CircleShape, GlassLevel.Thin).padding(4.dp)) {
-        labels.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).height(40.dp)
-                    .then(if (on) Modifier.glass(CircleShape, GlassLevel.Strong, tint = LocalBrand.current.t400.copy(alpha = 0.25f)) else Modifier)
-                    .clickable { onSelect(i) }.testTag("bunker-tab-$i"),
-                contentAlignment = Alignment.Center,
-            ) { Txt(label, size = 14.sp, weight = FontWeight.Medium, color = if (on) Lw.Foreground else Lw.MutedFg) }
         }
     }
 }

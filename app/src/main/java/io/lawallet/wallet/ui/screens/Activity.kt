@@ -2,25 +2,16 @@ package io.lawallet.wallet.ui.screens
 
 import com.composables.icons.lucide.R as L
 import kotlinx.coroutines.launch
-import io.lawallet.wallet.ui.components.LwIcon
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import io.lawallet.wallet.core.ln.DestinationParser
-import coil3.compose.AsyncImage
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.border
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,10 +22,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.runtime.Stable
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,6 +46,7 @@ import io.lawallet.wallet.app.paymentKey
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.PaymentReceipt
@@ -68,11 +57,7 @@ import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.TransactionRow
 import io.lawallet.wallet.ui.components.TransactionGroup
 import io.lawallet.wallet.ui.components.Txt
-import io.lawallet.wallet.ui.components.shareText
 import io.lawallet.wallet.ui.theme.Lw
-import io.lawallet.wallet.ui.theme.GlassLevel
-import io.lawallet.wallet.ui.theme.Glass
-import io.lawallet.wallet.ui.theme.glass
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -344,6 +329,7 @@ fun ActivityDetailScreen(hash: String) {
         }
     }
     LaunchedEffect(hash) {
+        nav.awaitSettled() // the answer repaints the receipt: not mid-slide
         // Refreshes the row's state. A payment between two addresses on one wallet has both sides under this hash:
         // a lookup that answers with the other side never turns the tapped "received" into "sent" (or back).
         val looked = runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()?.let(Tx::from) ?: return@LaunchedEffect

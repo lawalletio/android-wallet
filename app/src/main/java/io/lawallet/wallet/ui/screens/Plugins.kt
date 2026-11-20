@@ -1,5 +1,10 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.SettingsPage
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.ConfirmDialog
+import io.lawallet.wallet.ui.components.DialogTitle
+import io.lawallet.wallet.ui.components.lwSwitchColors
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.webkit.ConsoleMessage
@@ -63,12 +68,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import io.lawallet.wallet.core.plugin.PromptSpec
 import io.lawallet.wallet.core.plugin.PromptRequest
 import io.lawallet.wallet.ui.components.WalletMark
-import io.lawallet.wallet.core.plugin.PluginAccount
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.app.AppContainer
-import io.lawallet.wallet.core.api.Custody
 import io.lawallet.wallet.core.api.RemoteWallet
 import io.lawallet.wallet.core.plugin.InstalledPlugin
 import io.lawallet.wallet.core.plugin.WebLoginRequest
@@ -93,6 +96,7 @@ import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.autoFocus
 import io.lawallet.wallet.ui.components.toast
+import io.lawallet.wallet.ui.components.toastError
 import io.lawallet.wallet.ui.theme.Lw
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -100,25 +104,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import com.composables.icons.lucide.R as L
-
-/** A plugin wallet's card in the Lightning deck: a [RemoteWallet] with this type, id `plugin:<id>`, provider = plugin id. */
-internal const val PLUGIN_WALLET = "PLUGIN"
-internal val RemoteWallet.isPlugin get() = type == PLUGIN_WALLET
-/** The plugin id behind a deck card id, or null for a LaWallet wallet. */
-internal fun pluginOf(walletId: String) = walletId.takeIf { it.startsWith("plugin:") }?.removePrefix("plugin:")
-
-/**
- * The server's wallets plus the enabled wallet plugins that aren't signed out (unknown counts as in: a plugin without
- * `account()`). A plugin wallet is local: it's listed, never the primary (LaWallet can't route an address to it).
- */
-internal fun withPlugins(server: List<RemoteWallet>?, plugins: List<InstalledPlugin>, accounts: Map<String, PluginAccount> = emptyMap()): List<RemoteWallet>? {
-    val mine = plugins.filter { it.enabled && it.manifest.isWallet && accounts[it.id]?.signedIn != false }.map {
-        // Its session never leaves the phone (the plugin's own secrets): local custody.
-        RemoteWallet("plugin:${it.id}", it.manifest.name, type = PLUGIN_WALLET, status = "ACTIVE", provider = it.id, custodyName = Custody.LOCAL.name)
-    }
-    if (mine.isEmpty()) return server
-    return server.orEmpty() + mine
-}
 
 /** Settings → Plugins (debug builds for now): what's installed, and Add Plugin from a URL. Contract: docs/plugins.md. */
 @Composable
@@ -191,7 +176,7 @@ private fun LocalPlugins() {
                                             context.toast(reloaded.format(p.manifest.name))
                                             if (!have && it.enabled && it.manifest.permissions.webLogin != null) signIn(c, context, it.manifest)
                                         }
-                                        .onFailure { e -> context.toast(e.message ?: failed) }
+                                        .onFailure { e -> context.toastError(e, failed) }
                                     busy = null
                                     refresh++
                                 }
@@ -214,7 +199,7 @@ private fun AddPluginDialog(onDismiss: () -> Unit, onContinue: (String) -> Unit)
     val valid = PluginSource.parse(url) != null
     LwAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Txt(stringResource(R.string.plugins_add), size = 16.sp) },
+        title = { DialogTitle(stringResource(R.string.plugins_add)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 MutedText(stringResource(R.string.plugins_add_hint))
@@ -248,10 +233,9 @@ private fun PluginActions(p: InstalledPlugin, onDismiss: () -> Unit) {
     val signedOut = stringResource(R.string.plugins_signed_out_of, p.manifest.name)
     val signOutFailed = stringResource(R.string.plugins_sign_out_failed, p.manifest.name)
     if (confirmRemove) {
-        LwAlertDialog(
-            onDismissRequest = { confirmRemove = false },
-            text = { Txt(stringResource(R.string.plugins_remove_confirm, p.manifest.name)) },
-            confirmButton = { ModalAction(stringResource(R.string.plugins_remove), { c.plugins.remove(p.id); confirmRemove = false; onDismiss() }, Modifier.testTag("plugin-remove-confirm"), destructive = true) },
+        ConfirmDialog(
+            stringResource(R.string.plugins_remove_confirm, p.manifest.name), stringResource(R.string.plugins_remove), { c.plugins.remove(p.id); confirmRemove = false; onDismiss() }, { confirmRemove = false },
+            destructive = true, actionModifier = Modifier.testTag("plugin-remove-confirm"),
         )
         return
     }
@@ -260,7 +244,7 @@ private fun PluginActions(p: InstalledPlugin, onDismiss: () -> Unit) {
     LwAlertDialog(
         onDismissRequest = onDismiss,
         icon = { PluginIcon(p.id, url = p.candidate.iconUrl) },
-        title = { Txt(p.manifest.name, size = 16.sp) },
+        title = { DialogTitle(p.manifest.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val account by c.plugins.accounts.collectAsState()
@@ -339,9 +323,14 @@ private fun PluginBalance(id: String) {
  * says how it went.
  */
 internal fun signIn(c: AppContainer, context: android.content.Context, m: PluginManifest) {
+    // Resolved now, in the screen's locale: the launch below outlives the screen (up to the 15 min login timeout) and
+    // must not hold its Activity.
+    val signedIn = context.getString(R.string.plugins_signed_in, m.name)
+    val failed = context.getString(R.string.plugins_sign_in_failed, m.name)
+    val app = context.applicationContext
     c.scope.launch {
         val ok = c.plugins.login(m.id)
-        context.toast(context.getString(if (ok) R.string.plugins_signed_in else R.string.plugins_sign_in_failed, m.name))
+        app.toast(if (ok) signedIn else failed)
         if (ok) c.wallet.refreshBalance()
     }
 }
@@ -358,7 +347,7 @@ fun PluginPromptDialog(r: PromptRequest) = key(r) {
     LwAlertDialog(
         onDismissRequest = { r.result.complete(null) },
         icon = { PluginIcon(r.pluginId) },
-        title = { Txt(r.spec.title, size = 16.sp) },
+        title = { DialogTitle(r.spec.title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 MutedText(stringResource(R.string.plugins_prompt_from, r.pluginName), size = 12.sp)
@@ -397,7 +386,7 @@ internal fun PluginIcon(id: String?, modifier: Modifier = Modifier, url: String?
 /** A wallet card's mark: the plugin's icon for a plugin wallet, else the NWC / LNCurl mark. */
 @Composable
 internal fun DeckMark(w: RemoteWallet, size: Dp, modifier: Modifier = Modifier) =
-    if (w.isPlugin) PluginIcon(w.provider, size = size, modifier = modifier) else WalletMark(w.provider == "lncurl", size, modifier)
+    if (w.isPlugin) PluginIcon(w.provider, size = size, modifier = modifier) else WalletMark(w.isLncurl, size, modifier)
 
 /** Wallet plugins that can be added as a wallet (enabled, sign-in based, not signed in yet), for the add-wallet choices. */
 @Composable
@@ -444,7 +433,7 @@ fun PluginAddScreen(url: String) {
         LwAlertDialog(
             onDismissRequest = { if (!installing) confirm = null },
             icon = { PluginIcon(null, url = p.iconUrl) },
-            title = { Txt(stringResource(R.string.plugins_install_title, p.manifest.name), size = 16.sp) },
+            title = { DialogTitle(stringResource(R.string.plugins_install_title, p.manifest.name)) },
             text = { Permissions(p.manifest) },
             confirmButton = {
                 ModalAction(stringResource(R.string.plugins_install), {
@@ -457,7 +446,7 @@ fun PluginAddScreen(url: String) {
                                 // Signing in opens over the list (AppNav shows the request).
                                 if (it.manifest.permissions.webLogin != null && it.enabled) signIn(c, context, it.manifest)
                             }
-                            .onFailure { e -> context.toast(e.message ?: failed) }
+                            .onFailure { e -> context.toastError(e, failed) }
                         installing = false
                     }
                 }, Modifier.testTag("plugin-install"), loading = installing)
@@ -536,7 +525,7 @@ private fun PluginLogin(r: WebLoginRequest, cancel: () -> Unit) {
     val site = r.url.toHttpUrlOrNull()?.topPrivateDomain()
     fun allowed(u: android.net.Uri) = u.scheme == "https" && u.host?.let { h -> h == host || (site != null && (h == site || h.endsWith(".$site"))) } == true
     Column(Modifier.fillMaxSize().background(Lw.Background).systemBarsPadding().imePadding()) {
-        SettingsHeader(stringResource(R.string.plugins_login_title, r.pluginName), cancel, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.plugins_login_title, r.pluginName), cancel)
         MutedText(stringResource(R.string.plugins_login_host, host), Modifier.padding(horizontal = 16.dp, vertical = 4.dp), size = 12.sp)
         AndroidView(
             factory = { ctx ->

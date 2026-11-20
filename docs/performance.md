@@ -12,8 +12,10 @@ measure, change, measure again, and keep the numbers.
 |---|---|---|
 | `screen` | each visit of a route, cut on the next navigation or on going to background | `route` (pattern), `ms`, `heap_mb`; frames after the transition: `frames`, `janky`, `jank_pct`, `frozen`, `p50`/`p90`/`p99`/`max`, `ui_p90` (main thread), `gpu_p90` (API 31+); the same with `enter_` for the enter transition (until the navigation settles) |
 | `start` | first frame of the process | `ui_ms`: activity created → first frame; `cold_ms`: process start → first frame, only on a true cold start (not when the payment listener had the process running) |
-| `res` | every minute in foreground | `heap_mb`, `native_mb`, `pss_mb`, `threads`, `cpu_pct` (share of one core since the last sample), `route` |
+| `res` | every minute in foreground | `heap_mb`, `native_mb`, `pss_mb`, `threads`, `pools` (threads by pool, largest first: `DefaultDispatch:7,OkHttp TaskRunn:4,…`; URL-named threads count as `other`), `cpu_pct` (share of one core since the last sample), `route` |
 | `nwc` | each NIP-47 request | `method`, `ms`, `outcome` (`ok`, `cancelled`, or the error code) |
+| `plugin` | each wallet-plugin request | `plugin` (id), `method`, `ms`, `outcome` |
+| `api` | each LaWallet REST call | `method`, `path` (ids and usernames replaced by `:id`), `ms`, `outcome` (HTTP status or the exception class) |
 
 Every record also has `ts`, `build` (debug/release), `vc` (versionCode), `pid`, `api`.
 
@@ -52,7 +54,11 @@ scripts/perf-report.py report perf-data/*.jsonl --route forward   # everything s
 ```
 
 `pull` reads the app's files through `run-as` on debuggable builds; on release builds it falls back to the `LwPerf`
-lines still in logcat. It also saves a `sys` record from `dumpsys gfxinfo` and `meminfo` (the system's own count).
+lines still in logcat. It also saves a `sys` record from `dumpsys gfxinfo` and `meminfo` (the system's own count), and
+on debug builds a `leak` record per leak LeakCanary found (its `leaks.db`: class and field names only).
+
+`report` marks NWC, plugin and API calls made while the app wasn't visible (`bg`): background work should be close to
+zero apart from the payment listener's notification stream.
 `perf-data/` is gitignored: it's the local history to compare against.
 
 **Judge smoothness on a release build.** Debug builds have no R8 and no baseline profile, and Compose runs a lot
@@ -68,7 +74,9 @@ For controlled, repeatable runs (cold start, onboarding frames) there is also th
 - Enter transitions: `enter_jank_pct` under 5%, `enter_max` under 2 frames (17 ms at 120 Hz).
 - Screens at rest: `jank_pct` under 1%, no frozen frames.
 - Cold start: under 1 s on a release build.
-- Memory: `heap_mb` and `pss_mb` flat over a long session (growth means a leak).
+- Memory: `heap_mb` and `pss_mb` flat over a long session (growth means a leak); `threads` back near its start value
+  after leaving a screen (`pools` says which pool kept them). No LeakCanary leaks.
+- Background: no `bg` balance, plugin or API polling.
 
 ## Rules that keep transitions smooth
 

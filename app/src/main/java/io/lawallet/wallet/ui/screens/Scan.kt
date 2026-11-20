@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.DialogTitle
 import android.Manifest
 import android.content.ClipboardManager
 import android.content.Intent
@@ -64,7 +65,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.lawallet.wallet.ui.components.LwAlertDialog
 import io.lawallet.wallet.ui.components.ModalAction
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,7 +99,6 @@ import io.lawallet.wallet.core.ln.PluginLink
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
-import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.rememberSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.BtnVariant
@@ -208,9 +207,10 @@ fun ScanScreen() {
         val density = LocalDensity.current
         val cutout = remember(left, top, side) { with(density) { CutoutShape(Rect(Offset(left.toPx(), top.toPx()), Size(side.toPx(), side.toPx())), 28.dp.toPx()) } }
 
-        if (granted.value && settled) CameraFeed(busy, { error = it }, ::handle, textureView = true, Modifier.fillMaxSize().hazeSource(haze))
-        // Frosted glass everywhere but the window: one GPU blur pass over a downscaled frame.
-        Box(Modifier.fillMaxSize().clip(cutout).hazeEffect(haze, ScanGlass) { inputScale = HazeInputScale.Fixed(0.25f) })
+        if (granted.value && settled) CameraFeed(busy, { error = it }, ::handle, textureView = CameraBlur, Modifier.fillMaxSize().then(if (CameraBlur) Modifier.hazeSource(haze) else Modifier))
+        // Frosted glass everywhere but the window: one GPU blur pass over a downscaled frame. Without blur, a dense tint
+        // over the cheaper SurfaceView feed.
+        Box(Modifier.fillMaxSize().clip(cutout).then(if (CameraBlur) Modifier.hazeEffect(haze, ScanGlass) { inputScale = HazeInputScale.Fixed(0.25f) } else Modifier.background(ScanGlass.fallbackTint.color)))
         Box(Modifier.offset(left, top).size(side), contentAlignment = Alignment.Center) {
             ScanFrame(urProgress, Modifier.fillMaxSize())
             when {
@@ -243,26 +243,24 @@ fun ScanScreen() {
     foreign?.let { f ->
         LwAlertDialog(
         onDismissRequest = { foreign = null },
-        title = { Txt(stringResource(R.string.scan_differentCommunity), size = 16.sp) },
+        title = { DialogTitle(stringResource(R.string.scan_differentCommunity)) },
         text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
         confirmButton = { ModalAction(stringResource(R.string.scan_openLink), { foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) },
-        containerColor = Glass.Dialog,
     )
     }
 }
 
 /** Square camera preview that reports QR payloads; requests the camera permission itself. */
 @Composable
-fun QrCamera(busy: Boolean, onError: (String?) -> Unit, onCode: (String) -> Unit) {
+fun QrCamera(onError: (String?) -> Unit, onCode: (String) -> Unit) {
     val granted = rememberCameraPermission()
     // The camera (CameraX bind, ML Kit init) starts once the screen has landed: mid-slide it drops frames.
     val settled = rememberSettled()
     Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
         if (granted.value && !settled) Spinner(32.dp)
         else if (granted.value) {
-            CameraFeed(busy, onError, onCode, textureView = false, Modifier.fillMaxSize())
+            CameraFeed(false, onError, onCode, textureView = false, Modifier.fillMaxSize())
             Box(Modifier.fillMaxWidth(0.75f).aspectRatio(1f).border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp)))
-            if (busy) Spinner(32.dp)
         } else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(24.dp)) {
             MutedText(stringResource(R.string.scan_camera_permission), align = TextAlign.Center)
             LwButton(stringResource(R.string.scan_grant), { granted.request() }, variant = BtnVariant.Secondary)
@@ -302,28 +300,56 @@ private fun CameraFeed(busy: Boolean, onError: (String?) -> Unit, onCode: (Strin
         initMlKit(context)
         BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
     }
-    DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown(); scanner.close() } }
+    // CameraX keeps the last use cases in process-wide state after unbinding, so ours must drop what they point at: the
+    // analyzer (this screen's callbacks) and the preview's surface (the PreviewView, so the Activity). LeakCanary caught
+    // a destroyed MainActivity held through ImageAnalysis' analyzer.
+    val bound = remember { arrayOfNulls<androidx.camera.core.UseCase>(2) }
+    var disposed by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed = true
+            (bound[0] as? Preview)?.surfaceProvider = null
+            (bound[1] as? ImageAnalysis)?.clearAnalyzer()
+            // Only once bound: the provider is ready then, so get() doesn't block.
+            bound.filterNotNull().takeIf { it.isNotEmpty() }?.let { cases -> runCatching { ProcessCameraProvider.getInstance(context.applicationContext).get().unbind(*cases.toTypedArray()) } }
+            bound.fill(null)
+            analyzerExecutor.shutdown(); scanner.close()
+        }
+    }
     AndroidView({ ctx ->
         PreviewView(ctx).also { view ->
             if (textureView) view.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            val main = ContextCompat.getMainExecutor(ctx.applicationContext)
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
+                if (disposed) return@addListener // left before the camera was ready
                 val provider = providerFuture.get()
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                 analysis.setAnalyzer(analyzerExecutor) { proxy ->
                     val media = proxy.image
                     if (media == null || paused) { proxy.close(); return@setAnalyzer }
+                    // Callbacks on the analyzer's thread, not Main (they'd wake it for every analysed frame). Once the
+                    // screen is gone the executor is shut: drop them, the camera is unbound by then.
+                    val bg = java.util.concurrent.Executor { r -> runCatching { analyzerExecutor.execute(r) } }
                     scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                        .addOnSuccessListener { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> ContextCompat.getMainExecutor(ctx).execute { code(v) } } }
-                        .addOnCompleteListener { proxy.close() }
+                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> main.execute { if (!disposed) code(v) } } }
+                        .addOnCompleteListener(bg) { proxy.close() }
                 }
                 provider.unbindAll()
+                bound[0] = preview; bound[1] = analysis
                 runCatching { provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis) }.onFailure { failed(it.message) }
-            }, ContextCompat.getMainExecutor(ctx))
+            }, main)
         }
     }, modifier)
 }
+
+/**
+ * Whether the scanner blurs the camera. A live blur needs the feed in a TextureView (a GPU copy of every camera frame)
+ * plus a blur pass per frame: Sentry had 100% slow frames on Scan on mid-range phones (6% on flagships). Only phones
+ * that declare a media performance class (S or later) get it; the rest get the SurfaceView under [ScanGlass]'s scrim.
+ */
+private val CameraBlur = android.os.Build.VERSION.SDK_INT >= 31 && android.os.Build.VERSION.MEDIA_PERFORMANCE_CLASS >= android.os.Build.VERSION_CODES.S
 
 /** The scanner's glass: soft blur under a dark tint, no grain. Below API 31 (no blur) a dense scrim. */
 private val ScanGlass = HazeStyle(

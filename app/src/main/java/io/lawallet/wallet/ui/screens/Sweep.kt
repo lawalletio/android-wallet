@@ -87,7 +87,6 @@ import io.lawallet.wallet.ui.theme.LocalBrand
 import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 import com.composables.icons.lucide.R as L
@@ -224,7 +223,7 @@ fun SweepScreen(fromId: String, toId: String) {
     LaunchedEffect(fromId, toId) {
         if (run != null) return@LaunchedEffect
         val api = c.session.api.value
-        val cached = c.prefs.cached("remote-wallets", remoteWalletsSer).orEmpty()
+        val cached = c.remoteWallets.cached.orEmpty()
         val from = cached.find { it.id == fromId } ?: runCatching { api.remoteWallet(fromId) }.getOrNull() ?: return@LaunchedEffect
         val to = cached.find { it.id == toId } ?: runCatching { api.remoteWallet(toId) }.getOrNull() ?: return@LaunchedEffect
         val r = SweepRun(from, to).also { Sweeps.current = it; run = it }
@@ -251,7 +250,7 @@ fun SweepScreen(fromId: String, toId: String) {
         }
     }
     Column(Modifier.fillMaxSize().testTag("sweep")) {
-        SettingsHeader(stringResource(R.string.sweep_title), back, stringResource(R.string.common_back))
+        SettingsHeader(stringResource(R.string.sweep_title), back)
         val r = run
         if (r == null) { Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { Spinner() }; return@Column }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -308,7 +307,7 @@ private fun FlowHeader(r: SweepRun) {
 
 @Composable
 private fun WalletBadge(w: RemoteWallet, dim: Boolean, highlight: Boolean = false) {
-    val lncurl = w.provider == "lncurl"
+    val lncurl = w.isLncurl
     val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
     val glow by animateFloatAsState(if (highlight) 1f else 0f, spring(0.5f, Spring.StiffnessLow), label = "badge")
     val alpha by animateFloatAsState(if (dim) 0.55f else 1f, tween(400), label = "dim")

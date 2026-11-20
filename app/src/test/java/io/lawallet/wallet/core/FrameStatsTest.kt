@@ -1,6 +1,7 @@
 package io.lawallet.wallet.core
 
 import io.lawallet.wallet.core.diag.FrameStats
+import io.lawallet.wallet.core.diag.Perf
 import io.lawallet.wallet.core.diag.jsonLine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,4 +39,14 @@ class FrameStatsTest {
     @Test fun jsonLineEscapesStringsAndKeepsNumbers() =
         assertEquals("""{"t":"screen","route":"a/\"b\"\\c","ms":12,"p90":7.5,"ok":true}""",
             jsonLine(mapOf("t" to "screen", "route" to "a/\"b\"\\c", "ms" to 12L, "p90" to 7.5, "ok" to true, "skip" to null)))
+
+    @Test fun threadPoolsDropNumbersAndNeverKeepUrls() {
+        assertEquals("DefaultDispatch", Perf.threadPool("DefaultDispatch"))
+        assertEquals("pool-#-thread", Perf.threadPool("pool-3-thread-12"))
+        assertEquals("binder", Perf.threadPool("binder:20016_4"))
+        assertEquals("plugin", Perf.threadPool("plugin-io.fiwind"))
+        // A WebSocket's reader thread is named after its URL (a relay): it must never reach the log.
+        assertEquals("other", Perf.threadPool("getalby.com/..."))
+        assertEquals("other", Perf.threadPool("OkHttp wss://relay.example/v1"))
+    }
 }

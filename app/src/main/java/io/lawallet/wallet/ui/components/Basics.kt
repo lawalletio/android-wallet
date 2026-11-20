@@ -1,5 +1,17 @@
 package io.lawallet.wallet.ui.components
 
+import androidx.compose.foundation.rememberScrollState
+
+import androidx.compose.foundation.verticalScroll
+
+import io.lawallet.wallet.R
+
+import androidx.compose.ui.res.stringResource
+
+import androidx.compose.foundation.layout.fillMaxSize
+
+import io.lawallet.wallet.ui.LocalNav
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -25,7 +37,6 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import kotlin.math.cos
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,7 +71,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -190,23 +200,22 @@ fun GlassIconButton(@DrawableRes icon: Int, onClick: () -> Unit, modifier: Modif
 
 /** Flow header: round glass back/close button, centered title. */
 @Composable
-fun ScreenHeader(title: String?, onBack: (() -> Unit)?, close: Boolean = false, trailing: @Composable (() -> Unit)? = null) {
+fun ScreenHeader(title: String?, onBack: (() -> Unit)?, close: Boolean = false) {
     Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp)) {
         if (onBack != null) GlassIconButton(
             if (close) L.drawable.lucide_ic_x else L.drawable.lucide_ic_chevron_left, onBack,
             Modifier.align(Alignment.CenterStart).testTag("header-back"), size = 40.dp,
         )
         if (title != null) Txt(title, Modifier.align(Alignment.Center), size = 17.sp, weight = FontWeight.SemiBold)
-        if (trailing != null) Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
     }
 }
 
 /** Settings pages: same round glass back button as flows, large left-aligned title below. */
 @Composable
-fun SettingsHeader(title: String, onBack: () -> Unit, backLabel: String, titleAction: (@Composable () -> Unit)? = null, action: (@Composable () -> Unit)? = null) {
+fun SettingsHeader(title: String, onBack: () -> Unit, titleAction: (@Composable () -> Unit)? = null, action: (@Composable () -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = backLabel)
+            GlassIconButton(L.drawable.lucide_ic_chevron_left, onBack, Modifier.testTag("header-back"), size = 40.dp, contentDescription = stringResource(R.string.common_back))
             Spacer(Modifier.weight(1f))
             action?.invoke() // top right
         }
@@ -230,6 +239,28 @@ fun SettingsGroup(title: String? = null, content: @Composable () -> Unit) {
 @Composable
 fun GroupDivider() = HorizontalDivider(Modifier.padding(start = 60.dp), color = Color.White.copy(alpha = 0.06f))
 
+/**
+ * A settings row that is a switch: tapping anywhere on it toggles (only when [enabled], like the switch itself).
+ * [switchModifier] reaches the switch (test tags that sit on it).
+ */
+@Composable
+fun SettingsSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null,
+    value: String? = null,
+    enabled: Boolean = true,
+    switchModifier: Modifier = Modifier,
+) = SettingsRow(label, if (enabled) ({ onCheckedChange(!checked) }) else null, modifier, icon, value) {
+    androidx.compose.material3.Switch(checked, onCheckedChange, switchModifier, enabled = enabled, colors = lwSwitchColors())
+}
+
+/** The app's switch colours: brand track when on. */
+@Composable
+fun lwSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = io.lawallet.wallet.ui.theme.LocalBrand.current.t400, checkedThumbColor = Lw.Foreground, uncheckedTrackColor = Color.White.copy(alpha = 0.08f), uncheckedThumbColor = Lw.MutedFg, uncheckedBorderColor = Color.White.copy(alpha = 0.16f))
+
 @Composable
 fun SettingsRow(
     label: String,
@@ -237,7 +268,6 @@ fun SettingsRow(
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     value: String? = null,
-    external: Boolean = false,
     labelColor: Color = Lw.Foreground,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
@@ -259,7 +289,7 @@ fun SettingsRow(
         Txt(label, Modifier.weight(1f), size = 16.sp, weight = FontWeight.Medium, color = labelColor, maxLines = 1)
         if (value != null) { Txt(value, Modifier.padding(start = 8.dp), size = 14.sp, color = Lw.MutedFg, maxLines = 1); Spacer(Modifier.width(6.dp)) }
         if (trailing != null) trailing()
-        else if (onClick != null) LwIcon(if (external) L.drawable.lucide_ic_external_link else L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+        else if (onClick != null) LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
     }
 }
 
@@ -343,3 +373,25 @@ suspend fun Context.shareImage(bitmap: Bitmap, title: String? = null) {
 }
 
 fun Context.toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+/**
+ * A failed action as a toast: its message, else [fallback]. Nothing for a cancellation (`runCatching` catches it when
+ * the screen leaves mid-request, which used to toast "Job was cancelled") or when there's no text at all.
+ */
+fun Context.toastError(e: Throwable, fallback: String? = null) {
+    if (e is kotlinx.coroutines.CancellationException) return
+    (e.message?.takeIf { it.isNotBlank() } ?: fallback)?.let(::toast)
+}
+
+@Composable
+internal fun Pill(text: String, color: androidx.compose.ui.graphics.Color) =
+    Txt(text, Modifier.glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)).padding(horizontal = 9.dp, vertical = 3.dp), size = 11.sp, weight = FontWeight.SemiBold, color = color)
+
+@Composable
+internal fun SettingsPage(title: String, content: @Composable () -> Unit) {
+    val nav = LocalNav.current
+    Column(Modifier.fillMaxSize()) {
+        SettingsHeader(title, { nav.popBackStack() })
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) { content() }
+    }
+}

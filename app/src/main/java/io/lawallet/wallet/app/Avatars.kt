@@ -17,7 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -41,14 +40,15 @@ class Avatars(context: Context) {
 
     private val profilesFile = File(context.filesDir, "address-profiles.json")
     private val profilesSer = MapSerializer(String.serializer(), AddressProfile.serializer())
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = io.lawallet.wallet.core.relaxedJson
     private val writeLock = Mutex()
+    private val UNSAFE = Regex("[^a-z0-9@._-]")
     // Read once at startup (a few KB) so the first frame already has every name and face seen before.
     private val _profiles = MutableStateFlow(runCatching { json.decodeFromString(profilesSer, profilesFile.readText()) }.getOrNull() ?: emptyMap())
     /** Keyed by [key]. */
     val profiles: StateFlow<Map<String, AddressProfile>> = _profiles
 
-    fun key(address: String) = address.trim().lowercase().replace(Regex("[^a-z0-9@._-]"), "_")
+    fun key(address: String) = address.trim().lowercase().replace(UNSAFE, "_") // per row, per recomposition: compiled once
     private fun name(address: String) = key(address)
 
     /**

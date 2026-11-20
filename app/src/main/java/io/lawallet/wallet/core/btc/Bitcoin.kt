@@ -1,8 +1,8 @@
 package io.lawallet.wallet.core.btc
 
 import io.lawallet.wallet.core.nostr.Bech32
+import io.lawallet.wallet.core.nostr.sha256
 import java.math.BigInteger
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 /*
@@ -21,8 +21,6 @@ enum class ScriptType(val purpose: Int, val label: String, val short: String) {
     /** First account, mainnet: m/84'/0'/0'. */
     val path get() = "m/$purpose'/0'/0'"
 }
-
-private fun sha256(b: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(b)
 
 enum class PhraseProblem { LENGTH, UNKNOWN_WORD, CHECKSUM }
 

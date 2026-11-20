@@ -24,7 +24,6 @@ object Lw {
     val Secondary = Color(0xFF262626)
     val Border = Color(0xFF262626)
     val MutedFg = Color(0xFFA3A3A3)
-    val Ring = Color(0xFF737373)
     val Destructive = Color(0xFF9A1919)
     val DestructiveFg = Color(0xFFFEE2E2)
     val Red = Color(0xFFEF4444)

@@ -19,8 +19,8 @@ import java.util.concurrent.Executors
  *  - `screen`: one visit of a route pattern — its frames ([FrameStats]), split into the enter transition (`enter_*`,
  *    until the navigation settles) and the rest, with the heap at the end. Also cut when the app goes to background.
  *  - `start`: `ui_ms` activity created → first frame; `cold_ms` process start → first frame, on a true cold start.
- *  - `res`: every minute in foreground — heap, native, PSS, threads, CPU share since the last sample.
- *  - `nwc`: one NIP-47 request — method, outcome, ms.
+ *  - `res`: every minute in foreground — heap, native, PSS, threads (and by pool), CPU share since the last sample.
+ *  - `nwc`: one NIP-47 request — method, outcome, ms. `api`: one LaWallet REST call — method, path pattern, outcome, ms.
  * Route patterns (`activity/{hash}`, never arguments) and method names only: no keys, amounts or addresses.
  */
 object Perf {
@@ -113,6 +113,9 @@ object Perf {
 
     fun nwc(method: String, ms: Long, outcome: String) = record("nwc", mapOf("method" to method, "ms" to ms, "outcome" to outcome))
 
+    /** One LaWallet REST call: [path] already has its ids and usernames replaced by `:id` (LaWalletApi.PATH_WORDS). */
+    fun api(method: String, path: String, ms: Long, outcome: String) = record("api", mapOf("method" to method, "path" to path, "ms" to ms, "outcome" to outcome))
+
     private var lastCpuMs = -1L
     private var lastWallMs = 0L
 
@@ -125,11 +128,25 @@ object Perf {
         val mem = Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }
         record("res", mapOf(
             "heap_mb" to heapMb(), "native_mb" to (Debug.getNativeHeapAllocatedSize() shr 20), "pss_mb" to (mem.totalPss shr 10),
-            "threads" to threads(), "cpu_pct" to cpuPct, "route" to synchronized(lock) { route },
+            "threads" to threads(), "pools" to pools(), "cpu_pct" to cpuPct, "route" to synchronized(lock) { route },
         ))
     }
 
     private fun threads() = runCatching { File("/proc/self/status").useLines { l -> l.first { it.startsWith("Threads:") }.substringAfter(':').trim().toInt() } }.getOrNull()
+
+    /** Which pools the threads belong to, largest first ("DefaultDispatch:7,OkHttp TaskRunn:4,…"): says what a climb is. */
+    private fun pools() = runCatching {
+        File("/proc/self/task").listFiles().orEmpty().mapNotNull { runCatching { File(it, "comm").readText().trim() }.getOrNull() }
+            .groupingBy(::threadPool).eachCount().entries.sortedByDescending { it.value }.take(10).joinToString(",") { "${it.key}:${it.value}" }
+    }.getOrNull()
+
+    /** A thread's pool: numbers dropped; names with a dot or slash (a socket reader named after its URL) are "other". */
+    internal fun threadPool(name: String): String = when {
+        name.startsWith("plugin-") -> "plugin"
+        name.startsWith("binder:") -> "binder"
+        '.' in name || '/' in name || ':' in name || ',' in name -> "other"
+        else -> name.replace(Regex("\\d+"), "#").trimEnd('#', '-', '_', ' ').ifEmpty { "other" }
+    }
 
     private fun heapMb() = Runtime.getRuntime().let { (it.totalMemory() - it.freeMemory()) shr 20 }
 }

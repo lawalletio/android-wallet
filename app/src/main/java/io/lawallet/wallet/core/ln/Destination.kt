@@ -1,7 +1,7 @@
 package io.lawallet.wallet.core.ln
 
-import io.lawallet.wallet.core.nostr.Bech32
 import java.net.URLEncoder
+import io.lawallet.wallet.core.nostr.Bech32
 
 /** Port of apps/web/lib/client/nwc/parse-destination.ts — pure, no IO. */
 sealed interface Destination {

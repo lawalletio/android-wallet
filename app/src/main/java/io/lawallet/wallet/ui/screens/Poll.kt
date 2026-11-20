@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.lwFieldColors
+import io.lawallet.wallet.ui.components.DialogTitle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -168,7 +170,7 @@ fun PollScreen(slug: String) {
     }
 
     Column(Modifier.fillMaxSize().testTag("poll-$slug")) {
-        SettingsHeader(s?.poll?.title ?: stringResource(R.string.poll_title), { nav.popBackStack() }, stringResource(R.string.common_back))
+        SettingsHeader(s?.poll?.title ?: stringResource(R.string.poll_title), { nav.popBackStack() })
         when {
             s == null || list == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (failed) Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -291,7 +293,7 @@ fun PollScreen(slug: String) {
         var text by remember { mutableStateOf("") }
         LwAlertDialog(
             onDismissRequest = { adding = false },
-            title = { Txt(stringResource(R.string.poll_custom_title)) },
+            title = { DialogTitle(stringResource(R.string.poll_custom_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     MutedText(stringResource(R.string.poll_custom_hint))
