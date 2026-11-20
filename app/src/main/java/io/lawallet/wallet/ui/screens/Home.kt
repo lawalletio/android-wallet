@@ -1230,8 +1230,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                                 },
                             ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                             .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("balance-toggle")
-                            .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
-                            // Holding "charges" the figure (shrinks, dims) up to the long press; inside measureRoot so the ghost's start isn't skewed.
+                            // Holding "charges" the figure (shrinks, dims) up to the long press.
                             .graphicsLayer { rollIn(LIGHTNING); val p = balanceHold(); scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1487,10 +1486,6 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       }
       SideEffect { reveal.hero = pillWallet != null }
       if (pillWallet != null && open) WalletPillMorph(pillWallet, reveal)
-      // The figure flies into its wallet's card; a free or alias address has neither, so nothing flies.
-      if (open && !detached && deck.orEmpty().any { it.isDefault } && shown != null) {
-          BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp, intoPill = pillWallet != null)
-      }
     }
 }
 
