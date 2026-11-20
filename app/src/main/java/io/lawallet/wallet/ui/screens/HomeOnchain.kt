@@ -203,7 +203,6 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                     },
                                 ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                                 .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("onchain-balance-toggle")
-                                .measureRoot { if (reveal.progress == 0f) reveal.figure = it }
                                 .graphicsLayer { rollIn(ONCHAIN); val p = hold(); scaleX = 1f - 0.06f * p; scaleY = scaleX; alpha *= 1f - 0.3f * p },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -273,7 +272,6 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                 onDelete = { deleting = w },
             )
         }
-        if (open && primary != null && !ONCHAIN_SOON) BalanceGhost(reveal, if (hidden) "•••••" else Currencies.formatBalance(shown, code, rates), if (code == "BTC" && !hidden) 44.sp else 56.sp)
     }
     deleting?.let { w -> RemoveOnchainDialog(w, { deleting = null }) { deleting = null; c.onchain.remove(w.id) } }
 }
@@ -353,9 +351,6 @@ private fun OnchainRevealCard(
             if (balance == null) Txt("—", size = CARD_FIGURE, color = Lw.MutedFg)
             else {
                 val m = Modifier
-                    // The primary's figure is where the ghost lands, revealed as it arrives.
-                    .then(if (w.isPrimary) Modifier.measureRoot { reveal.target = it } else Modifier)
-                    .graphicsLayer { if (w.isPrimary) alpha = 0.15f + 0.85f * smooth(0.78f, 1f, reveal.progress) }
                 if (hidden) Txt("•••••", m, size = CARD_FIGURE, weight = FontWeight.SemiBold, color = figure)
                 else Odometer(Currencies.formatBalance(balance, code, rates), m, CARD_FIGURE, 0.sp, figure, fromZero = false, lineHeight = 24.sp)
             }

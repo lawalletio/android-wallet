@@ -4,7 +4,6 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
-import android.os.Build
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -97,10 +96,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -141,8 +138,6 @@ import io.lawallet.wallet.ui.theme.Lw
 import io.lawallet.wallet.ui.theme.glass
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
-import kotlin.math.PI
-import kotlin.math.sin
 import com.composables.icons.lucide.R as L
 
 /*
@@ -164,9 +159,6 @@ internal class HomeReveal {
     var headerBottom by mutableFloatStateOf(0f)
     var balanceTop by mutableFloatStateOf(0f)
     var balanceH by mutableFloatStateOf(0f)
-    /** The balance figure at rest, and the primary card's balance: the ghost's two ends. */
-    var figure by mutableStateOf(Rect.Zero)
-    var target by mutableStateOf(Rect.Zero)
     /** The wallet pill at rest, and the selected card where the open list lands it: [WalletPillMorph]'s two ends. */
     var pill by mutableStateOf(Rect.Zero)
     var card by mutableStateOf(Rect.Zero)
@@ -748,9 +740,6 @@ private fun WalletRevealCard(
                 loading -> Spinner(16.dp, Lw.MutedFg)
                 balance != null -> {
                     val m = Modifier
-                        // The primary's figure is where the ghost lands: tracked live as the card rides down, revealed as it arrives.
-                        .then(if (w.isDefault) Modifier.onGloballyPositioned { reveal.target = it.rootRect() } else Modifier)
-                        .graphicsLayer { if (w.isDefault) alpha = 0.15f + 0.85f * smooth(0.78f, 1f, reveal.progress) }
                         .testTag("home-wallet-balance-${w.name}")
                     // Live updates roll digit by digit, like the main balance.
                     if (hidden) Txt("•••••", m, size = CARD_FIGURE, weight = FontWeight.SemiBold, color = figure)
@@ -878,82 +867,6 @@ internal val CARD_FIGURE = 18.sp
 internal const val PENDING = "PENDING"
 
 /**
- * The ghost: a translucent copy of the balance that lifts off it, arcs into the primary card's figure and
- * shrinks to its size, fading as it lands. Pure function of [HomeReveal.progress], so it scrubs with the finger.
- */
-@Composable
-internal fun BalanceGhost(reveal: HomeReveal, text: String, size: TextUnit, intoPill: Boolean = false) {
-    val from = reveal.figure
-    if (intoPill) return PillBoundGhost(reveal, text, size)
-    val to = reveal.target
-    if (from == Rect.Zero || to == Rect.Zero) return
-    Box(
-        Modifier.offset { IntOffset(from.left.toInt(), (from.top - reveal.rootTop).toInt()) }
-            .layout { m, c ->
-                val p = m.measure(c.copy(minWidth = from.width.toInt(), maxWidth = from.width.toInt(), minHeight = from.height.toInt(), maxHeight = from.height.toInt()))
-                layout(p.width, p.height) { p.place(0, 0) }
-            }
-            .graphicsLayer {
-                val p = reveal.progress.coerceIn(0f, 1f)
-                val t = FastOutSlowInEasing.transform(p)
-                // Start rides along with the real figure as it slides down; end is the card's figure.
-                val sx = from.center.x
-                val sy = from.center.y + p * reveal.range
-                val x = sx + (to.center.x - sx) * t
-                val y = sy + (to.center.y - sy) * t - sin(PI * t).toFloat() * 36.dp.toPx()
-                translationX = x - from.center.x
-                translationY = y - from.center.y
-                val s = 1f + (CARD_FIGURE.value / size.value - 1f) * t
-                scaleX = s; scaleY = s
-                alpha = 0.55f * smooth(0.02f, 0.14f, p) * (1f - smooth(0.74f, 0.98f, p))
-                if (Build.VERSION.SDK_INT >= 31) {
-                    val b = sin(PI * p).toFloat() * 3.dp.toPx()
-                    renderEffect = if (b > 0.5f) BlurEffect(b, b, TileMode.Decal) else null
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Txt(text, size = size, weight = FontWeight.SemiBold, color = Lw.Foreground, lineHeight = 60.sp, letterSpacing = (-1.5).sp, maxLines = 1)
-    }
-}
-
-/**
- * The balance zooming out into the wallet pill as the list opens: a copy of the figure lifts off, shrinks to the pill
- * and fades into it; the pill then grows into the card ([WalletPillMorph]).
- */
-@Composable
-private fun PillBoundGhost(reveal: HomeReveal, text: String, size: TextUnit) {
-    val from = reveal.figure
-    val to = reveal.pill
-    if (from == Rect.Zero || to == Rect.Zero) return
-    Box(
-        Modifier.offset { IntOffset(from.left.toInt(), (from.top - reveal.rootTop).toInt()) }
-            .layout { m, c ->
-                val p = m.measure(c.copy(minWidth = from.width.toInt(), maxWidth = from.width.toInt(), minHeight = from.height.toInt(), maxHeight = from.height.toInt()))
-                layout(p.width, p.height) { p.place(0, 0) }
-            }
-            .graphicsLayer {
-                val p = reveal.progress.coerceIn(0f, 1f)
-                val t = FastOutSlowInEasing.transform(smooth(0f, GHOST_END, p))
-                // From the real figure (sliding down with the balance) to the pill's centre.
-                val sy = from.center.y + p * reveal.range
-                translationX = (to.center.x - from.center.x) * t
-                translationY = sy + (to.center.y - sy) * t - from.center.y
-                val s = 1f + (to.height * 0.5f / from.height - 1f) * t
-                scaleX = s; scaleY = s
-                alpha = 0.7f * smooth(0.01f, 0.05f, p) * (1f - smooth(0.12f, GHOST_END, p))
-                if (Build.VERSION.SDK_INT >= 31) {
-                    val b = sin(PI * smooth(0f, GHOST_END, p)).toFloat() * 4.dp.toPx()
-                    renderEffect = if (b > 0.5f) BlurEffect(b, b, TileMode.Decal) else null
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Txt(text, size = size, weight = FontWeight.SemiBold, color = Lw.Foreground, lineHeight = 60.sp, letterSpacing = (-1.5).sp, maxLines = 1)
-    }
-}
-
-/**
  * The wallet in use, as a small pill in the balance label's place: its mark and name. Tap opens the wallet list; hold opens
  * the wallet's menu. As the list opens it hands over to [WalletPillMorph] and the selected card.
  */
@@ -1045,8 +958,6 @@ internal fun WalletPillMorph(w: RemoteWallet, reveal: HomeReveal) {
 
 /** The pill's shape timeline: growing into the card as soon as the swipe starts, landing early in it. */
 private fun morphAt(p: Float) = FastOutSlowInEasing.transform(smooth(0f, MORPH_LAND, p))
-/** The balance's ghost has landed in the pill by here. */
-private const val GHOST_END = 0.2f
 /** The morph reaches the card here; the real card takes over by [MORPH_DONE]. */
 private const val MORPH_LAND = 0.55f
 private const val MORPH_DONE = 0.65f
