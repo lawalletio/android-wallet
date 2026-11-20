@@ -616,10 +616,6 @@ private fun PreviewRow(k: String, v: String) {
 fun SendSummaryScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
-    val context = LocalContext.current
-    val currencies by c.prefs.currencies.collectAsState()
-    val rates by c.rates.rates.collectAsState()
-    var code by remember { mutableStateOf(currencies.selected) }
     val r = c.flow.send.result
     if (r == null) { LaunchedEffect(Unit) { nav.goHome() }; return }
     val rows = buildList {

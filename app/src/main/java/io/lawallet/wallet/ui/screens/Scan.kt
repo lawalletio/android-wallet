@@ -208,9 +208,10 @@ fun ScanScreen() {
         val density = LocalDensity.current
         val cutout = remember(left, top, side) { with(density) { CutoutShape(Rect(Offset(left.toPx(), top.toPx()), Size(side.toPx(), side.toPx())), 28.dp.toPx()) } }
 
-        if (granted.value && settled) CameraFeed(busy, { error = it }, ::handle, textureView = true, Modifier.fillMaxSize().hazeSource(haze))
-        // Frosted glass everywhere but the window: one GPU blur pass over a downscaled frame.
-        Box(Modifier.fillMaxSize().clip(cutout).hazeEffect(haze, ScanGlass) { inputScale = HazeInputScale.Fixed(0.25f) })
+        if (granted.value && settled) CameraFeed(busy, { error = it }, ::handle, textureView = CameraBlur, Modifier.fillMaxSize().then(if (CameraBlur) Modifier.hazeSource(haze) else Modifier))
+        // Frosted glass everywhere but the window: one GPU blur pass over a downscaled frame. Without blur, a dense tint
+        // over the cheaper SurfaceView feed.
+        Box(Modifier.fillMaxSize().clip(cutout).then(if (CameraBlur) Modifier.hazeEffect(haze, ScanGlass) { inputScale = HazeInputScale.Fixed(0.25f) } else Modifier.background(ScanGlass.fallbackTint.color)))
         Box(Modifier.offset(left, top).size(side), contentAlignment = Alignment.Center) {
             ScanFrame(urProgress, Modifier.fillMaxSize())
             when {
@@ -302,28 +303,56 @@ private fun CameraFeed(busy: Boolean, onError: (String?) -> Unit, onCode: (Strin
         initMlKit(context)
         BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
     }
-    DisposableEffect(Unit) { onDispose { analyzerExecutor.shutdown(); scanner.close() } }
+    // CameraX keeps the last use cases in process-wide state after unbinding, so ours must drop what they point at: the
+    // analyzer (this screen's callbacks) and the preview's surface (the PreviewView, so the Activity). LeakCanary caught
+    // a destroyed MainActivity held through ImageAnalysis' analyzer.
+    val bound = remember { arrayOfNulls<androidx.camera.core.UseCase>(2) }
+    var disposed by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed = true
+            (bound[0] as? Preview)?.surfaceProvider = null
+            (bound[1] as? ImageAnalysis)?.clearAnalyzer()
+            // Only once bound: the provider is ready then, so get() doesn't block.
+            bound.filterNotNull().takeIf { it.isNotEmpty() }?.let { cases -> runCatching { ProcessCameraProvider.getInstance(context.applicationContext).get().unbind(*cases.toTypedArray()) } }
+            bound.fill(null)
+            analyzerExecutor.shutdown(); scanner.close()
+        }
+    }
     AndroidView({ ctx ->
         PreviewView(ctx).also { view ->
             if (textureView) view.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            val main = ContextCompat.getMainExecutor(ctx.applicationContext)
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
+                if (disposed) return@addListener // left before the camera was ready
                 val provider = providerFuture.get()
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                 analysis.setAnalyzer(analyzerExecutor) { proxy ->
                     val media = proxy.image
                     if (media == null || paused) { proxy.close(); return@setAnalyzer }
+                    // Callbacks on the analyzer's thread, not Main (they'd wake it for every analysed frame). Once the
+                    // screen is gone the executor is shut: drop them, the camera is unbound by then.
+                    val bg = java.util.concurrent.Executor { r -> runCatching { analyzerExecutor.execute(r) } }
                     scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                        .addOnSuccessListener { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> ContextCompat.getMainExecutor(ctx).execute { code(v) } } }
-                        .addOnCompleteListener { proxy.close() }
+                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> main.execute { if (!disposed) code(v) } } }
+                        .addOnCompleteListener(bg) { proxy.close() }
                 }
                 provider.unbindAll()
+                bound[0] = preview; bound[1] = analysis
                 runCatching { provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis) }.onFailure { failed(it.message) }
-            }, ContextCompat.getMainExecutor(ctx))
+            }, main)
         }
     }, modifier)
 }
+
+/**
+ * Whether the scanner blurs the camera. A live blur needs the feed in a TextureView (a GPU copy of every camera frame)
+ * plus a blur pass per frame: Sentry had 100% slow frames on Scan on mid-range phones (6% on flagships). Only phones
+ * that declare a media performance class (S or later) get it; the rest get the SurfaceView under [ScanGlass]'s scrim.
+ */
+private val CameraBlur = android.os.Build.VERSION.SDK_INT >= 31 && android.os.Build.VERSION.MEDIA_PERFORMANCE_CLASS >= android.os.Build.VERSION_CODES.S
 
 /** The scanner's glass: soft blur under a dark tint, no grain. Below API 31 (no blur) a dense scrim. */
 private val ScanGlass = HazeStyle(

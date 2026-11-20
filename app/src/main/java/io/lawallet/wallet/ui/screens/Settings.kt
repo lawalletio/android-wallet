@@ -506,7 +506,7 @@ fun CurrenciesScreen() {
 /** Settings' top-right language picker: a glass pill with the current language, its options in a dropdown. */
 @Composable
 private fun LanguageMenu() {
-    val current = AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" }
+    val current = remember { AppCompatDelegate.getApplicationLocales().toLanguageTags().substringBefore('-').ifEmpty { "auto" } } // a binder call on 13+
     var selected by remember { mutableStateOf(current) }
     var open by remember { mutableStateOf(false) }
     val deviceLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]

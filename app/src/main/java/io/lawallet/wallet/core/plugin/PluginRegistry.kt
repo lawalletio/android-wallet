@@ -170,20 +170,25 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
     }
 
 
-    /** The wallet of an enabled wallet plugin, the same instance every time (until it's updated or stopped). */
-    @Synchronized
-    fun wallet(id: String): JsWallet? {
-        wallets[id]?.takeIf { !it.first.dead }?.let { return it.second }
-        unload(id)
-        val p = get(id)?.takeIf { it.enabled && it.manifest.isWallet } ?: return null
-        val code = load(p) ?: return null
-        val plugin = JsPlugin(p.manifest, code, host, scope)
-        return JsWallet(plugin).also { wallets[id] = plugin to it }
+    /**
+     * The wallet of an enabled wallet plugin, the same instance every time (until it's updated or stopped). The bundle
+     * (up to 2 MB, hashed) is read off the main thread: Home's deck and the Plugins screen call this from composition scopes.
+     */
+    suspend fun wallet(id: String): JsWallet? {
+        synchronized(this) { wallets[id]?.takeIf { !it.first.dead }?.let { return it.second } }
+        val p = get(id)?.takeIf { it.enabled && it.manifest.isWallet } ?: run { unload(id); return null }
+        val code = withContext(Dispatchers.IO) { load(p) } ?: return null
+        synchronized(this) {
+            wallets[id]?.takeIf { !it.first.dead }?.let { return it.second } // another caller loaded it meanwhile
+            unload(id)
+            val plugin = JsPlugin(p.manifest, code, host, scope)
+            return JsWallet(plugin) { signedOut(id) }.also { wallets[id] = plugin to it }
+        }
     }
 
     /** Runs the plugin's `login()` (which may open the web login). True when it finished without error. */
     suspend fun login(id: String): Boolean = runCatching { call(id, "login", LOGIN_TIMEOUT_MS) }.fold(
-        { Trail.add("plugin", "$id login ok"); refreshAccount(id); true },
+        { Trail.add("plugin", "$id login ok"); setAccounts(_accounts.value - id); refreshAccount(id); true },
         { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
             Trail.add("plugin", "$id login failed ${(e as? io.lawallet.wallet.core.nwc.NwcException)?.code ?: e.javaClass.simpleName}", error = true)
@@ -202,9 +207,12 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
             if ((e as? io.lawallet.wallet.core.nwc.NwcException)?.code == "NOT_IMPLEMENTED") { unload(id); host.clear(id); true } else false
         })
         Trail.add("plugin", "$id logout ${if (ok) "ok" else "failed"}", error = !ok)
+        if (ok) signedOut(id) // a plugin without `account()` would otherwise go back to "unknown", listed as a wallet
         refreshAccount(id)
         return ok
     }
+
+    private val noAccount: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet() // bundle hashes
 
     private val accountsSer = kotlinx.serialization.builtins.MapSerializer(kotlinx.serialization.serializer<String>(), PluginAccount.serializer())
     // Kept on disk, so Home knows which plugin wallets are signed in before any plugin runs.
@@ -214,22 +222,39 @@ class PluginRegistry(context: Context, http: OkHttpClient, private val scope: Co
 
     /** Asks [id] who it's signed in as (Plugins screen, after a login). A plugin without `account()` shows nothing. */
     suspend fun refreshAccount(id: String) {
-        val a = runCatching { json.decodeFromString(PluginAccount.serializer(), call(id, "account", 10_000)) }.getOrNull()
-        val next = if (a == null) _accounts.value - id else _accounts.value + (id to a)
+        val sha = get(id)?.sha256
+        // A bundle without `account()` is asked once per process: each ask may start a JS engine just to learn that.
+        val a = if (sha in noAccount) null else runCatching { json.decodeFromString(PluginAccount.serializer(), call(id, "account", 10_000)) }
+            .onFailure { if ((it as? io.lawallet.wallet.core.nwc.NwcException)?.code == "NOT_IMPLEMENTED" && sha != null) noAccount += sha }
+            .getOrNull()
+        // No answer keeps a known sign-out (only a login clears it); otherwise unknown.
+        val next = if (a == null) _accounts.value.takeIf { it[id]?.signedIn == false } ?: (_accounts.value - id) else _accounts.value + (id to a)
+        setAccounts(next)
+    }
+
+    /**
+     * [id] answered UNAUTHORIZED (or signed out): signed out until a login, so Home drops its card and stops polling it.
+     * The field log had a signed-out plugin's balance read every 10 s, thousands of times.
+     */
+    fun signedOut(id: String) {
+        if (_accounts.value[id]?.signedIn == false) return
+        Trail.add("plugin", "$id signed out")
+        setAccounts(_accounts.value + (id to PluginAccount(signedIn = false)))
+    }
+
+    private fun forgetAccount(id: String) = setAccounts(_accounts.value - id)
+
+    private fun setAccounts(next: Map<String, PluginAccount>) {
         if (next == _accounts.value) return
         _accounts.value = next
         sp.edit { putString("accounts", json.encodeToString(accountsSer, next)) }
     }
 
-    private fun forgetAccount(id: String) {
-        _accounts.value -= id
-        sp.edit { putString("accounts", json.encodeToString(accountsSer, _accounts.value)) }
-    }
-
     /** One call on [id]'s JS: its loaded instance if it has one, else a throwaway one. */
     private suspend fun call(id: String, fn: String, timeoutMs: Long): String {
         val p = get(id) ?: throw PluginSourceException("Not installed")
-        val plugin = wallets[id]?.first?.takeIf { !it.dead } ?: JsPlugin(p.manifest, load(p) ?: throw PluginSourceException("Bundle changed"), host, scope)
+        val plugin = wallets[id]?.first?.takeIf { !it.dead }
+            ?: JsPlugin(p.manifest, withContext(Dispatchers.IO) { load(p) } ?: throw PluginSourceException("Bundle changed"), host, scope)
         return try { plugin.call(fn, JsonArray(emptyList()), timeoutMs) } finally { if (wallets[id]?.first !== plugin) plugin.close() }
     }
 

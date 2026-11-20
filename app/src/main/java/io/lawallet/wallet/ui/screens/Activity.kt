@@ -58,6 +58,7 @@ import io.lawallet.wallet.app.paymentKey
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.PaymentReceipt
@@ -344,6 +345,7 @@ fun ActivityDetailScreen(hash: String) {
         }
     }
     LaunchedEffect(hash) {
+        nav.awaitSettled() // the answer repaints the receipt: not mid-slide
         // Refreshes the row's state. A payment between two addresses on one wallet has both sides under this hash:
         // a lookup that answers with the other side never turns the tapped "received" into "sent" (or back).
         val looked = runCatching { c.wallet.client.value?.lookupInvoice(hash) }.getOrNull()?.let(Tx::from) ?: return@LaunchedEffect

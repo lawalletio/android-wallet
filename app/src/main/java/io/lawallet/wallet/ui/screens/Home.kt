@@ -166,6 +166,7 @@ import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
+import io.lawallet.wallet.ui.awaitSettled
 import io.lawallet.wallet.ui.R0
 import io.lawallet.wallet.ui.sharedAvatar
 import io.lawallet.wallet.ui.components.BrandImage
@@ -963,6 +964,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     val pluginsInstalled by c.plugins.installed.collectAsState()
     val pluginAccounts by c.plugins.accounts.collectAsState()
     val deck = remember(wallets, pluginsInstalled, pluginAccounts) { withPlugins(wallets, pluginsInstalled, pluginAccounts) }
+    val currentDeck by rememberUpdatedState(deck) // the poll below reads today's cards, not the ones it started with
     // A wallet being added from here (optimistic): once LaWallet has it, it joins the list under its card.
     val pendingWallet by c.flow.pendingWallet.collectAsState()
     // Created from the sheet with an automatic name: asked for one (prefilled) once its card has landed.
@@ -991,11 +993,16 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
         // Signed in or out since: a plugin wallet's card follows.
         pluginsInstalled.filter { it.enabled && it.manifest.isWallet }.forEach { launch { c.plugins.refreshAccount(it.id) } }
         fetchRemoteWallets(c, { wallets = it }, walletBalances)
-        // Live while showing: every wallet is polled (failures keep the last figure).
+        // Live while showing: every wallet is polled (failures keep the last figure). Only while the app is visible: a
+        // LaunchedEffect outlives onStop, and the field log had 93% of plugin balance reads in background, every 10 s.
         while (true) {
             delay(10_000)
-            deck.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
-                launch { readWalletBalance(c, w.id, walletBalances) }
+            c.wallet.active.first { it }
+            // One round at a time: a slow wallet (reads time out at 20–45 s) mustn't pile up reads, each holding a thread.
+            kotlinx.coroutines.coroutineScope {
+                currentDeck.orEmpty().filter { it.status == "ACTIVE" }.forEach { w ->
+                    launch { readWalletBalance(c, w.id, walletBalances) }
+                }
             }
         }
     }
@@ -1129,6 +1136,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
     }
 
     LaunchedEffect(Unit) {
+        nav.awaitSettled() // their answers repaint Home: not while it slides in (enter max was 536 ms)
         runCatching { c.session.refreshMe() }
         c.wallet.refreshActivity()
         c.session.refreshProfile()

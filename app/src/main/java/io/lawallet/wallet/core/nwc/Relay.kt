@@ -78,6 +78,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
     @Volatile private var socket: WebSocket? = null
     private var reconnectJob: Job? = null
     private var flushJob: Job? = null
+    private var idleJob: Job? = null
     private var attempt = 0
     /** Epoch seconds the socket last dropped: replayed REQs move their `since` up to it. */
     private var droppedAt = 0L
@@ -134,6 +135,18 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
         }
         if (wasSent && _connected.value) sink(JsonArray(listOf(JsonPrimitive("CLOSE"), JsonPrimitive(subId))).toString())
         flush()
+        closeWhenIdle()
+    }
+
+    /**
+     * Nothing subscribed or waiting on an OK: the socket closes after [IDLE_MS] unless something uses it again. An open
+     * socket holds an OkHttp reader thread and pings every 30 s; before this, relays used once (profile lookups, another
+     * wallet's send, a signer) stayed open until the app went to background.
+     */
+    private fun closeWhenIdle() {
+        if (synchronized(lock) { subs.isNotEmpty() } || pendingOk.isNotEmpty()) return
+        idleJob?.cancel()
+        idleJob = scope.launch { delay(IDLE_MS); disconnectIfIdle() } // re-checks under the lock
     }
 
     internal fun openSubIds(): List<String> = synchronized(lock) { subs.filterValues { it.sent }.keys.toList() }
@@ -176,6 +189,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
             }
         } finally {
             pendingOk.remove(event.id)
+            closeWhenIdle()
         }
     }
 
@@ -271,6 +285,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
     companion object {
         /** Most public relays allow 10–20 concurrent REQs per connection; stay under the low end. */
         const val MAX_SUBS = 10
+        const val IDLE_MS = 60_000L
 
         /** 1s, 2s, 4s… capped at 30s, ±25% jitter so a fleet of clients doesn't reconnect in lockstep. */
         fun backoffMs(attempt: Int, random: Random = Random): Long {

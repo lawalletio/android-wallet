@@ -716,7 +716,7 @@ fun RemoteWalletDetailScreen(id: String) {
                     }
                 }
             }
-            connection?.let { cs -> runCatching { NwcUri.parse(cs).relays }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { relays ->
+            remember(connection) { connection?.let { cs -> runCatching { NwcUri.parse(cs).relays }.getOrNull() } }?.takeIf { it.isNotEmpty() }?.let { relays ->
                 // Labels in one row, scrolling sideways; a tap copies the relay.
                 Column {
                     Txt(stringResource(R.string.bunker_relays), Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)

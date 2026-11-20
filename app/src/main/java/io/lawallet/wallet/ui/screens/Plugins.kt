@@ -339,9 +339,14 @@ private fun PluginBalance(id: String) {
  * says how it went.
  */
 internal fun signIn(c: AppContainer, context: android.content.Context, m: PluginManifest) {
+    // Resolved now, in the screen's locale: the launch below outlives the screen (up to the 15 min login timeout) and
+    // must not hold its Activity.
+    val signedIn = context.getString(R.string.plugins_signed_in, m.name)
+    val failed = context.getString(R.string.plugins_sign_in_failed, m.name)
+    val app = context.applicationContext
     c.scope.launch {
         val ok = c.plugins.login(m.id)
-        context.toast(context.getString(if (ok) R.string.plugins_signed_in else R.string.plugins_sign_in_failed, m.name))
+        app.toast(if (ok) signedIn else failed)
         if (ok) c.wallet.refreshBalance()
     }
 }

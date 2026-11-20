@@ -103,6 +103,9 @@ class Session(
                     var foregroundPolls = 0
                     while (true) {
                         delay(15_000)
+                        // Not in background: nothing there needs the server (payments go over NWC), and coming back
+                        // to the foreground retries at once (retryIfOffline).
+                        if (!inForeground()) continue
                         refreshSettings()
                         // A minute offline on screen: report it now, with the trail of failing calls as
                         // breadcrumbs — an exit event would only bring them once the process dies.

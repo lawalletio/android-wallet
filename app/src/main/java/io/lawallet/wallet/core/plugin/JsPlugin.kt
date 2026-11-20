@@ -318,8 +318,11 @@ data class PromptSpec(val title: String, val message: String?, val input: String
     companion object { const val RESEND = "\u0000resend" }
 }
 
-/** A plugin as a [Wallet]: `request` goes to the plugin, notifications come from its `poll()` every `pollSec`. */
-class JsWallet(private val plugin: JsPlugin) : Wallet {
+/**
+ * A plugin as a [Wallet]: `request` goes to the plugin, notifications come from its `poll()` every `pollSec`.
+ * [onUnauthorized]: the plugin said its session is gone (docs/plugin-api.md), so the app stops treating it as signed in.
+ */
+class JsWallet(private val plugin: JsPlugin, private val onUnauthorized: () -> Unit = {}) : Wallet {
     val id get() = plugin.manifest.id
     private val _connected = MutableStateFlow(true)
     override val connected: StateFlow<Boolean> = _connected
@@ -339,6 +342,7 @@ class JsWallet(private val plugin: JsPlugin) : Wallet {
             record(method, started, e.code)
             // A network failure flips connected, so the next success triggers the repository's catch-up.
             if (e.code == "NETWORK") { _connected.value = false; _lastError.value = e.message }
+            if (e.code == "UNAUTHORIZED") onUnauthorized()
             throw e
         }
     }

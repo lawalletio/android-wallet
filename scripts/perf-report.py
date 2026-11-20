@@ -7,14 +7,15 @@
   scripts/perf-report.py clear  [-s SERIAL] [--pkg ...]
 
 pull   saves perf-data/<time>-<device>[-label].jsonl: the app's own records (files/perf/*.jsonl through run-as on
-       debuggable builds, else the LwPerf lines still in logcat) plus a `sys` record from dumpsys gfxinfo/meminfo.
-report summarises one or more pulls (default: the newest): screens by jank, enter transitions, start, resources,
-       NWC latency. Records are de-duplicated across files, so passing several pulls is safe.
+       debuggable builds, else the LwPerf lines still in logcat), a `sys` record from dumpsys gfxinfo/meminfo, and
+       `leak` records from LeakCanary's database (debug builds).
+report summarises one or more pulls (default: the newest): screens by jank, enter transitions, start, resources
+       (threads by pool), NWC / plugin / LaWallet API latency and how many calls ran in background, leaks. Records are de-duplicated across files, so passing several pulls is safe.
 compare per-route before/after: jank %, p90 and enter-transition jank.
 clear  empties the app's log and resets gfxinfo counters, for a clean before/after run (debuggable builds).
 Standard library only.
 """
-import argparse, glob, json, os, re, subprocess, sys, time
+import argparse, bisect, glob, json, os, re, sqlite3, subprocess, sys, tempfile, time
 from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,6 +60,21 @@ def gfxinfo(serial, pkg):
     return rec
 
 
+def leaks(serial, pkg):
+    """LeakCanary's findings (debug builds): one record per leak per heap analysis. Class and field names only."""
+    raw = subprocess.run(["adb"] + (["-s", serial] if serial else []) + ["exec-out", "run-as", pkg, "cat", "databases/leaks.db"],
+                         capture_output=True).stdout
+    if not raw.startswith(b"SQLite format 3"):
+        return []
+    with tempfile.NamedTemporaryFile(suffix=".db") as f:
+        f.write(raw); f.flush()
+        db = sqlite3.connect(f.name)
+        rows = db.execute("select h.created_at_time_millis, l.short_description, l.is_library_leak, count(*) from leak_trace t "
+                          "join leak l on l.id = t.leak_id join heap_analysis h on h.id = t.heap_analysis_id group by t.heap_analysis_id, l.id").fetchall()
+        db.close()
+    return [{"t": "leak", "ts": ts, "desc": d, "library": bool(lib), "count": n} for ts, d, lib, n in rows]
+
+
 def cmd_pull(a):
     os.makedirs(DATA, exist_ok=True)
     recs, how = [], "run-as"
@@ -70,6 +86,7 @@ def cmd_pull(a):
     model = adb(a.serial, "shell", "getprop", "ro.product.model").strip().replace(" ", "_") or "device"
     rate = re.search(r"renderFrameRate ([\d.]+)", adb(a.serial, "shell", "dumpsys", "display"))
     sysrec = gfxinfo(a.serial, a.pkg) | {"model": model, "refresh_hz": float(rate.group(1)) if rate else None, "source": how}
+    recs += leaks(a.serial, a.pkg)
     path = os.path.join(DATA, time.strftime("%Y%m%d-%H%M%S") + f"-{model}" + (f"-{a.label}" if a.label else "") + ".jsonl")
     with open(path, "w") as f:
         for r in recs + [sysrec]:
@@ -167,17 +184,46 @@ def cmd_report(a):
             if v:
                 print(f"  {k:10} first {v[0]:>7}  last {v[-1]:>7}  p50 {pct(v, .5):>7}  max {max(v):>7}")
 
-    nwc = defaultdict(list)
-    fails = defaultdict(int)
+        pools = [r for r in res if r.get("pools")]
+        if pools:
+            top = max(pools, key=lambda r: r.get("threads") or 0)
+            print(f"  pools at most threads ({top.get('threads')}, {top.get('route')}): {top['pools']}")
+            print(f"  pools now ({pools[-1].get('threads')}): {pools[-1]['pools']}")
+
+    # Foreground = a res/screen record of the same process within 75 s (res is every minute while visible).
+    seen = defaultdict(list)
     for r in recs:
-        if r.get("t") == "nwc":
-            nwc[r["method"]].append(r["ms"])
-            if r.get("outcome") not in ("ok", "cancelled"):
-                fails[r["method"]] += 1
-    if nwc:
-        print("\nNWC REQUESTS (ms)")
-        for m, v in sorted(nwc.items(), key=lambda kv: -len(kv[1])):
-            print(f"  {m:22} n={len(v):<5} p50 {pct(v, .5):>6}  p90 {pct(v, .9):>6}  max {max(v):>6}  failed {fails[m]}")
+        if r.get("t") in ("res", "screen"):
+            seen[r.get("pid")].append(r["ts"])
+    def background(r):
+        v = seen.get(r.get("pid"), [])
+        i = bisect.bisect(v, r["ts"])
+        return all(abs(v[j] - r["ts"]) >= 75_000 for j in (i - 1, i) if 0 <= j < len(v))
+
+    for t, label, key in (("nwc", "NWC REQUESTS (ms)", "method"), ("plugin", "PLUGIN CALLS (ms)", "method"), ("api", "LAWALLET API (ms)", "path")):
+        calls, fails, bg = defaultdict(list), defaultdict(int), defaultdict(int)
+        for r in recs:
+            if r.get("t") != t:
+                continue
+            name = f"{r.get('plugin')} {r[key]}" if t == "plugin" else f"{r['method']} {r[key]}" if t == "api" else r[key]
+            calls[name].append(r["ms"])
+            if r.get("outcome") not in ("ok", "cancelled") and not str(r.get("outcome")).startswith("2"):
+                fails[name] += 1
+            if background(r):
+                bg[name] += 1
+        if calls:
+            print(f"\n{label}  (bg = made while the app wasn't visible)")
+            for m, v in sorted(calls.items(), key=lambda kv: -len(kv[1])):
+                print(f"  {m[:44]:44} n={len(v):<5} p50 {pct(v, .5):>6}  p90 {pct(v, .9):>6}  max {max(v):>6}  failed {fails[m]:<4} bg {bg[m]}")
+
+    lk = defaultdict(lambda: [0, 0, False])
+    for r in recs:
+        if r.get("t") == "leak":
+            e = lk[r["desc"]]; e[0] += r.get("count", 1); e[1] = max(e[1], r["ts"]); e[2] = r.get("library")
+    if lk:
+        print("\nLEAKS (LeakCanary)")
+        for d, (n, last, lib) in sorted(lk.items(), key=lambda kv: -kv[1][1]):
+            print(f"  {d[:60]:60} x{n:<3} last {time.strftime('%Y-%m-%d %H:%M', time.localtime(last / 1000))}{'  (library)' if lib else ''}")
 
 
 def cmd_compare(a):
