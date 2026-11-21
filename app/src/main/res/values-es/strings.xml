@@ -533,4 +533,9 @@
     <string name="cashu_won">¡Sats liberados!</string>
     <string name="cashu_pendingBody">La mint todavía está pagando. Los sats llegarán a tu saldo en breve.</string>
     <string name="cashu_mint">Mint</string>
+    <string name="cards_paysFrom">Paga desde</string>
+    <string name="cards_pickWallet">Esta tarjeta paga desde</string>
+    <string name="cards_notLinked">Sin vincular</string>
+    <string name="cards_lastUsed">Último uso</string>
+    <string name="cards_linkedTo">%1$s ahora paga desde %2$s</string>
 </resources>

@@ -743,7 +743,7 @@ fun AspectCard(url: String?, modifier: Modifier = Modifier) {
     }
 }
 
-private val CardShadow: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+internal val CardShadow: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
     val r = 16.dp.toPx()
     val blur = 18.dp.toPx()
     // Clip the card itself out so the shadow doesn't darken through the translucent glass.
