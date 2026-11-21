@@ -1,5 +1,6 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
 import io.lawallet.wallet.ui.components.SettingsPage
 import io.lawallet.wallet.ui.components.lwFieldColors
 import io.lawallet.wallet.ui.components.ConfirmDialog
@@ -159,7 +160,7 @@ private fun LocalPlugins() {
     val reloaded = stringResource(R.string.plugins_reloaded)
     SettingsGroup(stringResource(R.string.plugins_local)) {
         when (val r = found) {
-            null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { Spinner() }
+            null -> LoadingBox(Modifier.padding(16.dp))
             else -> r.fold(
                 { list ->
                     if (list.isEmpty()) SettingsRow(stringResource(R.string.plugins_local_empty), null)
@@ -413,7 +414,7 @@ fun PluginAddScreen(url: String) {
     SettingsPage(stringResource(R.string.plugins_add)) {
         MutedText(url.removePrefix("https://"), size = 13.sp)
         when (val r = found) {
-            null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Spinner() }
+            null -> LoadingBox(Modifier.padding(24.dp))
             else -> r.fold(
                 { list ->
                     SettingsGroup(stringResource(R.string.plugins_available)) {

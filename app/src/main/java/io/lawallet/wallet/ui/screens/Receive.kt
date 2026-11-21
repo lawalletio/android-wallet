@@ -233,11 +233,7 @@ fun ReceiveInvoiceScreen() {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.receive_invoiceTitle), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Txt(Currencies.formatSats(r.amountSats), size = 36.sp, weight = FontWeight.SemiBold)
-                Spacer(Modifier.width(6.dp))
-                Txt("sats", Modifier.padding(bottom = 6.dp), size = 16.sp, color = Lw.MutedFg)
-            }
+            AmountDisplay(Currencies.formatSats(r.amountSats), "sats", size = 36.sp, unitSize = 16.sp, figureTag = "invoice-amount")
             r.description?.let { MutedText(it, align = TextAlign.Center) }
             QrDisplay("lightning:$bolt11".uppercase(), null, copyValue = bolt11)
             Row(verticalAlignment = Alignment.CenterVertically) {

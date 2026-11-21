@@ -1,5 +1,8 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
+import io.lawallet.wallet.ui.components.EmptyState
+import io.lawallet.wallet.ui.components.AmountDisplay
 import io.lawallet.wallet.ui.components.FieldCaption
 import io.lawallet.wallet.ui.components.Pill
 import io.lawallet.wallet.ui.components.TabSwitch
@@ -159,14 +162,8 @@ fun RemoteWalletsScreen() {
             val list = wallets
             when {
                 list == null && failed -> Column { Txt(stringResource(R.string.remoteWallets_list_errorTitle), weight = FontWeight.SemiBold); MutedText(stringResource(R.string.remoteWallets_list_tryAgain)) }
-                list == null -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
-                list.isEmpty() -> Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.size(72.dp).glass(CircleShape), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_wallet, size = 32.dp, tint = Lw.MutedFg) }
-                    Spacer(Modifier.height(16.dp))
-                    Txt(stringResource(R.string.remoteWallets_list_emptyTitle), size = 18.sp, weight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    MutedText(stringResource(R.string.remoteWallets_list_emptyBody))
-                }
+                list == null -> LoadingBox()
+                list.isEmpty() -> EmptyState(L.drawable.lucide_ic_wallet, stringResource(R.string.remoteWallets_list_emptyTitle), stringResource(R.string.remoteWallets_list_emptyBody), Modifier.padding(vertical = 48.dp))
                 else -> {
                     val active = list.filter { it.isActive }
                     val total = active.mapNotNull { balances[it.id] }.sum()
@@ -174,11 +171,7 @@ fun RemoteWalletsScreen() {
                     Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp)).padding(vertical = 24.dp, horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Txt(stringResource(R.string.rw_total_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                         Spacer(Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Txt(if (totalReady) Currencies.formatSats(total) else "—", size = 40.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallets-total"))
-                            Spacer(Modifier.width(6.dp))
-                            Txt("sats", Modifier.padding(bottom = 7.dp), size = 16.sp, color = Lw.MutedFg)
-                        }
+                        AmountDisplay(if (totalReady) Currencies.formatSats(total) else "—", "sats", size = 40.sp, unitSize = 16.sp, figureTag = "wallets-total")
                         Spacer(Modifier.height(4.dp))
                         MutedText(pluralStringResource(R.plurals.rw_wallet_count, list.size, list.size), size = 13.sp)
                     }
@@ -246,7 +239,7 @@ internal fun NewWalletEntrance(isNew: Boolean, shape: Shape, start: suspend () -
 private fun WalletCard(w: RemoteWallet, balance: Long?, loading: Boolean, onClick: () -> Unit) {
     val brand = LocalBrand.current
     val lncurl = w.isLncurl
-    val accent = if (lncurl) Lw.LncurlGreen else Lw.NwcPurple
+    val accent = walletAccent(w)
     val dim = !w.isActive
     Row(
         Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = if (w.isDefault) brand.t400.copy(alpha = 0.08f) else null)
@@ -574,8 +567,7 @@ fun RemoteWalletDetailScreen(id: String) {
             Box(Modifier.fillMaxWidth().glass(RoundedCornerShape(28.dp))) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Txt(stringResource(R.string.remote_wallet_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                    Txt(balance?.let { Currencies.formatSats(it) } ?: "—", size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("wallet-balance"))
-                    Txt("sats", size = 14.sp, color = Lw.MutedFg)
+                    AmountDisplay(balance?.let { Currencies.formatSats(it) } ?: "—", "sats", size = 36.sp, unitSize = 14.sp, figureTag = "wallet-balance")
                     val dead = !w.isActive && w.status != "DISABLED" // e.g. DEAD: nothing to toggle
                     if (w.isDefault || dead) {
                         Spacer(Modifier.height(8.dp))
@@ -588,7 +580,7 @@ fun RemoteWalletDetailScreen(id: String) {
                 // What kind of wallet it is (LNCurl or NWC), as its mark in the corner.
                 val lncurl = w.isLncurl
                 Box(
-                    Modifier.align(Alignment.TopStart).padding(14.dp).size(34.dp).clip(CircleShape).background((if (lncurl) Lw.LncurlGreen else Lw.NwcPurple).copy(alpha = 0.16f))
+                    Modifier.align(Alignment.TopStart).padding(14.dp).size(34.dp).clip(CircleShape).background(walletAccent(w).copy(alpha = 0.16f))
                         .semantics { contentDescription = if (lncurl) "LNCurl" else "NWC" }.testTag("wallet-kind"),
                     contentAlignment = Alignment.Center,
                 ) { WalletMark(lncurl, 16.dp) }

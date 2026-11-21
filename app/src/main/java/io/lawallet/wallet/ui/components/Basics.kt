@@ -236,8 +236,9 @@ fun SettingsGroup(title: String? = null, content: @Composable () -> Unit) {
     }
 }
 
+/** Between a group's rows; [inset] lines it up with the rows' text (60dp clears a [SettingsRow] icon). */
 @Composable
-fun GroupDivider() = HorizontalDivider(Modifier.padding(start = 60.dp), color = Color.White.copy(alpha = 0.06f))
+fun GroupDivider(inset: Dp = 60.dp) = HorizontalDivider(Modifier.padding(start = inset), color = Color.White.copy(alpha = 0.06f))
 
 /**
  * A settings row that is a switch: tapping anywhere on it toggles (only when [enabled], like the switch itself).
@@ -261,6 +262,10 @@ fun SettingsSwitchRow(
 @Composable
 fun lwSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = io.lawallet.wallet.ui.theme.LocalBrand.current.t400, checkedThumbColor = Lw.Foreground, uncheckedTrackColor = Color.White.copy(alpha = 0.08f), uncheckedThumbColor = Lw.MutedFg, uncheckedBorderColor = Color.White.copy(alpha = 0.16f))
 
+/**
+ * A group row: [icon] in a glass tile (or any [leading] content), the label with an optional muted [subtitle] under
+ * it, a muted [value], then [trailing] (a chevron by default when the row is tappable).
+ */
 @Composable
 fun SettingsRow(
     label: String,
@@ -269,6 +274,8 @@ fun SettingsRow(
     @DrawableRes icon: Int? = null,
     value: String? = null,
     labelColor: Color = Lw.Foreground,
+    subtitle: String? = null,
+    leading: (@Composable () -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -285,11 +292,25 @@ fun SettingsRow(
                 LwIcon(icon, size = 17.dp, tint = if (labelColor == Lw.Foreground) Lw.Foreground else labelColor)
             }
             Spacer(Modifier.width(14.dp))
+        } else if (leading != null) { leading(); Spacer(Modifier.width(14.dp)) }
+        if (subtitle == null) Txt(label, Modifier.weight(1f), size = 16.sp, weight = FontWeight.Medium, color = labelColor, maxLines = 1)
+        else Column(Modifier.weight(1f)) {
+            Txt(label, size = 16.sp, weight = FontWeight.Medium, color = labelColor, maxLines = 1)
+            Txt(subtitle, size = 12.sp, color = Lw.MutedFg)
         }
-        Txt(label, Modifier.weight(1f), size = 16.sp, weight = FontWeight.Medium, color = labelColor, maxLines = 1)
         if (value != null) { Txt(value, Modifier.padding(start = 8.dp), size = 14.sp, color = Lw.MutedFg, maxLines = 1); Spacer(Modifier.width(6.dp)) }
         if (trailing != null) trailing()
         else if (onClick != null) LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+    }
+}
+
+/** A muted key, its value right-aligned in what's left (or [content] there instead, e.g. a tappable recipient). */
+@Composable
+fun KeyValueRow(key: String, value: String, maxLines: Int = 2, content: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Txt(key, size = 14.sp, color = Lw.MutedFg)
+        if (content != null) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { content() }
+        else Txt(value, Modifier.weight(1f), size = 14.sp, align = TextAlign.End, maxLines = maxLines)
     }
 }
 
@@ -342,6 +363,36 @@ fun LoadingDots(modifier: Modifier = Modifier, dot: Dp = 10.dp, color: Color = L
 
 @Composable
 fun Spinner(size: Dp = 20.dp, color: Color = Lw.Foreground) = CircularProgressIndicator(Modifier.size(size), color = color, strokeWidth = 2.dp)
+
+/** A list still loading: a spinner centred across the width ([modifier] adds padding, weight or full size). */
+@Composable
+fun LoadingBox(modifier: Modifier = Modifier) = Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner() }
+
+/** A list with nothing in it: its icon in a glass disc, a title and a muted line under it. */
+@Composable
+fun EmptyState(@DrawableRes icon: Int, title: String, body: String, modifier: Modifier = Modifier) =
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(72.dp).glass(CircleShape), contentAlignment = Alignment.Center) { LwIcon(icon, size = 32.dp, tint = Lw.MutedFg) }
+        Spacer(Modifier.height(16.dp))
+        Txt(title, size = 18.sp, weight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        MutedText(body)
+    }
+
+/** A tappable nudge under Home's balance: [tint]ed glass, the icon on a tile of its own, one line, a chevron. */
+@Composable
+fun Callout(@DrawableRes icon: Int, text: String, tint: Color, onClick: () -> Unit, modifier: Modifier = Modifier) = Row(
+    modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp), tint = tint.copy(alpha = 0.10f))
+        .clickable(onClick = onClick).padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+) {
+    Box(Modifier.size(40.dp).glass(RoundedCornerShape(14.dp), GlassLevel.Thin, tint = tint.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
+        LwIcon(icon, size = 18.dp, tint = tint)
+    }
+    Spacer(Modifier.width(12.dp))
+    Txt(text, Modifier.weight(1f), size = 15.sp, weight = FontWeight.Medium)
+    LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+}
 
 @Composable
 fun MutedText(text: String, modifier: Modifier = Modifier, align: TextAlign? = null, size: TextUnit = 14.sp) = Txt(text, modifier, size = size, color = Lw.MutedFg, align = align, lineHeight = (size.value * 1.45f).sp)

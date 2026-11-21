@@ -1,5 +1,7 @@
 package io.lawallet.wallet.ui.screens
 
+import io.lawallet.wallet.ui.components.LoadingBox
+import io.lawallet.wallet.ui.components.AmountDisplay
 import io.lawallet.wallet.ui.components.FieldCaption
 import io.lawallet.wallet.ui.components.Pill
 import io.lawallet.wallet.ui.components.TabSwitch
@@ -41,7 +43,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -101,7 +102,6 @@ import io.lawallet.wallet.ui.components.MutedText
 import io.lawallet.wallet.ui.components.SettingsGroup
 import io.lawallet.wallet.ui.components.SettingsHeader
 import io.lawallet.wallet.ui.components.SettingsRow
-import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.Txt
 import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.toast
@@ -167,21 +167,14 @@ private fun OptionCard(icon: Int, title: String, body: String, tag: String, onCl
 private fun ScriptPicker(selected: ScriptType, onSelect: (ScriptType) -> Unit, locked: Boolean = false) {
     SettingsGroup(stringResource(R.string.onchain_script)) {
         (if (locked) listOf(selected) else ScriptType.entries).forEachIndexed { i, t ->
-            if (i > 0) HorizontalDivider(Modifier.padding(start = 16.dp), color = Color.White.copy(alpha = 0.06f))
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = !locked) { onSelect(t) }.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).testTag("script-${t.name}"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Txt(t.label, size = 15.sp, weight = FontWeight.Medium)
-                        if (t == ScriptType.P2WPKH && !locked) { Spacer(Modifier.width(8.dp)); Pill(stringResource(R.string.onchain_recommended), Lw.Bitcoin) }
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    Txt("BIP${t.purpose} · ${t.short} · ${t.path}", size = 12.sp, color = Lw.MutedFg)
-                }
-                if (!locked) RadioButton(t == selected, { onSelect(t) }, colors = RadioButtonDefaults.colors(selectedColor = Lw.Bitcoin, unselectedColor = Lw.MutedFg))
-            }
+            if (i > 0) GroupDivider(inset = 14.dp)
+            SettingsRow(
+                t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${t.short} · ${t.path}",
+                trailing = if (locked) null else ({
+                    if (t == ScriptType.P2WPKH) Pill(stringResource(R.string.onchain_recommended), Lw.Bitcoin)
+                    RadioButton(t == selected, { onSelect(t) }, colors = RadioButtonDefaults.colors(selectedColor = Lw.Bitcoin, unselectedColor = Lw.MutedFg))
+                }),
+            )
         }
     }
 }
@@ -288,7 +281,7 @@ fun OnchainBackupScreen(id: String) {
             { if (verifying) verifying = false else nav.popBackStack() },
         )
         val s = secret
-        if (w == null || s == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner() }; return@Column }
+        if (w == null || s == null) { LoadingBox(Modifier.fillMaxSize()); return@Column }
         AnimatedContent(
             verifying,
             transitionSpec = {
@@ -564,11 +557,7 @@ fun OnchainWalletDetailScreen(id: String) {
                 OnchainMark(w, 52)
                 Spacer(Modifier.height(12.dp))
                 Txt(stringResource(R.string.remote_wallet_balance), size = 14.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Txt(Currencies.formatSats(0), size = 36.sp, weight = FontWeight.SemiBold, modifier = Modifier.testTag("onchain-wallet-balance"))
-                    Spacer(Modifier.width(6.dp))
-                    Txt("sats", Modifier.padding(bottom = 6.dp), size = 14.sp, color = Lw.MutedFg)
-                }
+                AmountDisplay(Currencies.formatSats(0), "sats", size = 36.sp, unitSize = 14.sp, figureTag = "onchain-wallet-balance")
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (w.isPrimary) Pill(stringResource(R.string.remoteWallets_list_primary), Lw.Bitcoin)
