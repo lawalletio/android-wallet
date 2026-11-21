@@ -1,13 +1,9 @@
 package io.lawallet.wallet.ui.screens
 
-import io.lawallet.wallet.ui.components.LoadingBox
-import io.lawallet.wallet.ui.components.EmptyState
 import io.lawallet.wallet.ui.components.SettingsPage
 import io.lawallet.wallet.ui.components.lwFieldColors
-import io.lawallet.wallet.ui.components.toastError
 import io.lawallet.wallet.ui.components.ConfirmDialog
 import io.lawallet.wallet.ui.components.SettingsSwitchRow
-import io.lawallet.wallet.ui.components.lwSwitchColors
 import android.net.Uri
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
@@ -36,15 +32,14 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,15 +58,11 @@ import io.lawallet.wallet.BuildConfig
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.app.Updater
-import io.lawallet.wallet.core.api.WalletCard
 import io.lawallet.wallet.core.fx.Currencies
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 import io.lawallet.wallet.service.PaymentSound
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
 import io.lawallet.wallet.ui.R0
-import io.lawallet.wallet.ui.components.AspectCard
 import io.lawallet.wallet.ui.components.BrandImage
 import io.lawallet.wallet.ui.components.BtnVariant
 import io.lawallet.wallet.ui.components.ErrorText
@@ -149,60 +140,6 @@ fun SettingsScreen() {
         stringResource(R.string.settings_removeWalletConfirm), stringResource(R.string.settings_removeWallet), { confirm = false; c.session.logout() }, { confirm = false },
         destructive = true, actionModifier = Modifier.testTag("confirm-remove"),
     )
-}
-
-@Composable
-fun CardsScreen() {
-    val c = LocalContainer.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val cardsSer = ListSerializer(WalletCard.serializer())
-    var cards by remember { mutableStateOf(c.prefs.cached("cards", cardsSer)) }
-    var failed by remember { mutableStateOf(false) }
-    val fallback = stringResource(R.string.settings_cardsScreen_fallbackName)
-    val updateFailed = stringResource(R.string.settings_cardsScreen_updateFailed)
-    val enabledFmt = stringResource(R.string.settings_cardsScreen_enabledToast)
-    val disabledFmt = stringResource(R.string.settings_cardsScreen_disabledToast)
-    val linkedFmt = stringResource(R.string.settings_cardsScreen_linkedToast)
-    suspend fun load() { runCatching { c.session.api.value.cards() }.onSuccess { cards = it; failed = false; c.prefs.setCached("cards", cardsSer, it) }.onFailure { failed = true } }
-    LaunchedEffect(Unit) { load() }
-    SettingsPage(stringResource(R.string.settings_myCards)) {
-        val list = cards
-        when {
-            list == null && failed -> Column { Txt(stringResource(R.string.settings_cardsScreen_errorTitle), weight = FontWeight.SemiBold); MutedText(stringResource(R.string.settings_cardsScreen_tryAgain)) }
-            list == null -> LoadingBox()
-            list.isEmpty() -> EmptyState(L.drawable.lucide_ic_credit_card, stringResource(R.string.settings_cardsScreen_emptyTitle), stringResource(R.string.settings_cardsScreen_emptyBody), Modifier.padding(top = 32.dp))
-            else -> list.forEach { card ->
-                val name = card.title ?: fallback
-                val status = when { card.blocked -> R.string.settings_cardsScreen_status_Blocked; card.disabled -> R.string.settings_cardsScreen_status_Disabled; else -> R.string.settings_cardsScreen_status_Active }
-                Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(16.dp).testTag("card-${card.id}"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AspectCard(card.design?.imageUrl?.let { absolute(c.session.instanceUrl, it) }, Modifier.fillMaxWidth())
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Txt(name, size = 16.sp, weight = FontWeight.SemiBold)
-                            Txt(stringResource(status), size = 12.sp, color = if (card.blocked || card.disabled) Lw.MutedFg else Lw.Green)
-                        }
-                        Txt(stringResource(R.string.settings_cardsScreen_tapPayments), size = 12.sp, color = Lw.MutedFg)
-                        Spacer(Modifier.width(8.dp))
-                        Switch(!card.disabled, { on ->
-                            scope.launch {
-                                runCatching { c.session.api.value.setCardEnabled(card.id, on) }
-                                    .onSuccess { updated -> cards = cards?.map { if (it.id == card.id) updated else it }; context.toast((if (on) enabledFmt else disabledFmt).format(name)) }
-                                    .onFailure { context.toastError(it, updateFailed) }
-                            }
-                        }, enabled = !card.blocked, colors = lwSwitchColors())
-                    }
-                    if (card.remoteWalletId == null || card.remoteWalletId != card.defaultRemoteWalletId) LwButton(stringResource(R.string.settings_cardsScreen_linkToWallet), {
-                        scope.launch {
-                            runCatching { c.session.api.value.linkCardToDefaultWallet(card.id) }
-                                .onSuccess { context.toast(linkedFmt.format(name)); load() }
-                                .onFailure { context.toastError(it, updateFailed) }
-                        }
-                    }, Modifier.fillMaxWidth(), BtnVariant.Secondary, height = 40.dp, enabled = !card.blocked)
-                }
-            }
-        }
-    }
 }
 
 @Composable

@@ -245,14 +245,17 @@ private fun AddressActionsSheet(full: String, isPrimary: Boolean, onDismiss: () 
     }
 }
 
-/** Pick the remote wallet an address receives into; the current one is checked. */
+/** Pick a remote wallet (an address receives into it, a card pays from it); the current one is checked. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WalletPickerSheet(wallets: List<RemoteWallet>, currentId: String?, onDismiss: () -> Unit, onPick: (RemoteWallet) -> Unit) {
+internal fun WalletPickerSheet(
+    wallets: List<RemoteWallet>, currentId: String?, onDismiss: () -> Unit,
+    title: String = stringResource(R.string.addresses_pickWallet), tag: String = "address-wallet-picker", onPick: (RemoteWallet) -> Unit,
+) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val brand = LocalBrand.current
-    LwBottomSheet(onDismiss, "address-wallet-picker", state) {
-        Txt(stringResource(R.string.addresses_pickWallet), Modifier.padding(horizontal = 24.dp, vertical = 12.dp), size = 17.sp, weight = FontWeight.SemiBold)
+    LwBottomSheet(onDismiss, tag, state) {
+        Txt(title, Modifier.padding(horizontal = 24.dp, vertical = 12.dp), size = 17.sp, weight = FontWeight.SemiBold)
         if (wallets.isEmpty()) MutedText(stringResource(R.string.remoteWallets_list_emptyTitle), Modifier.padding(24.dp))
         wallets.forEach { w ->
             Row(
