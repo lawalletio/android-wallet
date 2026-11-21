@@ -36,4 +36,5 @@ dependencies {
     implementation(libs.androidx.test.runner)
     implementation(libs.androidx.uiautomator)
     implementation(libs.androidx.benchmark.macro)
+    implementation(libs.okhttp.mockwebserver)
 }

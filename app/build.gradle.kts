@@ -166,10 +166,16 @@ sentry {
 // Profile/benchmark builds (created by the baseline-profile plugin) install side by side as
 // ".bench", so measuring never replaces — or, when Gradle uninstalls after the run, wipes — a
 // real logged-in install. Set on the variant: the plugin configures these build types late.
+// They log in against an on-device fake instance (baselineprofile FakeInstance), never a real one.
 androidComponents {
     onVariants { variant ->
         if (variant.buildType == "nonMinifiedRelease" || variant.buildType == "benchmarkRelease") {
             variant.applicationId.set("io.lawallet.wallet.bench")
+            val fake = "\"http://127.0.0.1:38080\""
+            variant.buildConfigFields?.put("DEFAULT_INSTANCE", com.android.build.api.variant.BuildConfigField("String", fake, null))
+            // No GitHub check: its "Update available" dialog (1.0.0 locally) would cover every journey.
+            variant.buildConfigFields?.put("UPDATE_FEED", com.android.build.api.variant.BuildConfigField("String", fake, null))
+            variant.sources.res?.addStaticSourceDirectory("src/bench/res")
         }
     }
 }

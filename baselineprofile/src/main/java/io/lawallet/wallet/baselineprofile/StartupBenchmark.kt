@@ -1,7 +1,9 @@
 package io.lawallet.wallet.baselineprofile
 
+import androidx.benchmark.macro.ArtMetric
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.ExperimentalMetricApi
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
@@ -15,12 +17,15 @@ import org.junit.runner.RunWith
 /**
  * Cold start and navigation smoothness, with and without the baseline profile:
  *   ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
- * Compare `timeToInitialDisplayMs` and `frameDurationCpuMs` P50/P90 between the two modes.
+ * Compare `timeToInitialDisplayMs` and `frameDurationCpuMs` P50/P90 between the two modes. `ArtMetric` counts the JIT
+ * compiles and class verifications the profile should remove: unlike timings, emulator load doesn't skew them.
  */
+@OptIn(ExperimentalMetricApi::class)
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class StartupBenchmark {
     @get:Rule val rule = MacrobenchmarkRule()
+    @get:Rule val instance = FakeInstance()
 
     @Test fun startupNoCompilation() = startup(CompilationMode.None())
 
@@ -28,7 +33,7 @@ class StartupBenchmark {
 
     @Test fun onboardingFramesBaselineProfile() = rule.measureRepeated(
         packageName = targetPackage,
-        metrics = listOf(FrameTimingMetric()),
+        metrics = listOf(FrameTimingMetric(), ArtMetric()),
         compilationMode = CompilationMode.Partial(BaselineProfileMode.Require),
         iterations = 5,
         startupMode = StartupMode.COLD,
@@ -38,9 +43,21 @@ class StartupBenchmark {
         onboardingJourney()
     }
 
+    @Test fun loggedInFramesBaselineProfile() = rule.measureRepeated(
+        packageName = targetPackage,
+        metrics = listOf(FrameTimingMetric(), ArtMetric()),
+        compilationMode = CompilationMode.Partial(BaselineProfileMode.Require),
+        iterations = 5,
+        startupMode = StartupMode.COLD,
+        setupBlock = { pressHome() },
+    ) {
+        startToLanding()
+        loggedInJourney()
+    }
+
     private fun startup(mode: CompilationMode) = rule.measureRepeated(
         packageName = targetPackage,
-        metrics = listOf(StartupTimingMetric()),
+        metrics = listOf(StartupTimingMetric(), ArtMetric()),
         compilationMode = mode,
         iterations = 8,
         startupMode = StartupMode.COLD,
