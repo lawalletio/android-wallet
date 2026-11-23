@@ -114,15 +114,19 @@ import com.composables.icons.lucide.R as L
 
 /** "Native SegWit", "Watch-only · Taproot", or the backup warning: what a wallet is, in one line. */
 @Composable
-internal fun onchainSubtitle(w: OnchainWallet): String {
+internal fun onchainSubtitle(w: OnchainWallet, chain: Boolean = true): String {
     val kind = when {
         !w.backedUp -> return stringResource(R.string.onchain_notBackedUp)
         w.multisig -> w.quorum?.let { (m, n) -> stringResource(R.string.onchain_multisig_label, m, n) } ?: stringResource(R.string.onchain_kind_multisig)
         w.watchOnly -> stringResource(R.string.onchain_watchOnly) + " · " + (w.script?.label ?: stringResource(R.string.onchain_address))
         else -> w.script?.label.orEmpty()
     }
-    return if (w.chain == Chain.SIGNET) stringResource(R.string.onchain_signet) + " · " + kind else kind
+    return if (chain && w.chain == Chain.SIGNET) stringResource(R.string.onchain_signet) + " · " + kind else kind
 }
+
+/** "Signet": says a wallet's coins are test coins, wherever it shows. */
+@Composable
+internal fun SignetBadge(modifier: Modifier = Modifier) = Box(modifier.testTag("signet-badge")) { Pill(stringResource(R.string.onchain_signet), Lw.Signet) }
 
 /** The wallet's tile: the ₿ for keys held here, an eye for watch-only. */
 @Composable
@@ -199,6 +203,9 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                         .graphicsLayer { translationY = reveal.progress * reveal.range }
                         .padding(start = 16.dp, end = 16.dp, top = 20.dp),
                 ) {
+                    if (primary?.chain == Chain.SIGNET) SignetBadge(
+                        Modifier.align(Alignment.TopStart).padding(top = 26.dp).graphicsLayer { alpha = 1f - (reveal.progress * 2f).coerceIn(0f, 1f) },
+                    )
                     Column(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
                         BalanceLabel(
@@ -358,9 +365,12 @@ private fun OnchainRevealCard(
             OnchainMark(w, 44, sel)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Txt(w.name, size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Txt(w.name, Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1, color = lerp(Lw.MutedFg, Lw.Foreground, sel))
+                    if (w.chain == Chain.SIGNET) { Spacer(Modifier.width(8.dp)); SignetBadge() }
+                }
                 Spacer(Modifier.height(4.dp))
-                Txt(onchainSubtitle(w), size = 12.sp, weight = FontWeight.Medium, color = if (!w.backedUp) Lw.Orange else lerp(Lw.MutedFg, Lw.Bitcoin, sel), maxLines = 1)
+                Txt(onchainSubtitle(w, chain = false), size = 12.sp, weight = FontWeight.Medium, color = if (!w.backedUp) Lw.Orange else lerp(Lw.MutedFg, Lw.Bitcoin, sel), maxLines = 1)
             }
             Spacer(Modifier.width(12.dp))
             val figure = lerp(Lw.MutedFg, Lw.Foreground, sel)
