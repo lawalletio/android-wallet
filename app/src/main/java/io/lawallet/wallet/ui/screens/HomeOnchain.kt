@@ -201,7 +201,16 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                 ) {
                     Column(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 22.dp, bottom = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         val primaryLabel by remember { derivedStateOf { reveal.progress > 0.5f } }
-                        BalanceLabel(primaryLabel, Modifier.pinned(anchors, ONCHAIN))
+                        BalanceLabel(
+                            primaryLabel, Modifier.pinned(anchors, ONCHAIN),
+                            replace = primary?.takeIf { !primaryLabel }?.let { p -> {
+                                OnchainWalletPill(
+                                    p, onOpen = { scope.launch { reveal.settleTo(1f) } }, onHold = { nav.navigate(R0.onchainWallet(p.id)) { launchSingleTop = true } },
+                                    Modifier.graphicsLayer { alpha = 1f - (reveal.progress * 2f).coerceIn(0f, 1f) },
+                                    enabled = current,
+                                )
+                            } },
+                        )
                         val showLabel = stringResource(if (hidden) R.string.home_showBalance else R.string.home_hideBalance)
                         Box(
                             Modifier.fillMaxWidth().pinnedSlot(anchors, ONCHAIN)
