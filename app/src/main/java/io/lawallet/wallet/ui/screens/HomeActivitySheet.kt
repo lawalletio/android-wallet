@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import io.lawallet.wallet.ui.components.providerName
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -248,7 +249,15 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: B
     DisposableEffect(Unit) { onDispose { ActivitySearch.sheet = 0f } }
     LaunchedEffect(recent) { ActivitySearch.maxSats = recent.maxOfOrNull { it.amountSats }?.coerceAtLeast(1L) ?: 1L }
     val s = ActivitySearch
-    val filtered by remember(recent) { derivedStateOf { if (s.active) recent.filter(s::matches) else recent } }
+    val destinations by c.prefs.paymentDestinations.collectAsState()
+    fun labels(t: Tx): List<String> = if (t.incoming) emptyList() else buildList {
+        c.swaps.byHash(t.paymentHash)?.let { sw ->
+            val r = c.swaps.recipientFor(sw.destination)
+            addAll(listOfNotNull(sw.holderName, r?.holderName, sw.destination, r?.account?.alias, r?.account?.bank, providerName(sw.provider)))
+        }
+        destinations[t.paymentHash]?.let { d -> addAll(listOfNotNull(d.name, d.address, d.comment)) }
+    }
+    val filtered by remember(recent, swaps, destinations) { derivedStateOf { if (s.active) recent.filter { s.matches(it, labels(it)) } else recent } }
     LaunchedEffect(s.query, s.sent, s.received, s.sizeOn, s.size) { if (s.active) list.scrollToItem(0) }
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         // Grabber: says "this moves", firmer as the sheet takes over.

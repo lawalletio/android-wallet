@@ -104,12 +104,14 @@ internal object ActivitySearch {
 
     fun sats(f: Float) = (exp(f * ln(maxSats + 1.0)) - 1).roundToLong()
 
-    fun matches(t: Tx): Boolean {
+    /** [labels]: what the row shows beyond the description (a swap's holder and bank, a saved recipient's name). */
+    fun matches(t: Tx, labels: List<String> = emptyList()): Boolean {
         if (if (t.incoming) !received else !sent) return false
         if (sizeOn && t.amountSats !in sats(size.start)..sats(size.endInclusive)) return false
         val q = query.trim()
         if (q.isEmpty()) return true
         if (t.description?.contains(q, ignoreCase = true) == true) return true
+        if (labels.any { it.contains(q, ignoreCase = true) }) return true
         // "21,000" / "21000" find the amount.
         val digits = q.filter(Char::isDigit)
         return digits.isNotEmpty() && q.all { it.isDigit() || it in ",. " } && t.amountSats.toString().contains(digits)
