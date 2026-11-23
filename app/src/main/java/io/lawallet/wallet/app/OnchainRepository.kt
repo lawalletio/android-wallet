@@ -127,6 +127,9 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
     private val _received = MutableSharedFlow<Pair<OnchainWallet, OnchainTx>>(extraBufferCapacity = 16)
     /** A payment just arrived (new incoming tx in a wallet that had synced before). */
     val received: SharedFlow<Pair<OnchainWallet, OnchainTx>> = _received
+    private val _confirmed = MutableSharedFlow<Pair<OnchainWallet, OnchainTx>>(extraBufferCapacity = 16)
+    /** A tx this wallet had as pending was included in a block (its first confirmation), sent or received. */
+    val confirmed: SharedFlow<Pair<OnchainWallet, OnchainTx>> = _confirmed
 
     private inner class Handle(@Volatile var w: OnchainWallet) {
         val lock = Mutex()
@@ -294,6 +297,7 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
             setState(w.id) { it.copy(syncing = true) }
             try {
                 val before = _states.value[w.id]?.txs?.map { it.txid }?.toSet().orEmpty()
+                val waiting = _states.value[w.id]?.txs?.filter { it.pending }?.map { it.txid }?.toSet().orEmpty()
                 val bdk = h.bdk
                 if (bdk == null) syncAddress(h) else {
                     val now = (System.currentTimeMillis() / 1000).toULong()
@@ -312,6 +316,7 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
                 saveSeen()
                 val txs = _states.value[w.id]?.txs.orEmpty()
                 if (h.synced) txs.filter { it.incoming && it.txid !in before }.forEach { _received.tryEmit(w to it) }
+                txs.filter { !it.pending && it.txid in waiting }.forEach { _confirmed.tryEmit(w to it) }
                 h.synced = true
                 setState(w.id) { it.copy(syncing = false, error = null) }
             } catch (e: Exception) {

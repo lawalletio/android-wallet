@@ -430,8 +430,11 @@ internal fun phraseSummary(w: OnchainWallet) = pluralStringResource(R.plurals.on
 private fun OnchainActivity(sheet: ActivitySheet, w: OnchainWallet, txs: List<OnchainTx>, pin: Modifier) {
     val nav = LocalNav.current
     val labels = rememberDayLabels()
-    val pending = txs.filter { it.pending }
-    val done = remember(txs) { txs.filter { !it.pending }.map { it.toTx() } }
+    // Confirming: in the mempool or under six blocks deep (without a tip yet, only the unconfirmed ones).
+    val tip by io.lawallet.wallet.ui.LocalContainer.current.onchainWallets.tip(w.chain).collectAsState()
+    fun confirming(t: OnchainTx) = t.pending || (tip != null && t.confirmations(tip) < SAFE_CONFIRMATIONS)
+    val pending = remember(txs, tip) { txs.filter(::confirming) }
+    val done = remember(txs, tip) { txs.filterNot(::confirming).map { it.toTx() } }
     val rows = remember(done) { activityRows(done, months = true) { true } }
     val paging = remember { ActivityPaging().apply { hasMore = false } }
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
@@ -440,8 +443,8 @@ private fun OnchainActivity(sheet: ActivitySheet, w: OnchainWallet, txs: List<On
         Box(Modifier.weight(1f).sheetTailFade(sheet)) {
             LazyColumn(Modifier.fillMaxSize().testTag("onchain-activity"), contentPadding = PaddingValues(bottom = 260.dp)) {
                 if (pending.isNotEmpty()) {
-                    item("pending-title") { Txt(stringResource(R.string.onchain_pending), Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
-                    items(pending.size, key = { "p:" + pending[it].txid }) { i -> PendingRow(pending[i]) { nav.navigate(R0.onchainTx(w.id, pending[i].txid)) } }
+                    item("pending-title") { Txt(stringResource(R.string.onchain_confirming), Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
+                    items(pending.size, key = { "p:" + pending[it].txid }) { i -> PendingRow(pending[i], pending[i].confirmations(tip)) { nav.navigate(R0.onchainTx(w.id, pending[i].txid)) } }
                 }
                 if (done.isNotEmpty()) activityList(rows, done, labels, paging) { nav.navigate(R0.onchainTx(w.id, it.paymentHash)) }
             }
@@ -449,9 +452,12 @@ private fun OnchainActivity(sheet: ActivitySheet, w: OnchainWallet, txs: List<On
     }
 }
 
-/** A tx still in the mempool: a slow pulse on its clock, what it waits for, and the amount. */
+/**
+ * A tx on its way to six blocks: its six-block strip (confirmed ones solid, the next one being mined pulsing), what it
+ * waits for, and the amount. The clock pulses until the first block, then settles.
+ */
 @Composable
-private fun PendingRow(tx: OnchainTx, onClick: () -> Unit) {
+private fun PendingRow(tx: OnchainTx, confirmations: Int, onClick: () -> Unit) {
     val color = if (tx.incoming) Lw.Green else Lw.Bitcoin
     val pulse by rememberInfiniteTransition(label = "pending").animateFloat(0.45f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "pulse")
     Row(
@@ -460,12 +466,16 @@ private fun PendingRow(tx: OnchainTx, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-            LwIcon(L.drawable.lucide_ic_clock, Modifier.graphicsLayer { alpha = pulse }, size = 20.dp, tint = color)
+            LwIcon(if (confirmations > 0) L.drawable.lucide_ic_box else L.drawable.lucide_ic_clock, Modifier.graphicsLayer { alpha = if (confirmations > 0) 1f else pulse }, size = 20.dp, tint = color)
         }
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Txt(stringResource(if (tx.incoming) R.string.onchain_pending_in else R.string.onchain_pending_out), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
-            Txt(pendingLine(tx), size = 12.sp, color = Lw.MutedFg, maxLines = 1)
+            BlockStrip(confirmations, color)
+            Txt(
+                if (confirmations > 0) stringResource(R.string.onchain_confirmations_of, confirmations, SAFE_CONFIRMATIONS) else pendingLine(tx),
+                size = 12.sp, color = Lw.MutedFg, maxLines = 1,
+            )
         }
         Row(verticalAlignment = Alignment.Bottom) {
             Txt((if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amount), size = 14.sp, weight = FontWeight.SemiBold, color = color)

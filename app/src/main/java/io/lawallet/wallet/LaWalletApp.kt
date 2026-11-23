@@ -85,6 +85,11 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
             }
         })
 
+        // In the foreground too: "it's in a block" is news even with the app open (Android shows it as a heads-up).
+        c.scope.launch {
+            c.onchainWallets.confirmed.collect { (w, tx) -> runCatching { Notifications.showConfirmed(this@LaWalletApp, w, tx) }.onFailure { Diagnostics.nonFatal(it) } }
+        }
+
         c.scope.launch {
             c.onchainWallets.received.collect { (w, tx) ->
                 val notice = PaymentNotice("onchain:${tx.txid}", "payment_received", tx.toTx().copy(description = w.name))

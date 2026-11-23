@@ -55,6 +55,21 @@ object Notifications {
         NotificationManagerCompat.from(context).notify("payment", notice.id.hashCode(), n)
     }
 
+    /** An onchain tx got its first confirmation. Opens its detail. */
+    fun showConfirmed(context: Context, wallet: io.lawallet.wallet.app.OnchainWallet, tx: io.lawallet.wallet.app.OnchainTx) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val amount = (if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amount)
+        val n = NotificationCompat.Builder(context, CHANNEL_PAYMENTS)
+            .setSmallIcon(R.drawable.ic_notification_bitcoin)
+            .setContentTitle(context.getString(R.string.onchain_notif_confirmed, amount))
+            .setContentText(context.getString(R.string.onchain_notif_confirmedBody, wallet.name))
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context, "onchain/tx/${wallet.id}/${tx.txid}"))
+            .setColor(0xFFF7931A.toInt())
+            .build()
+        NotificationManagerCompat.from(context).notify("onchain-confirmed", tx.txid.hashCode(), n)
+    }
+
     /** A cash-out order left PENDING: the pesos landed, or the transfer failed. Opens its status screen. */
     fun showSwap(context: Context, swap: io.lawallet.wallet.core.api.Swap) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return

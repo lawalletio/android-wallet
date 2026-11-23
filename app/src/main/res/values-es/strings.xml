@@ -707,4 +707,8 @@
     <string name="receive_tab_onchain">Onchain</string>
     <string name="receive_tab_lightning">Lightning</string>
     <string name="receive_action_amount">Monto</string>
+    <string name="onchain_confirming">Confirmando</string>
+    <string name="onchain_confirmations_of">%1$d de %2$d confirmaciones</string>
+    <string name="onchain_notif_confirmed">Confirmado · %1$s sats</string>
+    <string name="onchain_notif_confirmedBody">Ya está en un bloque · %1$s</string>
 </resources>

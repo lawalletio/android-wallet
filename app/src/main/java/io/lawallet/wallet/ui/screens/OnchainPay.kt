@@ -62,6 +62,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.ColumnScope
 import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.app.Fees
@@ -589,10 +592,17 @@ fun OnchainTxScreen(walletId: String, txid: String) {
             add(stringResource(R.string.onchain_tx_explorer) to "")
         }
         val explorer = stringResource(R.string.onchain_tx_explorer)
+        val statusKey = stringResource(R.string.onchain_tx_status)
+        val statusText = rows.first().second
         PaymentReceipt(
             stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), if (tx.pending) "pending" else "settled", tx.amount, rows,
             listOf(stringResource(R.string.onchain_tx_id) to tx.txid), PaddingValues(horizontal = 16.dp, vertical = 16.dp), onDone = { nav.popBackStack() },
-            valueNodes = mapOf(explorer to {
+            valueNodes = (if (confirmations >= SAFE_CONFIRMATIONS) emptyMap() else mapOf<String, @Composable () -> Unit>(statusKey to {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BlockStrip(confirmations, if (tx.incoming) Lw.Green else Lw.Bitcoin, block = 14.dp)
+                    Txt(statusText, size = 14.sp, align = TextAlign.End)
+                }
+            })) + mapOf(explorer to {
                 Txt(
                     "mempool.space ↗", Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(w.chain.txUrl(tx.txid)))) } }.testTag("onchain-explorer"),
                     size = 14.sp, weight = FontWeight.Medium, color = Lw.Bitcoin,
@@ -799,6 +809,44 @@ private fun PsbtInput(busy: Boolean, onPsbt: (String) -> Unit, onError: (String)
                 PsbtCodec.parse(t)?.let(onPsbt) ?: onError(invalid)
             }, Modifier.weight(1f).testTag("psbt-paste"), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_clipboard_paste, enabled = !busy)
             LwButton(stringResource(R.string.onchain_psbt_file), { open.launch(arrayOf("*/*")) }, Modifier.weight(1f), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_folder_open, enabled = !busy)
+        }
+    }
+}
+
+/** Confirmations an onchain tx needs before the app calls it settled (and stops showing its blocks). */
+internal const val SAFE_CONFIRMATIONS = 6
+
+/**
+ * Six blocks in a row, one per confirmation: the confirmed ones solid, the rest at half strength, and the one being mined
+ * breathing in and out. When a block lands it springs in (a small pop as it fills). Animated values are read in the
+ * draw/layer phase only.
+ */
+@Composable
+internal fun BlockStrip(confirmed: Int, tone: Color, modifier: Modifier = Modifier, block: androidx.compose.ui.unit.Dp = 12.dp) {
+    val mining = androidx.compose.animation.core.rememberInfiniteTransition(label = "mining")
+    val pulse = mining.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(950, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "pulse")
+    Row(modifier.testTag("block-strip"), horizontalArrangement = Arrangement.spacedBy(block / 3), verticalAlignment = Alignment.CenterVertically) {
+        repeat(SAFE_CONFIRMATIONS) { i ->
+            val fill = androidx.compose.animation.core.animateFloatAsState(
+                if (i < confirmed) 1f else 0f,
+                androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = androidx.compose.animation.core.Spring.StiffnessLow), label = "block$i",
+            )
+            val active = i == confirmed
+            Box(
+                Modifier.size(block).graphicsLayer {
+                    val f = fill.value.coerceIn(0f, 1.2f)
+                    val p = if (active) pulse.value else 0f
+                    alpha = (0.5f + 0.5f * f.coerceAtMost(1f)).coerceAtLeast(0.5f + 0.42f * p)
+                    // Landing: overshoots a little past full size; mining: breathes slightly.
+                    val pop = if (f > 0f && f < 1.2f) 1f + 0.22f * kotlin.math.sin(Math.PI * f.coerceAtMost(1f)).toFloat() else 1f
+                    scaleX = pop * (1f - 0.08f * (1f - p) * (if (active) 1f else 0f)); scaleY = scaleX
+                }.drawBehind {
+                    val r = androidx.compose.ui.geometry.CornerRadius(size.minDimension * 0.28f)
+                    drawRoundRect(tone, cornerRadius = r)
+                    // A lit top edge: reads as a block, not a dot.
+                    drawRoundRect(Color.White.copy(alpha = 0.28f), size = androidx.compose.ui.geometry.Size(size.width, size.height * 0.34f), cornerRadius = r)
+                },
+            )
         }
     }
 }
