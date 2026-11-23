@@ -707,6 +707,7 @@
     <string name="receive_tab_onchain">Onchain</string>
     <string name="receive_tab_lightning">Lightning</string>
     <string name="receive_action_amount">Monto</string>
+    <string name="scan_short">Escanear</string>
     <string name="onchain_confirming">Confirmando</string>
     <string name="onchain_confirmations_of">%1$d de %2$d confirmaciones</string>
     <string name="onchain_notif_confirmed">Confirmado · %1$s sats</string>
@@ -718,4 +719,10 @@
     <string name="onchain_privateKey">Clave privada</string>
     <string name="onchain_remove_key">La clave privada de esta billetera está solo en este teléfono. Asegurate de tener una copia antes de eliminarla, o sus bitcoin se pierden.</string>
     <string name="onchain_scan_phrase">%1$s detectado: una frase de recuperación. Importala como billetera, y mantenela en secreto.</string>
+    <string name="onchain_kind_export">Exportación de %1$s</string>
+    <plurals name="onchain_export_accounts">
+        <item quantity="one">%d cuenta</item>
+        <item quantity="many">%d cuentas</item>
+        <item quantity="other">%d cuentas</item>
+    </plurals>
 </resources>

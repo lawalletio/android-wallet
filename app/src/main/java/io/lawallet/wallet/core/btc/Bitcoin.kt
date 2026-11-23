@@ -111,6 +111,8 @@ sealed interface BtcInput {
      */
     data class WatchOnly(val kind: WatchKind, val value: String, val script: ScriptType?, val chain: Chain = Chain.MAINNET) : BtcInput
     data class Rejected(val reason: Unsupported) : BtcInput
+    /** A keystore export (Coldcard, Electrum, Sparrow, BSMS, BC-UR…): accounts to watch, a vault, or a cosigner key. */
+    data class Export(val export: KeystoreExport) : BtcInput
     /** A single-key extended private key (xprv/yprv/zprv, tprv/uprv/vprv): a spending wallet without a phrase. */
     data class PrivateKey(val value: String, val script: ScriptType?, val chain: Chain = Chain.MAINNET) : BtcInput
 }
@@ -142,6 +144,7 @@ object BtcImport {
     fun detect(raw: String, bip39: Bip39): BtcInput? {
         val s = raw.trim().let { if (it.startsWith("bitcoin:", ignoreCase = true)) it.substring(8).substringBefore('?') else it }
         if (s.isEmpty()) return null
+        Keystores.parse(s)?.let { return BtcInput.Export(it) }
         val words = s.lowercase().split(Regex("\\s+"))
         // Two words or more, or one short lowercase word (the first one being typed), is a phrase.
         if (words.size > 1 || (s.length <= 8 && s.all { it in 'a'..'z' })) return BtcInput.Phrase(words, bip39.problem(words))
@@ -156,12 +159,13 @@ object BtcImport {
      */
     fun walletKey(raw: String): BtcInput? {
         val s = raw.trim()
+        Keystores.parse(s)?.let { return BtcInput.Export(it) }
         if (s.isEmpty() || s.any { it.isWhitespace() } && '(' !in s) return null
         return if ('(' in s) descriptor(s).takeIf { it !is BtcInput.Rejected || (it as BtcInput.Rejected).reason == Unsupported.PRIVATE_KEY } else extended(s)
     }
 
     /** "zpub", "xprv", "Vpub"…: how a key names itself, for "zpub detected". Descriptors say "descriptor". */
-    fun keyLabel(raw: String): String = raw.trim().let { if ('(' in it) "descriptor" else it.take(4) }
+    fun keyLabel(raw: String): String = raw.trim().let { s -> Keystores.parse(s)?.source ?: if ('(' in s) "descriptor" else s.take(4) }
 
     private fun payload(key: String) = Base58.decodeCheck(key)?.takeIf { it.size == 78 }
     private fun version(p: ByteArray) = (0..3).fold(0) { acc, i -> (acc shl 8) or (p[i].toInt() and 0xff) }

@@ -78,7 +78,6 @@ import io.lawallet.wallet.core.btc.Bip21
 import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.PsbtCodec
-import io.lawallet.wallet.core.btc.PsbtUrScanner
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -780,8 +779,6 @@ private fun PsbtInput(busy: Boolean, onPsbt: (String) -> Unit, onError: (String)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var scanning by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf<Float?>(null) }
-    val ur = remember { PsbtUrScanner() }
     val invalid = stringResource(R.string.onchain_psbt_invalid)
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
@@ -790,19 +787,11 @@ private fun PsbtInput(busy: Boolean, onPsbt: (String) -> Unit, onError: (String)
         }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (scanning) {
-            QrCamera({ scanning = false }) { raw ->
-                if (!scanning) return@QrCamera
-                if (PsbtUrScanner.isUr(raw)) {
-                    val (p, psbt) = ur.receive(raw)
-                    progress = maxOf(progress ?: 0f, p.toFloat())
-                    if (psbt != null) { scanning = false; progress = null; onPsbt(psbt) }
-                } else PsbtCodec.parse(raw)?.let { scanning = false; onPsbt(it) }
-            }
-            progress?.let { Txt("${(it * 100).toInt()}%", Modifier.fillMaxWidth(), size = 13.sp, color = Lw.MutedFg, align = TextAlign.Center) }
+        if (scanning) QrReader({ scanning = false }) { text ->
+            if (scanning) PsbtCodec.parse(text)?.let { scanning = false; onPsbt(it) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.shared_nav_scan), { scanning = !scanning; progress = null }, Modifier.weight(1f).testTag("psbt-scan"),
+            LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.scan_short), { scanning = !scanning }, Modifier.weight(1f).testTag("psbt-scan"),
                 BtnVariant.Secondary, height = 42.dp, icon = if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code, enabled = !busy)
             LwButton(stringResource(R.string.onchain_import_paste), {
                 val t = context.getSystemService(ClipboardManager::class.java).primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()

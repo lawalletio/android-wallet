@@ -94,7 +94,6 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.AppContainer
-import io.lawallet.wallet.core.ln.CashuUrScanner
 import io.lawallet.wallet.core.ln.PluginLink
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
@@ -197,19 +196,20 @@ fun ScanScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var foreign by remember { mutableStateOf<ScanOutcome.Foreign?>(null) }
-    val ur = remember { CashuUrScanner() }
+    val ur = remember { io.lawallet.wallet.core.btc.UrAssembler() }
     var urProgress by remember { mutableStateOf<Float?>(null) }
 
     fun handle(raw: String) {
         if (busy) return
-        // Animated QR (NUT-16): collect frames until the token assembles, then route it like a static one.
-        if (CashuUrScanner.isUr(raw)) {
+        // Animated QR (BC-UR: Cashu NUT-16, wallet accounts, descriptors…): collect frames until it assembles, then
+        // route the result like a static code.
+        if (io.lawallet.wallet.core.btc.UrAssembler.isUr(raw)) {
             val (done, text) = ur.receive(raw)
             // The decoder's estimate can dip as fountain parts mix: the bar only moves forward.
             urProgress = maxOf(urProgress ?: 0f, done.toFloat())
             if (text == null) return
             urProgress = null
-            if (CashuUrScanner.isUr(text)) return
+            if (io.lawallet.wallet.core.btc.UrAssembler.isUr(text)) return
             return handle(text)
         }
         busy = true; error = null
@@ -278,6 +278,27 @@ fun ScanScreen() {
 }
 
 /** Square camera preview that reports QR payloads; requests the camera permission itself. */
+/**
+ * [QrCamera] that also reads animated BC-UR codes (a Keystone account, a PSBT, a Coldcard file over QR): frames
+ * collect until the payload assembles, with a progress line. [onText] gets a static code's text or the assembled UR's.
+ */
+@Composable
+fun QrReader(onError: (String?) -> Unit, onText: (String) -> Unit) {
+    val ur = remember { io.lawallet.wallet.core.btc.UrAssembler() }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        QrCamera(onError) { raw ->
+            if (!io.lawallet.wallet.core.btc.UrAssembler.isUr(raw)) return@QrCamera onText(raw)
+            val (p, text) = ur.receive(raw)
+            progress = maxOf(progress ?: 0f, p.toFloat())
+            if (text != null) { progress = null; onText(text) }
+        }
+        progress?.let { p ->
+            androidx.compose.material3.LinearProgressIndicator({ p }, Modifier.fillMaxWidth().testTag("ur-progress"), color = Lw.Bitcoin, trackColor = Color.White.copy(alpha = 0.1f))
+        }
+    }
+}
+
 @Composable
 fun QrCamera(onError: (String?) -> Unit, onCode: (String) -> Unit) {
     val granted = rememberCameraPermission()

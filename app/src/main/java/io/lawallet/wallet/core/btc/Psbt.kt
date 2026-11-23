@@ -1,8 +1,6 @@
 package io.lawallet.wallet.core.btc
 
-import com.sparrowwallet.hummingbird.ResultType
 import com.sparrowwallet.hummingbird.UR
-import com.sparrowwallet.hummingbird.URDecoder
 import com.sparrowwallet.hummingbird.UREncoder
 import java.util.Base64
 
@@ -35,20 +33,4 @@ object PsbtCodec {
     }
 
     fun bytes(base64: String): ByteArray = Base64.getDecoder().decode(base64)
-}
-
-/** Collects scanned `ur:crypto-psbt` frames until the PSBT assembles. */
-class PsbtUrScanner {
-    private var decoder = URDecoder()
-
-    /** 0..1 while collecting; the PSBT (base64) once complete, then resets. */
-    fun receive(part: String): Pair<Double, String?> {
-        decoder.receivePart(part.trim().lowercase())
-        val r = decoder.result ?: return decoder.estimatedPercentComplete to null
-        decoder = URDecoder()
-        if (r.type != ResultType.SUCCESS) return 0.0 to null
-        return 1.0 to runCatching { PsbtCodec.fromBytes(r.ur.toBytes()) }.getOrNull()
-    }
-
-    companion object { fun isUr(text: String) = text.trim().startsWith("ur:crypto-psbt", ignoreCase = true) || text.trim().startsWith("ur:psbt", ignoreCase = true) }
 }

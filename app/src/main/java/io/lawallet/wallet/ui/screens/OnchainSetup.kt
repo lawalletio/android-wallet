@@ -187,13 +187,19 @@ private fun CosignerKeySheet(chain: Chain, onDismiss: () -> Unit, onKey: (String
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
-    val parsed = remember(text) { Descriptors.cosignerKey(text) }
+    val parsed = remember(text) { Descriptors.cosignerKey(text) ?: io.lawallet.wallet.core.btc.Keystores.parse(text)?.cosigner?.let(Descriptors::cosignerKey) }
+    val scope = rememberCoroutineScope()
+    val openFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().take(256 * 1024).toByteArray().decodeToString() } }.getOrNull() }?.let { text = it.trim() }
+        }
+    }
     val wrongNet = parsed != null && parsed.second != chain
     LwBottomSheet(onDismiss, "ms-key-sheet") {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             DialogTitle(stringResource(R.string.onchain_ms_addKey))
             MutedText(stringResource(R.string.onchain_ms_keyBody), size = 13.sp)
-            if (scanning) QrCamera({ scanning = false }) { raw -> if (scanning) { scanning = false; text = raw.trim() } }
+            if (scanning) QrReader({ scanning = false }) { raw -> if (scanning) { scanning = false; text = raw.trim() } }
             OutlinedTextField(
                 text, { text = it.trim() }, Modifier.fillMaxWidth().testTag("ms-key-field"),
                 placeholder = { Txt(stringResource(R.string.onchain_ms_keyField), color = Lw.MutedFg, size = 13.sp) },
@@ -205,7 +211,8 @@ private fun CosignerKeySheet(chain: Chain, onDismiss: () -> Unit, onKey: (String
                 LwButton(stringResource(R.string.onchain_import_paste), {
                     context.getSystemService(ClipboardManager::class.java).primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()?.let { text = it }
                 }, Modifier.weight(1f), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_clipboard_paste)
-                LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.shared_nav_scan), { scanning = !scanning }, Modifier.weight(1f),
+                LwButton(stringResource(R.string.onchain_psbt_file), { openFile.launch(arrayOf("*/*")) }, Modifier.weight(1f), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_folder_open)
+                LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.scan_short), { scanning = !scanning }, Modifier.weight(1f),
                     BtnVariant.Secondary, height = 42.dp, icon = if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code)
             }
             if (text.length > 20 && parsed == null) ErrorText(stringResource(R.string.onchain_ms_keyInvalid))

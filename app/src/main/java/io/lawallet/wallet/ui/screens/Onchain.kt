@@ -173,9 +173,9 @@ private fun OptionCard(icon: Int, title: String, body: String, tag: String, onCl
 
 /** BIP44/49/84/86 as plain choices: name, address look, standard path. [locked] shows the one an import dictates. */
 @Composable
-private fun ScriptPicker(selected: ScriptType, onSelect: (ScriptType) -> Unit, locked: Boolean = false, chain: Chain = Chain.MAINNET) {
+private fun ScriptPicker(selected: ScriptType, onSelect: (ScriptType) -> Unit, locked: Boolean = false, chain: Chain = Chain.MAINNET, options: List<ScriptType> = ScriptType.entries) {
     SettingsGroup(stringResource(R.string.onchain_script)) {
-        (if (locked) listOf(selected) else ScriptType.entries).forEachIndexed { i, t ->
+        (if (locked) listOf(selected) else options).forEachIndexed { i, t ->
             if (i > 0) GroupDivider(inset = 14.dp)
             SettingsRow(
                 t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${t.prefix(chain)} · ${t.path(chain)}",
@@ -456,11 +456,21 @@ fun ImportOnchainWalletScreen() {
     // Signet material needs signet turned on (Settings → Onchain): until then it reads as unsupported.
     val watch = (detected as? BtcInput.WatchOnly)?.takeIf { it.chain == Chain.MAINNET || signet }
     val priv = (detected as? BtcInput.PrivateKey)?.takeIf { it.chain == Chain.MAINNET || signet }
-    val ready = (phrase != null && phrase.problem == null) || watch != null || priv != null
-    val chain = watch?.chain ?: priv?.chain ?: phraseChain
-    val effective = script ?: watch?.script ?: priv?.script ?: ScriptType.P2WPKH
+    // A keystore export: its accounts (pick one), or its vault; a cosigner key alone belongs in a multisig vault.
+    val export = (detected as? BtcInput.Export)?.export?.takeIf { (it.chain == Chain.MAINNET || signet) && (it.accounts.isNotEmpty() || it.multisig != null) }
+    val ready = (phrase != null && phrase.problem == null) || watch != null || priv != null || export != null
+    val chain = watch?.chain ?: priv?.chain ?: export?.chain ?: phraseChain
+    val effective = script?.takeIf { export == null || it in export.accounts } ?: watch?.script ?: priv?.script
+        ?: export?.accounts?.keys?.let { k -> ScriptType.entries.firstOrNull { it in k } } ?: ScriptType.P2WPKH
     val exists = stringResource(R.string.onchain_import_exists)
     val unreadable = stringResource(R.string.onchain_import_invalid)
+    // Keystore files: Coldcard's SD card exports, Electrum/Sparrow/Specter wallet files, BSMS, Bitcoin Core dumps.
+    val openFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val read = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().take(256 * 1024).toByteArray().decodeToString() } }.getOrNull() }
+            if (read == null) error = unreadable else text = TextFieldValue(read.trim(), TextRange(read.trim().length))
+        }
+    }
     val defaultName = stringResource(if (watch != null) R.string.onchain_name_watch else R.string.onchain_name_imported)
 
     fun complete(word: String) {
@@ -473,8 +483,8 @@ fun ImportOnchainWalletScreen() {
     Column(Modifier.fillMaxSize().imePadding()) {
         SettingsHeader(stringResource(R.string.onchain_import_title), { nav.popBackStack() })
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (scanning) QrCamera({ error = it; scanning = false }) { raw ->
-                if (!scanning) return@QrCamera
+            if (scanning) QrReader({ error = it; scanning = false }) { raw ->
+                if (!scanning) return@QrReader
                 scanning = false
                 val read = io.lawallet.wallet.core.btc.SeedQr.read(raw, bip39)?.first?.joinToString(" ") ?: raw.trim()
                 text = TextFieldValue(read, TextRange(read.length))
@@ -493,7 +503,9 @@ fun ImportOnchainWalletScreen() {
                         text = TextFieldValue(it, TextRange(it.length))
                     }
                 }, Modifier.weight(1f).testTag("onchain-paste"), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_clipboard_paste)
-                LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.shared_nav_scan), { scanning = !scanning }, Modifier.weight(1f).testTag("onchain-scan"),
+                LwButton(stringResource(R.string.onchain_psbt_file), { openFile.launch(arrayOf("*/*")) }, Modifier.weight(1f).testTag("onchain-file"),
+                    BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_folder_open)
+                LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.scan_short), { scanning = !scanning }, Modifier.weight(1f).testTag("onchain-scan"),
                     BtnVariant.Secondary, height = 42.dp, icon = if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code)
             }
             // What the field holds, live.
@@ -524,6 +536,18 @@ fun ImportOnchainWalletScreen() {
                     Detected(if (d.kind == WatchKind.MULTISIG) L.drawable.lucide_ic_users else L.drawable.lucide_ic_eye, "$kind · $what$net", Lw.Green)
                     MutedText(stringResource(if (d.kind == WatchKind.MULTISIG) R.string.onchain_detect_multisig else R.string.onchain_detect_watch), Modifier.padding(horizontal = 4.dp), size = 13.sp)
                 }
+                is BtcInput.Export -> when {
+                    export == null && d.export.cosigner != null && d.export.accounts.isEmpty() && d.export.multisig == null ->
+                        Detected(L.drawable.lucide_ic_users, stringResource(R.string.onchain_reject_multisig), Lw.Orange)
+                    export == null -> Detected(L.drawable.lucide_ic_circle_alert, stringResource(R.string.onchain_reject_testnet), Lw.Red)
+                    else -> {
+                        val what = if (export.multisig != null) Descriptors.quorum(BtcImport.normalizeKeys(export.multisig))?.let { (m, n) -> stringResource(R.string.onchain_multisig_label, m, n) }.orEmpty()
+                            else pluralStringResource(R.plurals.onchain_export_accounts, export.accounts.size, export.accounts.size)
+                        val net = if (export.chain == Chain.SIGNET) " · " + stringResource(R.string.onchain_signet) else ""
+                        Detected(if (export.multisig != null) L.drawable.lucide_ic_users else L.drawable.lucide_ic_file_check, stringResource(R.string.onchain_kind_export, export.source) + " · " + what + net, Lw.Green)
+                        MutedText(stringResource(if (export.multisig != null) R.string.onchain_detect_multisig else R.string.onchain_detect_watch), Modifier.padding(horizontal = 4.dp), size = 13.sp)
+                    }
+                }
                 is BtcInput.PrivateKey -> if (priv == null) Detected(L.drawable.lucide_ic_circle_alert, stringResource(R.string.onchain_reject_testnet), Lw.Red) else {
                     val net = if (d.chain == Chain.SIGNET) " · " + stringResource(R.string.onchain_signet) else ""
                     Detected(L.drawable.lucide_ic_key_round, stringResource(R.string.onchain_kind_xprv) + " · " + effective.label + net, Lw.Green)
@@ -540,7 +564,8 @@ fun ImportOnchainWalletScreen() {
                 // ypub/zpub, descriptors and addresses do, so theirs is shown, not offered.
                 val pickable = phrase != null || (watch?.value ?: priv?.value)?.let { it.startsWith("xpub") || it.startsWith("tpub") || it.startsWith("xprv") || it.startsWith("tprv") } == true
                 if (phrase != null) NetworkPicker(phraseChain) { phraseChain = it }
-                if (watch?.kind != WatchKind.MULTISIG && (watch?.kind != WatchKind.ADDRESS || watch.script != null)) {
+                if (export != null && export.multisig == null) ScriptPicker(effective, { script = it }, locked = export.accounts.size < 2, chain = chain, options = ScriptType.entries.filter { it in export.accounts })
+                else if (export == null && watch?.kind != WatchKind.MULTISIG && (watch?.kind != WatchKind.ADDRESS || watch.script != null)) {
                     ScriptPicker(effective, { script = it }, locked = !pickable, chain = chain)
                     if (pickable) MutedText(stringResource(R.string.onchain_import_script_hint), Modifier.padding(horizontal = 4.dp), size = 12.sp)
                 }
@@ -560,12 +585,22 @@ fun ImportOnchainWalletScreen() {
                             val d = when {
                                 phrase != null -> Descriptors.fromPhrase(phrase.words, passphrase, effective, chain)
                                 priv != null -> Descriptors.fromXprv(priv.value, effective, chain)
+                                export != null -> Descriptors.fromDescriptor(export.multisig ?: export.accounts.getValue(effective), chain)
                                 watch!!.kind == WatchKind.ADDRESS -> null
                                 watch.kind == WatchKind.XPUB -> Descriptors.fromXpub(watch.value, effective, chain)
                                 else -> Descriptors.fromDescriptor(watch.value, chain)
                             }
                             if (d != null && wallets.any { it.descriptors == d } || watch != null && wallets.any { it.source == watch.value }) return@runCatching false
-                            if (priv != null) {
+                            if (export != null) {
+                                val multi = export.multisig != null
+                                // A vault holding one of this phone's seeds' keys signs with it.
+                                val signer = if (!multi || d == null) null else wallets.filter { it.seed && !it.keyOnly && it.chain == chain }
+                                    .firstOrNull { s -> c.onchain.secret(s.id)?.let { (words, p) -> Descriptors.multisigSecret(d, words, p, chain) } != null }?.id
+                                c.onchain.add(OnchainWallet(
+                                    name = label, script = if (multi) null else effective, watch = if (multi) WatchKind.MULTISIG else WatchKind.DESCRIPTOR,
+                                    source = d!!.external, chain = chain, descriptors = d, signer = signer,
+                                ))
+                            } else if (priv != null) {
                                 // Kept like a phrase: Keystore-wrapped, out of the record. Its owner already has it (it was imported).
                                 c.onchain.add(OnchainWallet(name = label, script = effective, chain = chain, descriptors = d), io.lawallet.wallet.app.OnchainStore.KEY + priv.value)
                             } else if (phrase != null) {

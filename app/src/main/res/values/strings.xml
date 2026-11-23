@@ -706,6 +706,7 @@
     <string name="receive_tab_onchain">Onchain</string>
     <string name="receive_tab_lightning">Lightning</string>
     <string name="receive_action_amount">Amount</string>
+    <string name="scan_short">Scan</string>
     <string name="onchain_confirming">Confirming</string>
     <string name="onchain_confirmations_of">%1$d of %2$d confirmations</string>
     <string name="onchain_notif_confirmed">Confirmed · %1$s sats</string>
@@ -717,4 +718,9 @@
     <string name="onchain_privateKey">Private key</string>
     <string name="onchain_remove_key">This wallet\'s private key is only on this phone. Make sure you have a copy before you remove it, or its bitcoin is lost.</string>
     <string name="onchain_scan_phrase">%1$s detected: a recovery phrase. Import it as a wallet, and keep it secret.</string>
+    <string name="onchain_kind_export">%1$s export</string>
+    <plurals name="onchain_export_accounts">
+        <item quantity="one">%d account</item>
+        <item quantity="other">%d accounts</item>
+    </plurals>
 </resources>
