@@ -79,10 +79,26 @@ class OnchainStore(context: Context) {
     fun setPrimary(id: String) = save(_wallets.value.map { it.copy(isPrimary = it.id == id) })
     fun remove(id: String) {
         sp.edit { remove("secret:$id") }
-        save(_wallets.value.filter { it.id != id })
+        // A vault that signed with this seed's key now has no key here: it spends by PSBT only.
+        save(_wallets.value.filter { it.id != id }.map { if (it.signer == id) it.copy(signer = null) else it })
     }
 
     /** Phrase words (and passphrase), or null. Blocking (Keystore). */
     fun secret(id: String): Pair<List<String>, String?>? = sp.getString("secret:$id", null)?.let { runCatching { SecretStore.decrypt(it) }.getOrNull() }
         ?.split('\n')?.let { it[0].split(' ') to it.getOrNull(1)?.takeIf(String::isNotEmpty) }
+
+    // ---- settings: device-local too (which server sees this phone's addresses is about the phone, not the account) -
+
+    private val _electrum = Chain.entries.associateWith { MutableStateFlow(sp.getString("electrum:${it.name}", null) ?: it.electrum) }
+    fun electrum(chain: Chain): StateFlow<String> = _electrum.getValue(chain)
+    /** Null resets to the default server. */
+    fun setElectrum(chain: Chain, url: String?) {
+        _electrum.getValue(chain).value = url ?: chain.electrum
+        sp.edit { if (url == null) remove("electrum:${chain.name}") else putString("electrum:${chain.name}", url) }
+    }
+
+    private val _signet = MutableStateFlow(sp.getBoolean("signet", false))
+    /** Signet is offered when creating or importing (wallets already on signet show regardless). */
+    val signet: StateFlow<Boolean> = _signet
+    fun setSignet(v: Boolean) { _signet.value = v; sp.edit { putBoolean("signet", v) } }
 }

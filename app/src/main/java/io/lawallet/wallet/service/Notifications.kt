@@ -37,7 +37,8 @@ object Notifications {
         nm.activeNotifications.filter { it.notification.channelId == CHANNEL_PAYMENTS }.forEach { nm.cancel(it.tag, it.id) }
     }
 
-    fun showPayment(context: Context, notice: PaymentNotice) {
+    /** [route]: where tapping it goes; a Lightning payment's activity detail by default. */
+    fun showPayment(context: Context, notice: PaymentNotice, route: String = "activity/${notice.tx.paymentHash}") {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val received = notice.type == "payment_received"
         val amount = (if (received) "+" else "−") + Currencies.formatSats(notice.tx.amountSats) + " sats"
@@ -48,7 +49,7 @@ object Notifications {
             .setContentText(notice.tx.description ?: context.getString(R.string.app_name))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(openAppIntent(context, "activity/${notice.tx.paymentHash}"))
+            .setContentIntent(openAppIntent(context, route))
             .setColor(if (received) 0xFF22C55E.toInt() else 0xFFF97316.toInt())
             .build()
         NotificationManagerCompat.from(context).notify("payment", notice.id.hashCode(), n)
