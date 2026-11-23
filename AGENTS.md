@@ -53,11 +53,11 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 | `core/ln` | bolt11, destination / LNURL / activation / NDEF parsing, `ScanRouter`, Bolt card charge |
 | `core/api` | LaWallet REST client (NIP-98 → JWT session) and models |
 | `core/auth` | passkeys (Credential Manager + PRF → HKDF), Amber (NIP-55), NIP-46 bunker |
-| `core/btc` | onchain helpers, BIP-39 |
+| `core/btc` | onchain: chains, BIP-39, input detection, descriptors and multisig keys (BDK), BIP-21, Electrum subscription client, PSBT codec (BC-UR) |
 | `core/fx` | currencies, keypad logic, Yadio rates |
 | `core/store` | `Prefs`, `SecretStore` (nsec wrapped with an Android Keystore key), profile cache |
 | `core/diag` | crash-report `Scrubber`, `Trail` breadcrumbs, `Perf` (frames, start, resources, NWC latency) |
-| `app/` | `AppContainer` (the hand-wired object graph), `Session`, `WalletRepository` (the active wallet), `RemoteWalletRepository` (the account's remote and plugin wallets: cached list, balances, primary rules, wallet by id), `FlowStore`, `Updater` |
+| `app/` | `AppContainer` (the hand-wired object graph), `Session`, `WalletRepository` (the active wallet), `RemoteWalletRepository` (the account's remote and plugin wallets: cached list, balances, primary rules, wallet by id), `OnchainStore` (device-local onchain wallets, phrases Keystore-wrapped, Electrum server per chain), `OnchainRepository` (BDK wallets in `files/onchain`, Electrum-driven sync, send, RBF, PSBT), `FlowStore`, `Updater` |
 | `service/` | foreground payment listener, notifications, payment sounds |
 | `ui/AppNav.kt` | every route (the `R0` constants) and the `NavHost` |
 | `ui/screens` | one file per `/wallet` route or feature |

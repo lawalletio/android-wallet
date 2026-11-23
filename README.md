@@ -10,7 +10,7 @@ A native Android version of the [LaWallet](https://github.com/lawalletio/lawalle
   - Receive at your Lightning address, or create an invoice for an amount.
   - New accounts get a courtesy LNCurl NWC wallet automatically.
 - **Realtime:** NWC notifications (kinds 23196/23197) trigger an in-app notice, a sound (chime or bananero) and a system notification. A foreground service keeps listening while the app is closed. Payments missed while offline are caught up with `list_transactions`.
-- **Scan QR** (CameraX + ML Kit) and **deep links** (`lightning:`, `lnurlw:`, `lnurlp:`, activation URLs) route to the right place:
+- **Scan QR** (CameraX + ML Kit) and **deep links** (`lightning:`, `bitcoin:`, `lnurlw:`, `lnurlp:`, activation URLs) route to the right place:
   - invoice, address or LNURL-pay → the send flow
   - LUD-03 withdraw → the claim screen with the treasure-chest animation
   - card activation QR → card activation
@@ -22,6 +22,11 @@ A native Android version of the [LaWallet](https://github.com/lawalletio/lawalle
 - **Remote wallets:**
   - Connect an NWC string or create an LNCurl wallet. Set it as primary, pause, rename or delete it.
   - The detail screen shows the balance, connection string, receive protocols, forwarding plan and webhook notifications.
+- **Onchain wallets (on this device only):**
+  - Create or restore a BIP-39 wallet (BIP-44/49/84/86), import a watch-only xpub/ypub/zpub, descriptor or address, or set up a multisig vault (`wsh(sortedmulti)`, a key on this phone plus cosigners from Sparrow, Nunchuk, Coldcard or a hardware wallet).
+  - Live balances over Electrum subscriptions (your server, per network, in Settings → Onchain). Signet for testing.
+  - Receive to a rotating address; send with fee tiers, RBF on by default and Speed up for a pending send; PSBTs by animated BC-UR QR, file or text.
+  - Built on BDK. Keys stay in the Android Keystore; the Electrum server only sees scripthashes.
 - **Security:**
   - See your npub and role.
   - Reveal your nsec backup behind the device lock.
