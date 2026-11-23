@@ -689,7 +689,7 @@
     <string name="onchain_ms_needSeed">Para firmar desde este teléfono, primero creá o importá una billetera con frase de recuperación.</string>
     <string name="onchain_ms_quorum">Firmas para gastar</string>
     <string name="onchain_ms_of">%1$d de %2$d</string>
-    <string name="onchain_ms_quorum_body">Cualquier %1$d de las %2$d claves puede gastar. Perder más de %2$d menos %1$d claves pierde los fondos.</string>
+    <string name="onchain_ms_quorum_body">Cualquier %1$d de las %2$d claves puede gastar: si se pierden hasta %3$d, los fondos siguen a salvo.</string>
     <string name="onchain_ms_importHint">¿Ya tenés una bóveda (Sparrow, Nunchuk, Coldcard)? Importá su descriptor desde Agregar billetera → Importar.</string>
     <string name="onchain_ms_create">Crear bóveda</string>
 

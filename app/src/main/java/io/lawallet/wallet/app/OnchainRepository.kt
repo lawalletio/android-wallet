@@ -520,7 +520,8 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
     companion object {
         /** BIP-44 gap limit: addresses past this many unused in a row aren't found by restoring wallets. */
         const val GAP = 20
-        private const val BATCH = 25uL
+        // Small: electrs-esplora servers drop batches over ~20 requests.
+        private const val BATCH = 10uL
         /** Many nodes still relay nothing under 1 sat/vB. */
         const val MIN_RATE = 1.0
         private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(2 * it, 2 * it + 2).toInt(16).toByte() }

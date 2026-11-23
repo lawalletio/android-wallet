@@ -139,7 +139,7 @@ fun CreateMultisigScreen() {
                     Txt(stringResource(R.string.onchain_ms_of, m, n), Modifier.weight(1f), size = 22.sp, weight = FontWeight.SemiBold, align = androidx.compose.ui.text.style.TextAlign.Center)
                     GlassIconButton(L.drawable.lucide_ic_plus, { threshold = (m + 1).coerceAtMost(n) }, Modifier.testTag("ms-plus"))
                 }
-                MutedText(stringResource(R.string.onchain_ms_quorum_body, m, n), Modifier.padding(horizontal = 4.dp), size = 12.sp)
+                MutedText(stringResource(R.string.onchain_ms_quorum_body, m, n, n - m), Modifier.padding(horizontal = 4.dp), size = 12.sp)
             }
             Row(Modifier.padding(horizontal = 4.dp)) {
                 LwIcon(L.drawable.lucide_ic_info, Modifier.padding(top = 2.dp), size = 15.dp, tint = Lw.MutedFg)

@@ -27,6 +27,9 @@ enum class ScriptType(val purpose: Int, val label: String, val short: String) {
     P2SH_P2WPKH(49, "Nested SegWit", "3…"),
     P2PKH(44, "Legacy", "1…");
 
+    /** How its addresses start on [chain]. */
+    fun prefix(chain: Chain) = if (chain == Chain.MAINNET) short else when (this) { P2WPKH -> "tb1q…"; P2TR -> "tb1p…"; P2SH_P2WPKH -> "2…"; P2PKH -> "m… n…" }
+
     /** First account: m/84'/0'/0' on mainnet, m/84'/1'/0' on signet. */
     fun path(chain: Chain = Chain.MAINNET) = "m/$purpose'/${chain.coin}'/0'"
 }

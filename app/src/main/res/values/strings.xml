@@ -688,7 +688,7 @@
     <string name="onchain_ms_needSeed">To sign from this phone, create or import a wallet with a recovery phrase first.</string>
     <string name="onchain_ms_quorum">Signatures to spend</string>
     <string name="onchain_ms_of">%1$d of %2$d</string>
-    <string name="onchain_ms_quorum_body">Any %1$d of the %2$d keys can spend. Losing more than %2$d minus %1$d keys loses the funds.</string>
+    <string name="onchain_ms_quorum_body">Any %1$d of the %2$d keys can spend: up to %3$d can be lost and the funds are still safe.</string>
     <string name="onchain_ms_importHint">Already have a vault (Sparrow, Nunchuk, Coldcard)? Import its descriptor from Add wallet → Import.</string>
     <string name="onchain_ms_create">Create vault</string>
 

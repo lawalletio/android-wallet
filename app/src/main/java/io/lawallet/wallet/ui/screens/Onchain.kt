@@ -178,7 +178,7 @@ private fun ScriptPicker(selected: ScriptType, onSelect: (ScriptType) -> Unit, l
         (if (locked) listOf(selected) else ScriptType.entries).forEachIndexed { i, t ->
             if (i > 0) GroupDivider(inset = 14.dp)
             SettingsRow(
-                t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${if (chain == Chain.SIGNET) t.short.replace("bc1", "tb1") else t.short} · ${t.path(chain)}",
+                t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${t.prefix(chain)} · ${t.path(chain)}",
                 trailing = if (locked) null else ({
                     if (t == ScriptType.P2WPKH) Pill(stringResource(R.string.onchain_recommended), Lw.Bitcoin)
                     RadioButton(t == selected, { onSelect(t) }, colors = RadioButtonDefaults.colors(selectedColor = Lw.Bitcoin, unselectedColor = Lw.MutedFg))

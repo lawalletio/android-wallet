@@ -208,7 +208,8 @@ class Electrum(val url: String, private val scope: CoroutineScope, private val a
     companion object {
         private const val PING_MS = 60_000L
         private const val CONNECT_MS = 10_000
-        private const val BATCH = 50
+        // electrs-esplora (blockstream.info) drops the connection on a JSON batch over ~20 requests.
+        private const val BATCH = 15
         private val json = Json { ignoreUnknownKeys = true }
 
         /** `ssl://host:port` or `tcp://host:port`; a bare `host:port` means TLS. Throws on anything else. */
