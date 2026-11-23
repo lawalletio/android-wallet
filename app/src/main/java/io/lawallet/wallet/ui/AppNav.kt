@@ -386,7 +386,13 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
     LaunchedEffect(loggedIn) {
         if (!loggedIn && route != null && route !in PUBLIC_ROUTES) nav.navigate(R0.LANDING) { popUpTo(0) { inclusive = true } }
     }
-    LaunchedEffect(Unit) { Intents.routes.receiveAsFlow().collect { r -> if (loggedIn || r.startsWith("activate/")) nav.navigate(r) { launchSingleTop = true } } }
+    LaunchedEffect(Unit) {
+        Intents.routes.receiveAsFlow().collect { r ->
+            // Already there: even launchSingleTop swaps in a fresh copy of the screen (state lost, a fade).
+            if (nav.currentDestination?.route == r) return@collect
+            if (loggedIn || r.startsWith("activate/")) nav.navigate(r) { launchSingleTop = true }
+        }
+    }
     LaunchedEffect(loggedIn) {
         Intents.payloads.receiveAsFlow().collect { p ->
             handleScanPayload(container, nav, p.removePrefix(Intents.NFC), viaNfc = p.startsWith(Intents.NFC))

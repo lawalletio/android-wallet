@@ -573,4 +573,9 @@
     <string name="swap_paymentHash">Hash del pago</string>
     <string name="swap_receiptFailed">No pudimos abrir el comprobante</string>
     <string name="swap_unverified">No pudimos verificar el titular, revisalo después</string>
+    <string name="cards_paysFrom">Paga desde</string>
+    <string name="cards_pickWallet">Esta tarjeta paga desde</string>
+    <string name="cards_notLinked">Sin vincular</string>
+    <string name="cards_lastUsed">Último uso</string>
+    <string name="cards_linkedTo">%1$s ahora paga desde %2$s</string>
 </resources>

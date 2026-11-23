@@ -573,4 +573,9 @@
     <string name="swap_paymentHash">Payment hash</string>
     <string name="swap_receiptFailed">Couldn\'t open the receipt</string>
     <string name="swap_unverified">Couldn\'t verify the holder, check it next</string>
+    <string name="cards_paysFrom">Pays from</string>
+    <string name="cards_pickWallet">This card pays from</string>
+    <string name="cards_notLinked">Not linked</string>
+    <string name="cards_lastUsed">Last used</string>
+    <string name="cards_linkedTo">%1$s now pays from %2$s</string>
 </resources>

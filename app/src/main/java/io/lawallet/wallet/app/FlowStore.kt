@@ -23,6 +23,8 @@ class FlowStore {
     val pendingWallet = MutableStateFlow<PendingWallet?>(null)
     /** Same, for the Onchain page after adding or backing up an onchain wallet. */
     var revealOnchain = false
+    /** One of the account's cards was just tapped on the phone: My Cards brings it to the front, then clears this. */
+    val focusCard = MutableStateFlow<String?>(null)
 
     data class Send(
         val destination: Destination? = null,
