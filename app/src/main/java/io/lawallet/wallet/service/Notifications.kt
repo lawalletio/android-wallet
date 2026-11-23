@@ -53,4 +53,20 @@ object Notifications {
             .build()
         NotificationManagerCompat.from(context).notify("payment", notice.id.hashCode(), n)
     }
+
+    /** A cash-out order left PENDING: the pesos landed, or the transfer failed. Opens its status screen. */
+    fun showSwap(context: Context, swap: io.lawallet.wallet.core.api.Swap) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val ok = swap.status == "COMPLETED"
+        val ars = Currencies.formatSats(Math.round(swap.amountArs))
+        val n = NotificationCompat.Builder(context, CHANNEL_PAYMENTS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(if (ok) context.getString(R.string.swap_notifCompleted, ars) else context.getString(R.string.cashOut_status_FAILED))
+            .setContentText(swap.holderName?.let { context.getString(R.string.swap_notifTo, it) } ?: context.getString(if (ok) R.string.cashOut_completedBody else R.string.cashOut_failedBody))
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context, "cashout/order/${swap.id}"))
+            .setColor(if (ok) 0xFF22C55E.toInt() else 0xFFEF4444.toInt())
+            .build()
+        NotificationManagerCompat.from(context).notify("swap", swap.id.hashCode(), n)
+    }
 }

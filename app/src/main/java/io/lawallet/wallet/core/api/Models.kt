@@ -23,7 +23,13 @@ data class InstanceSettings(
     /** JSON array of Blossom media servers (unset → Blossom.DEFAULT_SERVERS). */
     val blossom_servers: String? = null,
     val email_login_enabled: String? = null,
+    /** Cash-out providers and the CBU/alias lookup: "true" when on, absent otherwise. */
+    val integration_bullbitcoin: String? = null,
+    val integration_wapu: String? = null,
+    val integration_alias: String? = null,
 ) {
+    val swapsEnabled get() = integration_bullbitcoin == "true" || integration_wapu == "true"
+    val bankLookupEnabled get() = integration_alias == "true"
     val emailLoginEnabled get() = email_login_enabled == "true"
     val lncurlAutoCreate get() = lncurl_auto_create == "true"
     val lncurlEnabled get() = lncurl_enabled == "true"
@@ -309,3 +315,32 @@ data class Poll(
     companion object { const val CUSTOM = "custom:" }
 }
 @Serializable data class PollSubmitted(val response: PollResponse)
+
+// ---------- ARS cash-out (swaps.ts / alias.ts) ----------
+/** A failed provider still answers, with null numbers and [error]. */
+@Serializable data class SwapQuote(val provider: String, val sats: Long? = null, val arsPerBtc: Double? = null, val minArs: Double? = null, val error: String? = null)
+/** [type] F = person, J = company. */
+@Serializable data class BankOwner(val type: String? = null, val cuit: String? = null, val name: String = "")
+@Serializable data class BankAccount(val cvu: String, val alias: String? = null, val bank: String? = null, val icon: String? = null, val owners: List<BankOwner> = emptyList())
+
+@Serializable
+data class Swap(
+    val id: String,
+    val provider: String,
+    val externalId: String? = null,
+    val destination: String = "",
+    val holderName: String? = null,
+    val amountArs: Double = 0.0,
+    val amountSats: Long = 0,
+    val bolt11: String = "",
+    val paymentHash: String? = null,
+    /** PENDING | COMPLETED | FAILED | EXPIRED | CANCELED. */
+    val status: String = "PENDING",
+    val providerStatus: String? = null,
+    val receiptUrl: String? = null,
+    val expiresAt: String? = null,
+    val paidAt: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+)
+@Serializable data class SwapPage(val items: List<Swap> = emptyList(), val total: Int = 0)

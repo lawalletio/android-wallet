@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import io.lawallet.wallet.ui.components.providerName
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -231,7 +233,21 @@ internal fun SheetTitle(sheet: ActivitySheet, pin: Modifier) {
 }
 
 @Composable
-internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
+internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
+    // Cash-outs still on their way are pinned on top; their Lightning payment joins the list once the pesos land.
+    val c = io.lawallet.wallet.ui.LocalContainer.current
+    val nav = io.lawallet.wallet.ui.LocalNav.current
+    val swaps by c.swaps.swaps.collectAsState()
+    val pinned = remember(swaps) { swaps.filter { it.status == "PENDING" && it.paidAt != null } }
+    val recent = remember(all, swaps) {
+        val hidden = pinned.mapNotNull { it.paymentHash }.toSet()
+        // A delivered cash-out sits at the time the pesos landed, not when its Lightning payment went out.
+        val delivered = swaps.mapNotNull { sw -> sw.paymentHash?.let { h -> io.lawallet.wallet.core.ln.BankDestination.deliveredMs(sw)?.let { h to it } } }.toMap()
+        if (hidden.isEmpty() && delivered.isEmpty()) all
+        else all.filter { it.paymentHash !in hidden }
+            .map { t -> delivered[t.paymentHash]?.takeIf { !t.incoming }?.let { t.copy(createdAt = it, settledAt = it) } ?: t }
+            .sortedByDescending { it.createdAt }
+    }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
@@ -241,13 +257,22 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
     DisposableEffect(Unit) { onDispose { ActivitySearch.sheet = 0f } }
     LaunchedEffect(recent) { ActivitySearch.maxSats = recent.maxOfOrNull { it.amountSats }?.coerceAtLeast(1L) ?: 1L }
     val s = ActivitySearch
-    val filtered by remember(recent) { derivedStateOf { if (s.active) recent.filter(s::matches) else recent } }
+    val destinations by c.prefs.paymentDestinations.collectAsState()
+    fun labels(t: Tx): List<String> = if (t.incoming) emptyList() else buildList {
+        c.swaps.byHash(t.paymentHash)?.let { sw ->
+            val r = c.swaps.recipientFor(sw.destination)
+            addAll(listOfNotNull(sw.holderName, r?.holderName, sw.destination, r?.account?.alias, r?.account?.bank, providerName(sw.provider)))
+        }
+        destinations[t.paymentHash]?.let { d -> addAll(listOfNotNull(d.name, d.address, d.comment)) }
+    }
+    val filtered by remember(recent, swaps, destinations) { derivedStateOf { if (s.active) recent.filter { s.matches(it, labels(it)) } else recent } }
     LaunchedEffect(s.query, s.sent, s.received, s.sizeOn, s.size) { if (s.active) list.scrollToItem(0) }
     Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
         // Grabber: says "this moves", firmer as the sheet takes over.
         // Grabber and title stay put while the Home pages swipe ([pin]); the rows slide.
         Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
         SheetTitle(sheet, pin)
+        pinned.forEach { swap -> PendingSwapCard(swap) { nav.navigate(io.lawallet.wallet.ui.R0.cashOutOrder(swap.id)) } }
         val empty = when {
             !hasNwc -> stringResource(R.string.home_list_activity_connect)
             recent.isEmpty() && !s.active -> stringResource(R.string.home_list_activity_empty)
@@ -259,7 +284,8 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
         else {
             val labels = rememberDayLabels()
             // Bottom padding lets the last rows scroll clear of the faded tail and the tab bar.
-            val rows = remember(filtered) { activityRows(filtered, months = true) }
+            // Each cash-out is its own row: they share an invoice description, but not a recipient.
+            val rows = remember(filtered, swaps) { activityRows(filtered, months = true) { !it.incoming && c.swaps.byHash(it.paymentHash) != null } }
             val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
             Box(Modifier.weight(1f).sheetTailFade(sheet)) {
                 LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {

@@ -53,6 +53,8 @@ import io.lawallet.wallet.R
 import io.lawallet.wallet.app.FlowStore
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.ln.Bolt11
+import io.lawallet.wallet.core.ln.BankDestination
+import io.lawallet.wallet.core.api.BankAccount
 import io.lawallet.wallet.core.ln.Destination
 import io.lawallet.wallet.core.ln.DestinationException
 import io.lawallet.wallet.core.ln.DestinationParser
@@ -143,10 +145,19 @@ fun startWithdraw(c: io.lawallet.wallet.app.AppContainer, from: io.lawallet.wall
 fun SendRecipientScreen() {
     val c = LocalContainer.current
     val nav = LocalNav.current
+    val settings by c.session.settings.collectAsState()
+    val client by c.wallet.client.collectAsState()
+    val bank = settings?.swapsEnabled == true && client != null
     AddressEntry(
         stringResource(R.string.send_title), stringResource(R.string.send_to), stringResource(R.string.common_continue),
-        scan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
-    ) { value -> nav.navigate(startSend(c, DestinationParser.parse(value))) }
+        scan = { nav.navigate(R0.SCAN) { launchSingleTop = true } }, bank = bank,
+    ) { value ->
+        // A CBU typed in full and sent with Continue: the account, resolved when the instance can.
+        if (bank && BankDestination.kind(value) == BankDestination.Kind.Cbu) {
+            val account = runCatching { c.swaps.lookup(value) }.getOrNull() ?: BankAccount(value)
+            nav.navigate(startCashOut(c, account, null))
+        } else nav.navigate(startSend(c, DestinationParser.parse(value)))
+    }
 }
 
 /**
@@ -162,6 +173,8 @@ internal fun AddressEntry(
     initial: String = "",
     accepts: (String) -> Boolean = ::isPayableClip,
     scan: (() -> Unit)? = null,
+    /** Also offer bank accounts (ARS cash-out) for a CBU/CVU or alias. */
+    bank: Boolean = false,
     onSubmit: suspend (String) -> Unit,
 ) {
     val c = LocalContainer.current
@@ -195,7 +208,7 @@ internal fun AddressEntry(
     }
     val user = input.substringBefore('@')
     val typedDomain = input.substringAfter('@', "")
-    val suggestions = if (user.isNotBlank() && !input.startsWith("ln", true) && user.all { it.isLetterOrDigit() || it in "._-" })
+    val suggestions = if (user.isNotBlank() && !input.startsWith("ln", true) && user.all { it.isLetterOrDigit() || it in "._-" } && !(bank && user.all { it.isDigit() }))
         SUGGESTED_DOMAINS.filter { it.startsWith(typedDomain, true) && "$user@$it" != input }.take(6) else emptyList()
     // Fully written: the address leads the box, expanded with its Nostr face and name.
     val full = input.trim().takeIf { FULL_ADDRESS.matches(it) }
@@ -220,6 +233,7 @@ internal fun AddressEntry(
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
+            if (bank) BankSuggestions(input, enabled = !loading) { account, name -> nav.navigate(startCashOut(c, account, name)) }
             if (full != null || suggestions.isNotEmpty()) AddressGroup(
                 stringResource(R.string.shared_addressInput_suggestions),
                 listOfNotNull(full).map { it to c.avatars.of(it) } + suggestions.map { "$user@$it" to c.avatars.of("$user@$it") }, expanded = full,

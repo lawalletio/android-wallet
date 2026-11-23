@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import io.lawallet.wallet.app.Diagnostics
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import coil3.compose.AsyncImage
 import io.lawallet.wallet.core.ln.splitPaymentDescription
 import android.graphics.Bitmap
@@ -316,6 +317,9 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
     // Lightning Address sends are remembered at pay time; everything else only has the invoice description.
     val destinations by c.prefs.paymentDestinations.collectAsState()
     val dest = if (tx.incoming) null else destinations[tx.paymentHash]
+    // A cash-out to a bank account: the account's bank and holder, the pesos it got.
+    val swaps by c.swaps.swaps.collectAsState()
+    val swap = if (tx.incoming) null else remember(swaps, tx.paymentHash) { c.swaps.byHash(tx.paymentHash) }
     val (label, describedComment) = splitPaymentDescription(tx.description)
     val comment = if (dest != null) dest.comment else describedComment
     // A faint wash says the direction at a glance (received green, sent red). Inset + rounded like a group
@@ -325,14 +329,18 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
             .background(txWash(tx.incoming)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp).testTag("tx-row"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (dest != null) BadgedAvatar(c.avatars.of(dest.address), icon, color)
+        if (swap != null) BankAvatar(c.swaps.recipientFor(swap.destination)?.account?.icon, badge = true)
+        else if (dest != null) BadgedAvatar(c.avatars.of(dest.address), icon, color)
         else Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             LwIcon(icon, size = 20.dp, tint = color)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Txt(dest?.name ?: dest?.address ?: label.ifEmpty { null } ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1, color = txTitle(tx.incoming))
-            if (comment != null) Txt("“$comment”", size = 12.sp, color = Lw.Foreground.copy(alpha = 0.8f), maxLines = 1)
+            if (swap != null) {
+                Txt(swap.holderName ?: stringResource(R.string.swap_bankAccount), size = 14.sp, weight = FontWeight.Medium, maxLines = 1, color = txTitle(false))
+                Txt(stringResource(R.string.swap_rowSubtitle, Currencies.formatSats(Math.round(swap.amountArs)), providerName(swap.provider)), size = 12.sp, color = Lw.Foreground.copy(alpha = 0.8f), maxLines = 1)
+            } else Txt(dest?.name ?: dest?.address ?: label.ifEmpty { null } ?: stringResource(if (tx.incoming) R.string.shared_tx_received else R.string.shared_tx_sent), size = 14.sp, weight = FontWeight.Medium, maxLines = 1, color = txTitle(tx.incoming))
+            if (comment != null && swap == null) Txt("“$comment”", size = 12.sp, color = Lw.Foreground.copy(alpha = 0.8f), maxLines = 1)
             Txt(if (tx.state == "pending") stringResource(R.string.shared_receipt_pending) else if (tx.state == "failed") stringResource(R.string.shared_receipt_failed) else relativeTime(tx.settledAt ?: tx.createdAt), size = 12.sp, color = Lw.MutedFg)
         }
         Row(verticalAlignment = Alignment.Bottom) {
@@ -340,6 +348,39 @@ fun TransactionRow(tx: Tx, onClick: () -> Unit) {
             Spacer(Modifier.width(4.dp))
             Txt("sats", size = 12.sp, color = Lw.MutedFg)
         }
+    }
+}
+
+fun providerName(id: String) = when (id) { "bullbitcoin" -> "Bull Bitcoin"; "wapu" -> "Wapu"; else -> id }
+
+/** A cash-out exchange's mark: Bull Bitcoin's bull on glass, Wapu's white squares on its black tile with a pink edge. */
+@Composable
+fun ProviderLogo(id: String, size: Dp = 40.dp) = Box(
+    Modifier.size(size).then(
+        if (id == "wapu") Modifier.clip(CircleShape).background(Color.Black).border(1.dp, WAPU_PINK.copy(alpha = 0.6f), CircleShape)
+        else Modifier.glass(CircleShape, GlassLevel.Strong),
+    ),
+    contentAlignment = Alignment.Center,
+) {
+    when (id) {
+        "bullbitcoin" -> Image(painterResource(R.drawable.ic_bullbitcoin), providerName(id), Modifier.size(size * 0.66f))
+        "wapu" -> Image(painterResource(R.drawable.ic_wapu), providerName(id), Modifier.size(size * 0.72f))
+        else -> Txt(providerName(id).take(1), size = (size.value * 0.42f).sp, weight = FontWeight.Bold)
+    }
+}
+
+private val WAPU_PINK = Color(0xFFFA027D)
+
+/** A bank's logo (from the CBU/alias lookup), else a bank glyph; [badge] marks a cash-out in a list. */
+@Composable
+fun BankAvatar(icon: String?, size: Dp = 40.dp, badge: Boolean = false) = Box {
+    Box(Modifier.size(size).glass(CircleShape, GlassLevel.Strong), contentAlignment = Alignment.Center) {
+        val glyph = painterResource(L.drawable.lucide_ic_landmark)
+        if (icon != null) AsyncImage(icon, null, Modifier.size(size).clip(CircleShape).background(Color.White).padding(size / 8), error = glyph, contentScale = ContentScale.Fit)
+        else LwIcon(L.drawable.lucide_ic_landmark, size = size * 0.45f, tint = Lw.MutedFg)
+    }
+    if (badge) Box(Modifier.align(Alignment.BottomEnd).offset(2.dp, 2.dp).size(18.dp).border(2.dp, Lw.Background, CircleShape).padding(2.dp).clip(CircleShape).background(Lw.Orange), contentAlignment = Alignment.Center) {
+        LwIcon(L.drawable.lucide_ic_arrow_left_right, size = 10.dp, tint = Lw.Background)
     }
 }
 
