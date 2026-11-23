@@ -704,4 +704,6 @@
     <string name="onchain_settings_invalidUrlDebug">Usá ssl://host:puerto (o tcp:// en builds de debug)</string>
     <string name="onchain_settings_signet">Red de prueba signet</string>
     <string name="onchain_settings_signetBody">Ofrece signet al agregar una billetera, para probar con monedas de prueba sin valor.</string>
+    <string name="receive_tab_onchain">Onchain</string>
+    <string name="receive_tab_lightning">Lightning</string>
 </resources>

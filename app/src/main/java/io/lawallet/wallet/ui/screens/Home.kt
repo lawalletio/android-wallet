@@ -129,6 +129,12 @@ object HomePager {
     fun weight(page: Int, at: Float = position) = (1f - abs(at - page)).coerceIn(0f, 1f)
 }
 
+/** Receive's pager (Onchain, Lightning: the same positions as Home's first two pages), for the backdrop. */
+object ReceivePager {
+    var state by mutableStateOf<PagerState?>(null)
+    val position: Float get() = state?.let { it.currentPage + it.currentPageOffsetFraction } ?: LIGHTNING.toFloat()
+}
+
 /** Each page's tone: Bitcoin orange, Lightning blue, Tether green. */
 internal val PAGE_TONES = listOf(Lw.Bitcoin, Lw.Lightning, Lw.Tether)
 
@@ -339,7 +345,7 @@ fun HomeScreen() {
  * in and out as Home comes and goes.
  */
 @Composable
-internal fun HomeBackdrop(shown: () -> Float) {
+internal fun HomeBackdrop(shown: () -> Float, at: () -> Float = { HomePager.position }) {
     Spacer(Modifier.fillMaxSize().drawBehind {
         val s = shown()
         if (s <= 0f) return@drawBehind
@@ -350,13 +356,14 @@ internal fun HomeBackdrop(shown: () -> Float) {
             if (a > 0.003f) drawRect(Brush.radialGradient(0f to c.copy(alpha = a), 0.55f to c.copy(alpha = a * 0.35f), 1f to Color.Transparent, center = Offset(x, y), radius = r))
         }
         // A dome of the page's tone over the balance, and a lighter pool low on one side.
-        val on = HomePager.weight(ONCHAIN) * s
+        val p = at()
+        val on = HomePager.weight(ONCHAIN, p) * s
         glow(Lw.Bitcoin, 0.34f * on, w * 0.5f, h * 0.2f, w * 1.05f)
         glow(Color(0xFFFFB547), 0.14f * on, 0f, h * 0.66f, w * 0.85f)
-        val ln = HomePager.weight(LIGHTNING) * s
+        val ln = HomePager.weight(LIGHTNING, p) * s
         glow(Lw.Lightning, 0.32f * ln, w * 0.5f, h * 0.2f, w * 1.05f)
         glow(Color(0xFF38BDF8), 0.12f * ln, w, h * 0.66f, w * 0.85f)
-        val us = HomePager.weight(USDT) * s
+        val us = HomePager.weight(USDT, p) * s
         glow(Lw.Tether, 0.42f * us, w * 0.5f, h * 0.2f, w * 1.05f)
         glow(Color(0xFF50AF95), 0.14f * us, w, h * 0.66f, w * 0.85f)
     })
@@ -369,7 +376,7 @@ internal fun HomeBackdrop(shown: () -> Float) {
  * as the activity panel rises over it. [offset]: the page's distance from the front, in pages.
  */
 @Composable
-private fun PageWatermark(page: Int, offset: () -> Float, sheet: () -> Float) {
+internal fun PageWatermark(page: Int, offset: () -> Float, sheet: () -> Float) {
     val tone = PAGE_TONES[page]
     val (icon, tilt) = when (page) {
         ONCHAIN -> L.drawable.lucide_ic_bitcoin to 14f

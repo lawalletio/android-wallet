@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import androidx.compose.foundation.layout.ColumnScope
 import io.lawallet.wallet.app.AppContainer
 import io.lawallet.wallet.app.Fees
 import io.lawallet.wallet.app.FlowStore
@@ -129,11 +130,14 @@ import com.composables.icons.lucide.R as L
 /** Wallets on [chain] that can build a payment (all but a single watched address). */
 internal fun payingWallets(c: AppContainer, chain: Chain) = c.onchain.wallets.value.filter { it.chain == chain && it.descriptors != null }
 
-/** Starts an onchain send to [b] from the primary (or first) wallet on its chain; the route to go to, or null if none can pay. */
-fun startOnchainSend(c: AppContainer, b: Bip21): String? {
+/**
+ * Starts an onchain send to [b] from [preferred] when it's on the address's chain, else the primary (or first) wallet
+ * there; the route to go to, or null if no wallet can pay it.
+ */
+fun startOnchainSend(c: AppContainer, b: Bip21, preferred: String? = null): String? {
     val chain = Descriptors.chainOf(b.address) ?: return null
     val wallets = payingWallets(c, chain)
-    val from = wallets.firstOrNull { it.isPrimary } ?: wallets.firstOrNull() ?: return null
+    val from = wallets.firstOrNull { it.id == preferred } ?: wallets.firstOrNull { it.isPrimary } ?: wallets.firstOrNull() ?: return null
     c.flow.onchainSend = FlowStore.OnchainSend(from.id, b.address, b.sats, b.label)
     return if (b.sats != null) R0.ONCHAIN_SEND_REVIEW else R0.ONCHAIN_SEND_AMOUNT
 }
@@ -161,8 +165,36 @@ internal fun short(address: String) = if (address.length > 20) address.take(10) 
 
 // ---- receive ----------------------------------------------------------------------------------------------------
 
+/** One wallet's receive screen (from its detail): the same body as Receive's Onchain page. */
 @Composable
 fun OnchainReceiveScreen(id: String) {
+    val nav = LocalNav.current
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(stringResource(R.string.onchain_receive_title), { nav.popBackStack() }, close = true)
+        OnchainReceiveBody(id)
+    }
+}
+
+/** Receive's Onchain page: the primary onchain wallet's address, or the ways to get a wallet. */
+@Composable
+internal fun ColumnScope.OnchainReceivePage() {
+    val c = LocalContainer.current
+    val nav = LocalNav.current
+    val wallets by c.onchain.wallets.collectAsState()
+    val primary = wallets.firstOrNull { it.isPrimary }
+    if (primary != null) { OnchainReceiveBody(primary.id); return }
+    Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
+        LwIcon(L.drawable.lucide_ic_bitcoin, size = 40.dp, tint = Lw.Bitcoin)
+        Txt(stringResource(R.string.onchain_cta_title), size = 17.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LwButton(stringResource(R.string.onchain_create), { nav.navigate(R0.ONCHAIN_CREATE) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_plus)
+            LwButton(stringResource(R.string.onchain_import), { nav.navigate(R0.ONCHAIN_IMPORT) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_import)
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.OnchainReceiveBody(id: String) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val context = LocalContext.current
@@ -180,8 +212,7 @@ fun OnchainReceiveScreen(id: String) {
     val gap = stringResource(R.string.onchain_receive_gap)
     val offline = stringResource(R.string.onchain_err_offline)
     LaunchedEffect(id) { c.onchainWallets.received.filter { it.first.id == id }.collect { credit = it.second.amount; delay(3000); credit = null } }
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader(stringResource(R.string.onchain_receive_title), { nav.popBackStack() }, close = true)
+    run {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OnchainMark(w, 24)
@@ -251,7 +282,7 @@ private fun AmountSheet(initial: Long?, onDismiss: () -> Unit, onDone: (Long?) -
 
 /** Where to: an address or `bitcoin:` link, typed, pasted or scanned. */
 @Composable
-fun OnchainSendScreen() {
+fun OnchainSendScreen(from: String? = null) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val context = LocalContext.current
@@ -261,7 +292,7 @@ fun OnchainSendScreen() {
     val request = remember(text) { Bip21.parse(text)?.takeIf { Descriptors.chainOf(it.address) != null } }
     val invalid = stringResource(R.string.onchain_send_invalid)
     val noWallet = stringResource(R.string.onchain_send_noWallet)
-    fun go(b: Bip21) { startOnchainSend(c, b)?.let { nav.navigate(it) } ?: run { error = noWallet } }
+    fun go(b: Bip21) { startOnchainSend(c, b, from)?.let { nav.navigate(it) } ?: run { error = noWallet } }
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(stringResource(R.string.onchain_send_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -372,7 +403,7 @@ internal fun FeeTiers(fees: Fees?, selected: Int, onSelect: (Int) -> Unit, custo
     }
 }
 
-internal fun rateText(r: Double) = if (r >= 10 || r % 1.0 == 0.0) "%.0f".format(r) else "%.1f".format(r)
+internal fun rateText(r: Double) = if (r >= 10) "%.0f".format(r) else "%.1f".format(r).removeSuffix(".0").removeSuffix(",0")
 
 @Composable
 private fun FeeChip(name: String, eta: String?, rate: Double?, on: Boolean, modifier: Modifier, onClick: () -> Unit) {

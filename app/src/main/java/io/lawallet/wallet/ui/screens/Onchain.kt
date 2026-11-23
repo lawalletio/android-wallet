@@ -639,7 +639,7 @@ fun OnchainWalletDetailScreen(id: String) {
                     LwButton(stringResource(R.string.home_receive), { nav.navigate(R0.onchainReceive(id)) }, Modifier.weight(1f).testTag("onchain-detail-receive"), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_arrow_down_left)
                     if (w.descriptors != null) LwButton(stringResource(R.string.home_send), {
                         c.flow.onchainSend = null
-                        nav.navigate(R0.ONCHAIN_SEND)
+                        nav.navigate(R0.onchainSend(id))
                     }, Modifier.weight(1f).testTag("onchain-detail-send"), BtnVariant.Secondary, height = 42.dp, icon = L.drawable.lucide_ic_arrow_up_right)
                 }
             }

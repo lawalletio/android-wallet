@@ -703,4 +703,6 @@
     <string name="onchain_settings_invalidUrlDebug">Use ssl://host:port (or tcp:// in debug builds)</string>
     <string name="onchain_settings_signet">Signet test network</string>
     <string name="onchain_settings_signetBody">Offers signet when adding a wallet, for trying things with worthless test coins.</string>
+    <string name="receive_tab_onchain">Onchain</string>
+    <string name="receive_tab_lightning">Lightning</string>
 </resources>

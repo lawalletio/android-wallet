@@ -434,7 +434,7 @@ private fun OnchainActivity(sheet: ActivitySheet, w: OnchainWallet, txs: List<On
                     item("pending-title") { Txt(stringResource(R.string.onchain_pending), Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
                     items(pending.size, key = { "p:" + pending[it].txid }) { i -> PendingRow(pending[i]) { nav.navigate(R0.onchainTx(w.id, pending[i].txid)) } }
                 }
-                activityList(rows, done, labels, paging) { nav.navigate(R0.onchainTx(w.id, it.paymentHash)) }
+                if (done.isNotEmpty()) activityList(rows, done, labels, paging) { nav.navigate(R0.onchainTx(w.id, it.paymentHash)) }
             }
         }
     }

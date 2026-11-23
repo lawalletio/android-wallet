@@ -76,6 +76,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -183,6 +184,8 @@ object R0 {
     const val CASHOUT_REVIEW = "cashout/review"
     fun cashOutOrder(id: String) = "cashout/order/$id"
     const val RECEIVE = "receive"
+    /** Receive opened on its Onchain page. */
+    const val RECEIVE_ONCHAIN = "receive/onchain"
     const val RECEIVE_AMOUNT = "receive/amount"
     const val RECEIVE_INVOICE = "receive/invoice"
     const val RECEIVE_SUMMARY = "receive/summary"
@@ -219,6 +222,8 @@ object R0 {
     fun onchainBackup(id: String) = "onchain/backup/$id"
     fun onchainReceive(id: String) = "onchain/receive/$id"
     const val ONCHAIN_SEND = "onchain/send"
+    /** Send from a given wallet (its detail's Send). */
+    fun onchainSend(from: String) = "onchain/send?from=$from"
     const val ONCHAIN_SEND_AMOUNT = "onchain/send/amount"
     const val ONCHAIN_SEND_REVIEW = "onchain/send/review"
     const val ONCHAIN_SENT = "onchain/sent"
@@ -338,7 +343,7 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
             onReceive = {
                 when {
                     soon != null -> context.toast(soon)
-                    onchainPage -> nav.navigate(onchainPrimary?.let { R0.onchainReceive(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                    onchainPage -> nav.navigate(R0.RECEIVE_ONCHAIN) { launchSingleTop = true }
                     else -> nav.navigate(R0.RECEIVE) { launchSingleTop = true }
                 }
             },
@@ -435,8 +440,10 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
           Box(Modifier.fillMaxSize().hazeSource(haze)) {
             PrismBackground(brand)
             // Read at draw time only: recomposing AppNavHost mid-transition breaks NavHost's gesture seek (see TabBar).
-            val homeShown = animateFloatAsState(if (route == R0.HOME) 1f else 0f, tween(320), label = "homeBackdrop")
-            HomeBackdrop { homeShown.value }
+            // Receive pages Onchain / Lightning like Home does, in the same light.
+            val receive = route == R0.RECEIVE || route == R0.RECEIVE_ONCHAIN
+            val homeShown = animateFloatAsState(if (route == R0.HOME || receive) 1f else 0f, tween(320), label = "homeBackdrop")
+            HomeBackdrop({ homeShown.value }) { if (receive) ReceivePager.position else HomePager.position }
             // Fixed for the NavHost's lifetime: changing it would reset the back stack on login
             // (skipping the welcome screen / pending activation).
             val start = remember { if (loggedIn) R0.HOME else R0.LANDING }
@@ -486,7 +493,8 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.CASHOUT_AMOUNT) { CashOutAmountScreen() }
                 composable(R0.CASHOUT_REVIEW) { CashOutReviewScreen() }
                 composable("cashout/order/{id}") { CashOutOrderScreen(it.arguments?.getString("id").orEmpty()) }
-                composable(R0.RECEIVE) { ReceiveAddressScreen() }
+                composable(R0.RECEIVE) { ReceiveScreen(LIGHTNING) }
+                composable(R0.RECEIVE_ONCHAIN) { ReceiveScreen(ONCHAIN) }
                 composable(R0.RECEIVE_AMOUNT) { ReceiveAmountScreen() }
                 composable(R0.RECEIVE_INVOICE) { ReceiveInvoiceScreen() }
                 composable(R0.RECEIVE_SUMMARY) { ReceiveSummaryScreen() }
@@ -510,7 +518,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable("onchain/wallet/{id}") { OnchainWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable("onchain/backup/{id}") { OnchainBackupScreen(it.arguments?.getString("id").orEmpty()) }
                 composable("onchain/receive/{id}") { OnchainReceiveScreen(it.arguments?.getString("id").orEmpty()) }
-                composable(R0.ONCHAIN_SEND) { OnchainSendScreen() }
+                composable("${R0.ONCHAIN_SEND}?from={from}", arguments = listOf(navArgument("from") { nullable = true; defaultValue = null })) { OnchainSendScreen(it.arguments?.getString("from")) }
                 composable(R0.ONCHAIN_SEND_AMOUNT) { OnchainSendAmountScreen() }
                 composable(R0.ONCHAIN_SEND_REVIEW) { OnchainSendReviewScreen() }
                 composable(R0.ONCHAIN_SENT) { OnchainSentScreen() }

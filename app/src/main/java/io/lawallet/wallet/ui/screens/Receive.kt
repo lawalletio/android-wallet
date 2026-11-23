@@ -45,6 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.ColumnScope
 import io.lawallet.wallet.app.FlowStore
 import io.lawallet.wallet.app.NfcBus
 import io.lawallet.wallet.app.Tx
@@ -79,8 +82,50 @@ import java.text.DateFormat
 import java.util.Date
 import com.composables.icons.lucide.R as L
 
+/**
+ * Receive, as Home's pages: Onchain on the left, Lightning on the right, swiped the same way and in the same light
+ * (the backdrop follows [ReceivePager]). Opens on the page Home was on.
+ */
 @Composable
-fun ReceiveAddressScreen() {
+fun ReceiveScreen(start: Int) {
+    val nav = LocalNav.current
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = start) { 2 }
+    DisposableEffect(pager) { ReceivePager.state = pager; onDispose { if (ReceivePager.state === pager) ReceivePager.state = null } }
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(stringResource(R.string.receive_title), { nav.popBackStack() }, close = true)
+        ReceiveTabs(pager)
+        androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).testTag("receive-pages"), beyondViewportPageCount = 1) { page ->
+            Box(Modifier.fillMaxSize()) {
+                PageWatermark(page, { pager.currentPage - page + pager.currentPageOffsetFraction }, { 0f })
+                Column(Modifier.fillMaxSize()) { if (page == ONCHAIN) OnchainReceivePage() else LightningReceivePage() }
+            }
+        }
+    }
+}
+
+/** "₿ Onchain  ⚡ Lightning": the page in front lit in its tone, 1:1 with the swipe; tap one to go there. */
+@Composable
+private fun ReceiveTabs(pager: androidx.compose.foundation.pager.PagerState) {
+    val scope = rememberCoroutineScope()
+    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
+        listOf(Triple(ONCHAIN, L.drawable.lucide_ic_bitcoin, R.string.receive_tab_onchain), Triple(LIGHTNING, L.drawable.lucide_ic_zap, R.string.receive_tab_lightning)).forEach { (page, icon, label) ->
+            Row(
+                Modifier.clip(CircleShape).clickable { scope.launch { pager.animateScrollToPage(page) } }
+                    .graphicsLayer { alpha = 0.4f + 0.6f * HomePager.weight(page, pager.currentPage + pager.currentPageOffsetFraction) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp).testTag("receive-tab-$page"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LwIcon(icon, size = 16.dp, tint = PAGE_TONES[page])
+                Spacer(Modifier.width(6.dp))
+                Txt(stringResource(label), size = 14.sp, weight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+/** The Lightning page: the account's address (or a way to get one) and an amount request. */
+@Composable
+private fun ColumnScope.LightningReceivePage() {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val me by c.session.me.collectAsState()
@@ -89,8 +134,7 @@ fun ReceiveAddressScreen() {
     LaunchedEffect(Unit) {
         c.wallet.notices.filter { it.type == "payment_received" }.collect { credit = it.tx.amountSats; delay(2500); credit = null }
     }
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader(stringResource(R.string.receive_title), { nav.popBackStack() }, close = true)
+    run {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
             val address = c.wallet.shownAddress(me)
