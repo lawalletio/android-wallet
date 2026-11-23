@@ -1,6 +1,7 @@
 package io.lawallet.wallet.core.ln
 
 import io.lawallet.wallet.core.btc.Bip21
+import io.lawallet.wallet.core.btc.BtcImport
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.plugin.PluginSource
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -15,6 +16,8 @@ sealed interface ScanResult {
     data class Withdraw(val params: WithdrawParams) : ScanResult
     data class Cashu(val token: CashuToken) : ScanResult
     data class Pay(val destination: Destination) : ScanResult
+    /** Onchain wallet material (an extended key, public or private, or a descriptor): goes to onchain import. */
+    data class WalletKey(val text: String, val label: String, val private: Boolean) : ScanResult
     /** A Bitcoin address or `bitcoin:` request with no Lightning alternative. */
     data class Onchain(val request: Bip21) : ScanResult
     /** A plugin to offer through Add Plugin (resolver + permissions sheet). Never installed straight from a scan. */
@@ -37,6 +40,9 @@ class ScanRouter(private val lnurl: Lnurl, private val plugins: Boolean = false)
             return ScanResult.Activate(a.tokenId, instanceHosts.any { it.equals(a.host, ignoreCase = true) }, text)
         }
         CashuToken.parse(text)?.let { return ScanResult.Cashu(it) }
+        BtcImport.walletKey(text)?.let { k ->
+            return ScanResult.WalletKey(text, BtcImport.keyLabel(text), (k as? io.lawallet.wallet.core.btc.BtcInput.Rejected)?.reason == io.lawallet.wallet.core.btc.Unsupported.PRIVATE_KEY)
+        }
         // BIP-21: a unified QR pays over Lightning when it can; otherwise (or a bare address) onchain.
         Bip21.parse(text)?.let { b ->
             b.lightning?.let { ln -> runCatching { DestinationParser.parse(ln) }.getOrNull()?.let { return ScanResult.Pay(it) } }

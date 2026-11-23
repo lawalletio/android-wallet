@@ -68,6 +68,8 @@ class FlowStore {
         val txid: String? = null,
     )
     var onchainSend: OnchainSend? = null
+    /** Wallet material the main scanner found, for onchain import to start from (consumed there). */
+    var onchainImport: String? = null
     /** A PSBT on its way between signers (base64), for the PSBT screen. */
     var psbt: String? = null
 

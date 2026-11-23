@@ -131,6 +131,15 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Cashu -> { c.flow.cashu = r.token; nav.navigate(R0.CASHU); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
+        is ScanResult.WalletKey -> {
+            // Not a payment: say what it is, and open the screen that takes it (import, with it already filled in).
+            c.flow.onchainImport = r.text
+            c.activityBridge.activity?.let { a ->
+                android.widget.Toast.makeText(a, a.getString(if (r.private) R.string.onchain_scan_privateKey else R.string.onchain_scan_walletKey, r.label), android.widget.Toast.LENGTH_LONG).show()
+            }
+            nav.navigate(R0.ONCHAIN_IMPORT) { launchSingleTop = true }
+            ScanOutcome.Handled
+        }
         is ScanResult.Onchain -> startOnchainSend(c, r.request)?.let { nav.navigate(it) { launchSingleTop = true }; ScanOutcome.Handled }
             ?: ScanOutcome.Failed(c.text(R.string.onchain_send_noWallet, "No onchain wallet here can pay this address"))
         is ScanResult.InstallPlugin -> {

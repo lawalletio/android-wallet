@@ -710,4 +710,6 @@
     <string name="onchain_confirmations_of">%1$d of %2$d confirmations</string>
     <string name="onchain_notif_confirmed">Confirmed · %1$s sats</string>
     <string name="onchain_notif_confirmedBody">In a block now · %1$s</string>
+    <string name="onchain_scan_walletKey">%1$s detected: add it as an onchain wallet</string>
+    <string name="onchain_scan_privateKey">%1$s detected: a private key. Keep it secret.</string>
 </resources>

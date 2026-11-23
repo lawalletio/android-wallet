@@ -149,6 +149,14 @@ class DescriptorsTest {
         val bolt11 = "lnbc10u1pj9rk5zpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdqqcqzzsxqyz5vqsp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq9qyyssq0"
         val unified = route("bitcoin:bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu?amount=0.00001&lightning=$bolt11")
         assertTrue(unified.toString(), unified !is io.lawallet.wallet.core.ln.ScanResult.Onchain || io.lawallet.wallet.core.ln.DestinationParser.runCatching { parse(bolt11) }.isFailure)
+        // Wallet keys and descriptors go to onchain import, labelled by what they are.
+        val zpub = "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs"
+        val key = route(zpub) as io.lawallet.wallet.core.ln.ScanResult.WalletKey
+        assertEquals("zpub" to false, key.label to key.private)
+        val xpub = BtcImport.extendedKey(zpub)!!.xpub
+        assertEquals("descriptor", (route("wpkh($xpub/0/*)") as io.lawallet.wallet.core.ln.ScanResult.WalletKey).label)
+        val xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"
+        assertTrue((route(xprv) as io.lawallet.wallet.core.ln.ScanResult.WalletKey).private)
         // Not an address: falls through to the Lightning parsers as before.
         assertTrue(route("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyv") is io.lawallet.wallet.core.ln.ScanResult.Error)
     }

@@ -141,6 +141,19 @@ object BtcImport {
         return address(s)
     }
 
+    /**
+     * A scanned wallet key or descriptor (xpub/ypub/zpub/tpub/vpub, Zpub/Vpub, xprv/zprv…, an output descriptor), for the
+     * main scanner to send to onchain import; null for anything else (addresses and payments stay with the scanner).
+     */
+    fun walletKey(raw: String): BtcInput? {
+        val s = raw.trim()
+        if (s.isEmpty() || s.any { it.isWhitespace() } && '(' !in s) return null
+        return if ('(' in s) descriptor(s).takeIf { it !is BtcInput.Rejected || (it as BtcInput.Rejected).reason == Unsupported.PRIVATE_KEY } else extended(s)
+    }
+
+    /** "zpub", "xprv", "Vpub"…: how a key names itself, for "zpub detected". Descriptors say "descriptor". */
+    fun keyLabel(raw: String): String = raw.trim().let { if ('(' in it) "descriptor" else it.take(4) }
+
     private fun payload(key: String) = Base58.decodeCheck(key)?.takeIf { it.size == 78 }
     private fun version(p: ByteArray) = (0..3).fold(0) { acc, i -> (acc shl 8) or (p[i].toInt() and 0xff) }
 

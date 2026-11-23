@@ -436,7 +436,8 @@ fun ImportOnchainWalletScreen() {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val wallets by c.onchain.wallets.collectAsState()
-    var text by remember { mutableStateOf(TextFieldValue("")) }
+    // Opened by the main scanner with a key or descriptor: start from it.
+    var text by remember { mutableStateOf(c.flow.onchainImport.orEmpty().let { TextFieldValue(it, TextRange(it.length)) }.also { c.flow.onchainImport = null }) }
     var scanning by remember { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var script by remember { mutableStateOf<ScriptType?>(null) } // the user's pick, over what the input implies

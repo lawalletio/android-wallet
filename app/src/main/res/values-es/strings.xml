@@ -711,4 +711,6 @@
     <string name="onchain_confirmations_of">%1$d de %2$d confirmaciones</string>
     <string name="onchain_notif_confirmed">Confirmado · %1$s sats</string>
     <string name="onchain_notif_confirmedBody">Ya está en un bloque · %1$s</string>
+    <string name="onchain_scan_walletKey">%1$s detectado: agregalo como billetera onchain</string>
+    <string name="onchain_scan_privateKey">%1$s detectado: una clave privada. Mantenela en secreto.</string>
 </resources>
