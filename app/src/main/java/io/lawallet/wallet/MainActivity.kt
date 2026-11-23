@@ -21,6 +21,8 @@ import io.lawallet.wallet.core.ln.NdefRecordData
 import io.lawallet.wallet.core.ln.NdefUrl
 import io.lawallet.wallet.ui.Intents
 import io.lawallet.wallet.ui.LaWalletRoot
+import io.lawallet.wallet.ui.R0
+import io.lawallet.wallet.ui.screens.findOwnCard
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kotlinx.coroutines.launch
 
@@ -81,12 +83,13 @@ class MainActivity : AppCompatActivity() {
         val ndef = Ndef.get(tag) ?: return Trail.add("nfc", "tag without NDEF techs=${tag.techList.joinToString { it.substringAfterLast('.') }}", error = true)
         val msg = ndef.cachedNdefMessage ?: runCatching { ndef.connect(); ndef.ndefMessage.also { ndef.close() } }
             .onFailure { Trail.add("nfc", "NDEF read failed ${it.javaClass.simpleName}", error = true) }.getOrNull() ?: return
-        dispatchNdef(msg)
+        dispatchNdef(msg, tag)
     }
 
     private var lastTap: Pair<String, Long>? = null
 
-    private fun dispatchNdef(msg: NdefMessage) {
+    /** [tag]: the chip, when we have it; its UID tells one of the account's own cards from anyone else's. */
+    private fun dispatchNdef(msg: NdefMessage, tag: Tag?) {
         val url = NdefUrl.firstPaymentUrl(msg.records.map { NdefRecordData(it.tnf, it.type, it.payload) })
             ?: return Trail.add("nfc", "no payment link in ${msg.records.size} record(s) tnf=${msg.records.joinToString { "${it.tnf}/${String(it.type)}" }}", error = true)
         runOnUiThread {
@@ -97,14 +100,29 @@ class MainActivity : AppCompatActivity() {
             Trail.add("nfc", if (NdefUrl.isInvoice(url)) "invoice tapped" else "card link tapped")
             // Invoices are for us to pay; card links charge the invoice the receive screen shows.
             if (NdefUrl.isInvoice(url)) { container.lock.nfcTapped(); Intents.payloads.trySend(Intents.NFC + url) }
-            else NfcBus.consumer?.invoke(url) ?: run { container.lock.nfcTapped(); Intents.payloads.trySend(url) }
+            else NfcBus.consumer?.invoke(url) ?: onCardLink(url, tag?.id?.joinToString("") { "%02x".format(it) })
+        }
+    }
+
+    /** A card link with no invoice waiting for it: our own card opens My Cards on it, anyone else's goes to Withdraw. */
+    private fun onCardLink(url: String, uid: String?) = container.scope.launch {
+        val mine = uid?.let { findOwnCard(container, it) }
+        if (mine != null) {
+            Trail.add("nfc", "own card tapped")
+            container.flow.focusCard.value = mine.id
+            Intents.routes.trySend(R0.CARDS)
+        } else {
+            container.lock.nfcTapped()
+            Intents.payloads.trySend(url)
         }
     }
 
     private fun handle(intent: Intent?) {
         intent ?: return
         intent.getStringExtra("route")?.let { Intents.routes.trySend(it); return }
-        // Emulators have no NFC: `--es devNfc lightning:lnbc…` runs a tap through the same path.
+        // Emulators have no NFC: `--es devNfc lightning:lnbc…` runs a tap through the same path; add
+        // `--es devCardUid <chip uid hex>` to make it a card tap (one of ours opens My Cards on it).
+        if (BuildConfig.DEBUG) intent.getStringExtra("devCardUid")?.let { onCardLink(intent.getStringExtra("devNfc").orEmpty(), it); return }
         if (BuildConfig.DEBUG) intent.getStringExtra("devNfc")?.let { Intents.payloads.trySend(Intents.NFC + it); return }
         if (BuildConfig.DEBUG) intent.getStringExtra("devPayment")?.let { type ->
             container.scope.launch { container.wallet.simulatePayment(type != "outgoing", intent.getLongExtra("devSats", 2_100)) }
@@ -114,7 +132,9 @@ class MainActivity : AppCompatActivity() {
             NfcAdapter.ACTION_NDEF_DISCOVERED -> {
                 val msgs = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
                 else @Suppress("DEPRECATION") intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)?.filterIsInstance<NdefMessage>()?.toTypedArray()
-                msgs?.firstOrNull()?.let(::dispatchNdef)
+                val tag = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+                else @Suppress("DEPRECATION") intent.getParcelableExtra(NfcAdapter.EXTRA_TAG)
+                msgs?.firstOrNull()?.let { dispatchNdef(it, tag) }
             }
             Intent.ACTION_VIEW -> intent.dataString?.let { Intents.payloads.trySend(it) }
         }

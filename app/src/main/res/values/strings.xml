@@ -533,4 +533,9 @@
     <string name="cashu_won">Sats unlocked!</string>
     <string name="cashu_pendingBody">The mint is still paying. The sats will join your balance shortly.</string>
     <string name="cashu_mint">Mint</string>
+    <string name="cards_paysFrom">Pays from</string>
+    <string name="cards_pickWallet">This card pays from</string>
+    <string name="cards_notLinked">Not linked</string>
+    <string name="cards_lastUsed">Last used</string>
+    <string name="cards_linkedTo">%1$s now pays from %2$s</string>
 </resources>
