@@ -239,7 +239,15 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: B
     val nav = io.lawallet.wallet.ui.LocalNav.current
     val swaps by c.swaps.swaps.collectAsState()
     val pinned = remember(swaps) { swaps.filter { it.status == "PENDING" && it.paidAt != null } }
-    val recent = remember(all, pinned) { pinned.mapNotNull { it.paymentHash }.toSet().let { h -> if (h.isEmpty()) all else all.filter { it.paymentHash !in h } } }
+    val recent = remember(all, swaps) {
+        val hidden = pinned.mapNotNull { it.paymentHash }.toSet()
+        // A delivered cash-out sits at the time the pesos landed, not when its Lightning payment went out.
+        val delivered = swaps.mapNotNull { sw -> sw.paymentHash?.let { h -> io.lawallet.wallet.core.ln.BankDestination.deliveredMs(sw)?.let { h to it } } }.toMap()
+        if (hidden.isEmpty() && delivered.isEmpty()) all
+        else all.filter { it.paymentHash !in hidden }
+            .map { t -> delivered[t.paymentHash]?.takeIf { !t.incoming }?.let { t.copy(createdAt = it, settledAt = it) } ?: t }
+            .sortedByDescending { it.createdAt }
+    }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }

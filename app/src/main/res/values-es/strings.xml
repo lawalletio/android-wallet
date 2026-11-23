@@ -578,4 +578,5 @@
     <string name="cards_notLinked">Sin vincular</string>
     <string name="cards_lastUsed">Último uso</string>
     <string name="cards_linkedTo">%1$s ahora paga desde %2$s</string>
+    <string name="swap_delivered">Acreditada</string>
 </resources>

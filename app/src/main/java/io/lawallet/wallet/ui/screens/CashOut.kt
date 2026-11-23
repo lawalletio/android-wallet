@@ -539,6 +539,7 @@ fun CashOutOrderScreen(id: String) {
                 val fmt = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
                 BankDestination.epochMs(swap.createdAt)?.let { KeyValueRow(stringResource(R.string.swap_created), fmt.format(Date(it))) }
                 BankDestination.epochMs(swap.paidAt)?.let { KeyValueRow(stringResource(R.string.swap_paid), fmt.format(Date(it))) }
+                BankDestination.deliveredMs(swap)?.let { KeyValueRow(stringResource(R.string.swap_delivered), fmt.format(Date(it))) }
                 val orderRef = swap.externalId ?: swap.id
                 CopyRow(stringResource(R.string.swap_order), orderRef)
                 swap.paymentHash?.let { CopyRow(stringResource(R.string.swap_paymentHash), it) }

@@ -45,6 +45,12 @@ object BankDestination {
         }
     }
 
+    /**
+     * When the pesos landed. The server has no completedAt: [Swap.updatedAt] is it, since a finished order is never
+     * refreshed again (up to one poll late, 10 s to a minute).
+     */
+    fun deliveredMs(swap: Swap): Long? = if (swap.status == "COMPLETED") epochMs(swap.updatedAt) else null
+
     /** ARS per BTC the order actually paid: amountArs over the invoice's sats. */
     fun arsPerBtc(swap: Swap): Double? = swap.amountSats.takeIf { it > 0 }?.let { swap.amountArs * 100_000_000.0 / it }
 
