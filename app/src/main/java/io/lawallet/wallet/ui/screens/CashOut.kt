@@ -547,7 +547,7 @@ fun CashOutOrderScreen(id: String) {
                 val receiptFailed = stringResource(R.string.swap_receiptFailed)
                 fun receipt(share: Boolean) { busy = true; scope.launch { runCatching { openReceipt(context, c, swap, share) }.onFailure { context.toastError(it, receiptFailed) }; busy = false } }
                 LwButton(stringResource(R.string.cashOut_receipt), { receipt(false) }, Modifier.weight(1f).testTag("cashout-receipt"), BtnVariant.Secondary, enabled = !busy, leading = { LwIcon(L.drawable.lucide_ic_receipt, size = 18.dp) })
-                if (swap.receiptUrl == null) LwButton(stringResource(R.string.swap_shareReceipt), { receipt(true) }, Modifier.weight(1f), BtnVariant.Secondary, enabled = !busy, leading = { LwIcon(L.drawable.lucide_ic_share_2, size = 18.dp) })
+                LwButton(stringResource(R.string.swap_shareReceipt), { receipt(true) }, Modifier.weight(1f), BtnVariant.Secondary, enabled = !busy, leading = { LwIcon(L.drawable.lucide_ic_share_2, size = 18.dp) })
             }
             if (phase == Phase.Awaiting) LwButton(stringResource(R.string.swap_cancel), { busy = true; scope.launch { c.swaps.cancel(swap.id); busy = false } }, Modifier.fillMaxWidth(), BtnVariant.Ghost, loading = busy)
             Spacer(Modifier.height(8.dp))
@@ -689,16 +689,26 @@ private fun Timeline(swap: Swap, phase: Phase) {
     }
 }
 
-/** Wapu's receipt is an image URL; Bull Bitcoin's is a PDF LaWallet renders, opened or shared through the FileProvider. */
+/**
+ * Wapu's receipt is the bank's transfer image (a URL: opened in place, downloaded to share); Bull Bitcoin's is a PDF
+ * LaWallet renders. Shared files go through the FileProvider.
+ */
 private suspend fun openReceipt(context: Context, c: io.lawallet.wallet.app.AppContainer, swap: Swap, share: Boolean) {
-    swap.receiptUrl?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))); return }
-    val bytes = c.swaps.receipt(swap.id, share)
+    val url = swap.receiptUrl
+    if (url != null && !share) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); return }
+    val (bytes, type) = if (url != null) withContext(Dispatchers.IO) {
+        c.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { res ->
+            if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
+            res.body.bytes() to (res.header("content-type")?.substringBefore(';')?.takeIf { it.startsWith("image/") } ?: "image/jpeg")
+        }
+    } else c.swaps.receipt(swap.id, share) to "application/pdf"
+    val ext = when (type) { "application/pdf" -> "pdf"; "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
     val uri = withContext(Dispatchers.IO) {
-        val file = File(context.cacheDir, "shared/comprobante.pdf").apply { parentFile?.mkdirs(); writeBytes(bytes) }
+        val file = File(context.cacheDir, "shared/comprobante.$ext").apply { parentFile?.mkdirs(); writeBytes(bytes) }
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
-    val intent = if (share) Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).apply { clipData = ClipData.newRawUri(null, uri) }
-    else Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/pdf")
+    val intent = if (share) Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).apply { clipData = ClipData.newRawUri(null, uri) }
+    else Intent(Intent.ACTION_VIEW).setDataAndType(uri, type)
     context.startActivity(Intent.createChooser(intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null))
 }
 
