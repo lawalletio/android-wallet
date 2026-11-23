@@ -1,6 +1,8 @@
 package io.lawallet.wallet.core
 
+import io.lawallet.wallet.core.btc.Base58
 import io.lawallet.wallet.core.btc.Bip39
+import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.BtcImport
 import io.lawallet.wallet.core.btc.BtcInput
 import io.lawallet.wallet.core.btc.PhraseProblem
@@ -41,7 +43,17 @@ class BitcoinTest {
         assertEquals(ScriptType.P2WPKH, (d("bitcoin:BC1QAR0SRRR7XFKVY5L643LYDNW9RE59GTZZWF5MDQ?amount=1") as BtcInput.WatchOnly).script)
         assertEquals(ScriptType.P2TR, (d("bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr") as BtcInput.WatchOnly).script)
         assertEquals(ScriptType.P2PKH, (d("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2") as BtcInput.WatchOnly).script)
-        assertEquals(BtcInput.Rejected(Unsupported.TESTNET), d("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"))
+        assertEquals(BtcInput.WatchOnly(WatchKind.ADDRESS, "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx", ScriptType.P2WPKH, Chain.SIGNET), d("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"))
+        // Signet/testnet keys and multisig descriptors are wallets now; a lone Zpub is a cosigner, not a wallet.
+        fun reversion(key: String, v: Int) = Base58.encodeCheck(byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte()) + Base58.decodeCheck(key)!!.copyOfRange(4, 78))
+        val vpub = reversion(zpub, 0x045F1CF6)
+        assertEquals(BtcInput.WatchOnly(WatchKind.XPUB, vpub, ScriptType.P2WPKH, Chain.SIGNET), d(vpub))
+        assertEquals(WatchKind.MULTISIG, (d("wsh(sortedmulti(2,[73c5da0a/48'/1'/0'/2']$vpub/0/*,$vpub/0/*))") as BtcInput.WatchOnly).kind)
+        assertEquals(BtcInput.Rejected(Unsupported.MULTISIG), d(reversion(zpub, 0x02AA7ED3)))
+        assertEquals(BtcInput.Rejected(Unsupported.PRIVATE_KEY), d(reversion(zpub, 0x04B2430C)))
+        // Normalising keeps the key material: a zpub becomes the xpub of the same key.
+        assertEquals(BtcImport.extendedKey(zpub)!!.xpub, BtcImport.extendedKey(reversion(zpub, 0x0488B21E))!!.xpub)
+        assertEquals(reversion(zpub, 0x0488B21E), BtcImport.extendedKey(zpub)!!.xpub)
         assertNull(d("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3")) // bad checksum
         assertNull(d(""))
     }

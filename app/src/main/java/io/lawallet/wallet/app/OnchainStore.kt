@@ -2,6 +2,9 @@ package io.lawallet.wallet.app
 
 import android.content.Context
 import androidx.core.content.edit
+import io.lawallet.wallet.core.btc.Chain
+import io.lawallet.wallet.core.btc.DescriptorPair
+import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.ScriptType
 import io.lawallet.wallet.core.btc.WatchKind
 import io.lawallet.wallet.core.store.SecretStore
@@ -29,9 +32,22 @@ data class OnchainWallet(
     val backedUp: Boolean = true,
     val isPrimary: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
+    val chain: Chain = Chain.MAINNET,
+    /** Public descriptors BDK derives from; null for a single-address watch, or until first derived (older records). */
+    val descriptors: DescriptorPair? = null,
+    /** Multisig ([watch] = MULTISIG): the seed wallet in this store holding one of its keys, if any. */
+    val signer: String? = null,
 ) {
-    val watchOnly get() = watch != null
-    val path get() = if (watch == WatchKind.ADDRESS) null else script?.path
+    val multisig get() = watch == WatchKind.MULTISIG
+    /** No key on this phone: spending goes out as a PSBT for other signers. */
+    val watchOnly get() = watch != null && signer == null
+    val seed get() = watch == null
+    val path get() = when {
+        watch == WatchKind.ADDRESS -> null
+        multisig -> Descriptors.cosignerPath(chain)
+        else -> script?.path(chain)
+    }
+    val quorum get() = descriptors?.let { Descriptors.quorum(it.external) }
 }
 
 /**

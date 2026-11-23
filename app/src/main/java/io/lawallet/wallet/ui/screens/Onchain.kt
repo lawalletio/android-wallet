@@ -169,7 +169,7 @@ private fun ScriptPicker(selected: ScriptType, onSelect: (ScriptType) -> Unit, l
         (if (locked) listOf(selected) else ScriptType.entries).forEachIndexed { i, t ->
             if (i > 0) GroupDivider(inset = 14.dp)
             SettingsRow(
-                t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${t.short} · ${t.path}",
+                t.label, if (locked) null else ({ onSelect(t) }), Modifier.testTag("script-${t.name}"), subtitle = "BIP${t.purpose} · ${t.short} · ${t.path()}",
                 trailing = if (locked) null else ({
                     if (t == ScriptType.P2WPKH) Pill(stringResource(R.string.onchain_recommended), Lw.Bitcoin)
                     RadioButton(t == selected, { onSelect(t) }, colors = RadioButtonDefaults.colors(selectedColor = Lw.Bitcoin, unselectedColor = Lw.MutedFg))
@@ -483,7 +483,7 @@ fun ImportOnchainWalletScreen() {
                     }
                 }
                 is BtcInput.WatchOnly -> {
-                    val kind = stringResource(when (d.kind) { WatchKind.XPUB -> R.string.onchain_kind_xpub; WatchKind.DESCRIPTOR -> R.string.onchain_kind_descriptor; WatchKind.ADDRESS -> R.string.onchain_kind_address })
+                    val kind = stringResource(when (d.kind) { WatchKind.XPUB -> R.string.onchain_kind_xpub; WatchKind.DESCRIPTOR -> R.string.onchain_kind_descriptor; WatchKind.ADDRESS -> R.string.onchain_kind_address; WatchKind.MULTISIG -> R.string.onchain_kind_descriptor })
                     Detected(L.drawable.lucide_ic_eye, "$kind · ${d.script?.label ?: stringResource(R.string.onchain_address)}", Lw.Green)
                     MutedText(stringResource(R.string.onchain_detect_watch), Modifier.padding(horizontal = 4.dp), size = 13.sp)
                 }

@@ -40,6 +40,8 @@ quickjs = "3.2.3"
 # Cashu: animated QR (BC-UR fountain codes, NUT-16) and cashuB (CBOR) tokens.
 hummingbird = "1.7.6"
 cbor = "0.9"
+# Onchain wallets: descriptors, sync, coin selection, PSBT, RBF (16 KB-aligned .so since 2.2).
+bdk = "3.1.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -76,6 +78,8 @@ coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 hummingbird = { module = "com.sparrowwallet:hummingbird", version.ref = "hummingbird" }
 cbor = { module = "co.nstant.in:cbor", version.ref = "cbor" }
+bdk-android = { module = "org.bitcoindevkit:bdk-android", version.ref = "bdk" }
+bdk-jvm = { module = "org.bitcoindevkit:bdk-jvm", version.ref = "bdk" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 quickjs-android = { module = "wang.harlon.quickjs:wrapper-android", version.ref = "quickjs" }
 lucide = { module = "com.composables:icons-lucide-android", version.ref = "lucide" }
