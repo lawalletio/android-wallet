@@ -237,6 +237,33 @@ class LaWalletApi(
             putJsonArray("choices") { choices.forEach { add(JsonPrimitive(it)) } }
         }, PollSubmitted.serializer()).response
 
+    // ---------- ARS cash-out ----------
+    /** Only enabled providers; `[]` when none. */
+    suspend fun swapQuote(amountArs: Double) = get("/api/wallet/swaps/quote?amountArs=${amountPlain(amountArs)}", ListSerializer(SwapQuote.serializer()))
+    /** Owner and bank of a CBU/CVU or alias. 404 unknown or lookup off, 429 shared rate limit. */
+    suspend fun bankAccount(query: String) = get("/api/wallet/alias/${enc(query.trim().lowercase())}", BankAccount.serializer())
+    /** [holderName] null: the server fills it from the alias lookup when it can. */
+    suspend fun createSwap(provider: String, amountArs: Double, destination: String, holderName: String?) =
+        send("POST", "/api/wallet/swaps", buildJsonObject {
+            put("provider", provider); put("amountArs", amountArs); put("destination", destination); if (holderName != null) put("holderName", holderName)
+        }, Swap.serializer())
+    /** Refreshes a PENDING order from the provider (at most once per 10 s server-side). */
+    suspend fun swap(id: String) = get("/api/wallet/swaps/${enc(id)}", Swap.serializer())
+    suspend fun swapPaid(id: String, preimage: String) =
+        send("POST", "/api/wallet/swaps/${enc(id)}/paid", buildJsonObject { put("preimage", preimage) }, Swap.serializer())
+    /** 409 once paid. */
+    suspend fun cancelSwap(id: String) = send("POST", "/api/wallet/swaps/${enc(id)}/cancel", buildJsonObject { }, Swap.serializer())
+    suspend fun swaps(pageSize: Int = 50) = get("/api/wallet/swaps?page=1&pageSize=$pageSize", SwapPage.serializer()).items
+    /** Bull Bitcoin PDF receipt, once COMPLETED. [share] = the variant without sats and Lightning details. */
+    suspend fun swapReceipt(id: String, share: Boolean = false): ByteArray {
+        val path = "/api/wallet/swaps/${enc(id)}/receipt?variant=${if (share) "share" else "full"}"
+        fun build(token: String) = Request.Builder().url(baseUrl + path).header("Authorization", "Bearer $token").build()
+        return try { executeBytes(build(token())) } catch (e: ApiException) {
+            if (e.status != 401) throw e
+            executeBytes(build(mintLock.withLock { mint() }))
+        }
+    }
+
     // ---------- passkeys / oauth ----------
     suspend fun passkeyRegistrationVerify(body: JsonObject, authenticated: Boolean) =
         send("POST", "/api/auth/passkey/registration/verify", body, JsonElement.serializer(), auth = authenticated)
@@ -265,6 +292,13 @@ class LaWalletApi(
         }
         val el = if (text.isBlank()) JsonNull else json.parseToJsonElement(text)
         return json.decodeFromJsonElement(ser, el)
+    }
+
+    private suspend fun executeBytes(request: Request): ByteArray = withContext(Dispatchers.IO) {
+        http.newCall(request).execute().use { res ->
+            if (!res.isSuccessful) throw ApiException(res.code, "Request failed (${res.code})")
+            res.body.bytes()
+        }
     }
 
     private suspend fun execute(request: Request): String = withContext(Dispatchers.IO) {
@@ -299,12 +333,13 @@ class LaWalletApi(
     companion object {
         val json = io.lawallet.wallet.core.apiJson
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        private fun amountPlain(v: Double) = java.math.BigDecimal.valueOf(v).stripTrailingZeros().toPlainString()
         /** The API's own path words; any other segment (ids, usernames, keys) is logged as `:id`. */
         private val PATH_WORDS = setOf(
-            "account", "account-transfer", "activation-tokens", "addresses", "api", "auth", "balance", "card-recovery", "cards",
+            "account", "account-transfer", "activation-tokens", "addresses", "alias", "api", "auth", "balance", "cancel", "card-recovery", "cards",
             "check", "claim", "connection-string", "credentials", "currency-prefs", "dismiss", "email", "preview", "request", "grants", "invoices", "jwt",
-            "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "passkey", "polls", "primary", "profiles",
-            "receive-action", "recovery-check", "registration", "remote-wallets", "response", "settings", "users", "verify", "version", "wallet",
+            "lightning-addresses", "lncurl", "me", "nostr", "notifications", "oauth", "options", "paid", "passkey", "polls", "quote", "receipt", "primary", "profiles",
+            "receive-action", "recovery-check", "registration", "remote-wallets", "response", "settings", "swaps", "users", "verify", "version", "wallet",
         )
 
         /** True when the JWT's `exp` is < 5 min away (jwt-expiry.ts). Unparseable tokens count as expired. */

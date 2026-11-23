@@ -88,6 +88,16 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
         }
 
         c.scope.launch {
+            c.swaps.notices.collect { swap ->
+                runCatching { PaymentSound.play(this@LaWalletApp, c.prefs.paymentSound.value, "swap:${swap.id}") }.onFailure { Diagnostics.nonFatal(it) }
+                if (!inForeground) runCatching { Notifications.showSwap(this@LaWalletApp, swap) }.onFailure { Diagnostics.nonFatal(it) }
+                else if (c.swaps.watching.value != swap.id) android.widget.Toast.makeText(this@LaWalletApp,
+                    if (swap.status == "COMPLETED") getString(R.string.swap_notifCompleted, io.lawallet.wallet.core.fx.Currencies.formatSats(Math.round(swap.amountArs))) else getString(R.string.cashOut_status_FAILED),
+                    android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+
+        c.scope.launch {
             combine(c.session.auth, c.prefs.backgroundListener, c.wallet.client) { _, _, _ -> shouldListen() }.collect { listen ->
                 if (listen) { if (inForeground) PaymentListenerService.start(this@LaWalletApp) } else PaymentListenerService.stop(this@LaWalletApp)
             }

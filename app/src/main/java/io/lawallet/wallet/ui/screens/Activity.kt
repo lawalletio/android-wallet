@@ -311,6 +311,9 @@ internal fun TimelineScrubber(list: LazyListState, rows: List<ActivityRow>, modi
 @Composable
 fun ActivityDetailScreen(hash: String) {
     val c = LocalContainer.current
+    // A cash-out's payment opens the order: rate, recipient, bank transfer, receipt.
+    val swap = remember(hash) { c.swaps.byHash(hash) }
+    if (swap != null) { CashOutOrderScreen(swap.id); return }
     val nav = LocalNav.current
     val context = LocalContext.current
     val currencies by c.prefs.currencies.collectAsState()

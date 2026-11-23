@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -231,7 +232,13 @@ internal fun SheetTitle(sheet: ActivitySheet, pin: Modifier) {
 }
 
 @Composable
-internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
+internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: Boolean, current: Boolean, pin: Modifier, onOpen: (Tx) -> Unit) {
+    // Cash-outs still on their way are pinned on top; their Lightning payment joins the list once the pesos land.
+    val c = io.lawallet.wallet.ui.LocalContainer.current
+    val nav = io.lawallet.wallet.ui.LocalNav.current
+    val swaps by c.swaps.swaps.collectAsState()
+    val pinned = remember(swaps) { swaps.filter { it.status == "PENDING" && it.paidAt != null } }
+    val recent = remember(all, pinned) { pinned.mapNotNull { it.paymentHash }.toSet().let { h -> if (h.isEmpty()) all else all.filter { it.paymentHash !in h } } }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
@@ -248,6 +255,7 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, recent: List<Tx>, hasNwc
         // Grabber and title stay put while the Home pages swipe ([pin]); the rows slide.
         Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
         SheetTitle(sheet, pin)
+        pinned.forEach { swap -> PendingSwapCard(swap) { nav.navigate(io.lawallet.wallet.ui.R0.cashOutOrder(swap.id)) } }
         val empty = when {
             !hasNwc -> stringResource(R.string.home_list_activity_connect)
             recent.isEmpty() && !s.active -> stringResource(R.string.home_list_activity_empty)

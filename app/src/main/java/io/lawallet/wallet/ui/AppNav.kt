@@ -179,6 +179,9 @@ object R0 {
     const val SEND_AMOUNT = "send/amount"
     const val SEND_PREVIEW = "send/preview"
     const val SEND_SUMMARY = "send/summary"
+    const val CASHOUT_AMOUNT = "cashout/amount"
+    const val CASHOUT_REVIEW = "cashout/review"
+    fun cashOutOrder(id: String) = "cashout/order/$id"
     const val RECEIVE = "receive"
     const val RECEIVE_AMOUNT = "receive/amount"
     const val RECEIVE_INVOICE = "receive/invoice"
@@ -452,6 +455,9 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.SEND_AMOUNT) { SendAmountScreen() }
                 composable(R0.SEND_PREVIEW) { SendPreviewScreen() }
                 composable(R0.SEND_SUMMARY) { SendSummaryScreen() }
+                composable(R0.CASHOUT_AMOUNT) { CashOutAmountScreen() }
+                composable(R0.CASHOUT_REVIEW) { CashOutReviewScreen() }
+                composable("cashout/order/{id}") { CashOutOrderScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.RECEIVE) { ReceiveAddressScreen() }
                 composable(R0.RECEIVE_AMOUNT) { ReceiveAmountScreen() }
                 composable(R0.RECEIVE_INVOICE) { ReceiveInvoiceScreen() }

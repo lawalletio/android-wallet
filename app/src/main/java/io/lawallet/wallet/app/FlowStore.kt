@@ -45,6 +45,16 @@ class FlowStore {
 
     data class Receive(val amountSats: Long? = null, val description: String? = null, val bolt11: String? = null, val paymentHash: String? = null, val paid: Tx? = null)
 
+    /** ARS cash-out: the bank account picked on Send, then the amount, the exchange, the confirmed name and the locked order. */
+    data class CashOut(
+        val account: io.lawallet.wallet.core.api.BankAccount? = null,
+        val amountArs: Double? = null,
+        val provider: String? = null,
+        val holderName: String = "",
+        val order: io.lawallet.wallet.core.api.Swap? = null,
+    )
+    var cashOut = CashOut()
+
     var send = Send()
     var receive = Receive()
     var withdraw: WithdrawParams? = null

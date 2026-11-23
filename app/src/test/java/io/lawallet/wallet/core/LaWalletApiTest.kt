@@ -249,4 +249,51 @@ class LaWalletApiTest {
         assertTrue(state.poll.freeText && !state.poll.ranking)
         assertEquals("Cheaper fees", state.label(state.response!!.choices.first()))
     }
+
+    // ---------- ARS cash-out ----------
+    @Test fun swapQuoteKeepsAFailedProvider() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""[{"provider":"bullbitcoin","sats":44567,"arsPerBtc":112190000.5,"minArs":null},{"provider":"wapu","sats":null,"arsPerBtc":null,"minArs":null,"error":"Wapu: down"}]"""))
+        val q = api.swapQuote(50000.0)
+        assertEquals("/api/wallet/swaps/quote?amountArs=50000", server.takeRequest().path)
+        assertEquals(44567L, q[0].sats)
+        assertNull(q[1].sats)
+        assertEquals("Wapu: down", q[1].error)
+    }
+
+    @Test fun bankLookupLowercasesAndMapsMisses() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""{"cvu":"0000003100010000000001","alias":"ana.mp","bank":"Mercado Pago","owners":[{"type":"F","cuit":"27123456784","name":"Ana Pérez"}]}"""))
+        val a = api.bankAccount(" Ana.MP ")
+        assertEquals("/api/wallet/alias/ana.mp", server.takeRequest().path)
+        assertEquals("Ana Pérez", a.owners.single().name)
+        server.enqueue(MockResponse().setResponseCode(429).setBody("""{"error":{"message":"Alias lookup rate limit reached","code":"TOO_MANY_REQUESTS"}}"""))
+        assertEquals(429, assertThrows(ApiException::class.java) { runBlocking { api.bankAccount("otro.alias") } }.status)
+    }
+
+    @Test fun createSwapSendsTheSchemaBody() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"id":"s1","provider":"wapu","destination":"ana.mp","holderName":"Ana","amountArs":20000,"amountSats":17800,"bolt11":"lnbc1","paymentHash":"ab","status":"PENDING","expiresAt":"2026-11-23T12:05:00.000Z","paidAt":null}"""))
+        val s = api.createSwap("wapu", 20000.0, "ana.mp", "Ana")
+        val req = server.takeRequest()
+        assertEquals("POST", req.method); assertEquals("/api/wallet/swaps", req.path)
+        assertEquals("""{"provider":"wapu","amountArs":20000.0,"destination":"ana.mp","holderName":"Ana"}""", req.body.readUtf8())
+        assertEquals(17800L, s.amountSats)
+        assertEquals("PENDING", s.status)
+    }
+
+    @Test fun paidCancelAndReceipt() = runBlocking {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody("""{"id":"s1","provider":"bullbitcoin","status":"PENDING","paidAt":"2026-11-23T12:01:00.000Z"}"""))
+        assertEquals("2026-11-23T12:01:00.000Z", api.swapPaid("s1", "00".repeat(32)).paidAt)
+        assertEquals("""{"preimage":"${"00".repeat(32)}"}""", server.takeRequest().body.readUtf8())
+        server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":{"message":"Only an unpaid order can be canceled","code":"CONFLICT"}}"""))
+        assertEquals(409, assertThrows(ApiException::class.java) { runBlocking { api.cancelSwap("s1") } }.status)
+        server.takeRequest()
+        server.enqueue(MockResponse().setBody("%PDF-1.7").setHeader("content-type", "application/pdf"))
+        assertEquals("%PDF-1.7", String(api.swapReceipt("s1", share = true)))
+        val req = server.takeRequest()
+        assertEquals("/api/wallet/swaps/s1/receipt?variant=share", req.path)
+        assertEquals("Bearer $stored", req.getHeader("Authorization"))
+    }
 }

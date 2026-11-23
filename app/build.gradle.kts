@@ -186,6 +186,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play)

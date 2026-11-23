@@ -533,4 +533,44 @@
     <string name="cashu_won">¡Sats liberados!</string>
     <string name="cashu_pendingBody">La mint todavía está pagando. Los sats llegarán a tu saldo en breve.</string>
     <string name="cashu_mint">Mint</string>
+    <!-- ARS cash-out -->
+    <string name="swap_bankAccounts">Cuentas bancarias</string>
+    <string name="swap_bankAccount">Cuenta bancaria</string>
+    <string name="swap_lookupBusy">Demasiadas búsquedas ahora. Probá en un minuto.</string>
+    <string name="swap_amountTitle">¿Cuántos pesos?</string>
+    <string name="swap_approxSats">≈ %1$s sats</string>
+    <string name="swap_chooseProvider">¿Cómo querés que llegue?</string>
+    <string name="swap_chooseProviderBody">Cada exchange cotiza a su precio. Pagás en sats y la cuenta recibe pesos.</string>
+    <string name="swap_bestRate">Mejor precio</string>
+    <string name="swap_rate">1 sat = ARS %1$s</string>
+    <string name="swap_rateLabel">Cotización</string>
+    <string name="swap_eta_bullbitcoin">Cotización fija 5 min · llega en minutos</string>
+    <string name="swap_eta_wapu">Llega en 5 a 120 min</string>
+    <string name="swap_recipientTitle">Destinatario</string>
+    <string name="swap_reviewTitle">Revisá</string>
+    <string name="swap_lockedFor">Cotización fija por %1$s</string>
+    <string name="swap_rateExpired">Esta cotización venció</string>
+    <string name="swap_newQuote">Nueva cotización</string>
+    <string name="swap_slideToSend">Deslizá para enviar pesos</string>
+    <string name="swap_step_created">Orden creada</string>
+    <string name="swap_step_lightning">Pago Lightning</string>
+    <string name="swap_step_bank">Transferencia de %1$s</string>
+    <string name="swap_step_delivered">Pesos acreditados</string>
+    <string name="swap_awaiting">Esperando el pago</string>
+    <string name="swap_cancel">Cancelar orden</string>
+    <string name="swap_order">Orden</string>
+    <string name="swap_bank">Banco</string>
+    <string name="swap_cbu">CBU/CVU</string>
+    <string name="swap_alias">Alias</string>
+    <string name="swap_holderId">Documento</string>
+    <string name="swap_created">Creada</string>
+    <string name="swap_paid">Pagada</string>
+    <string name="swap_shareReceipt">Compartir comprobante</string>
+    <string name="swap_notifCompleted">Pesos enviados · ARS %1$s</string>
+    <string name="swap_notifTo">A %1$s</string>
+    <string name="swap_rowSubtitle">ARS %1$s · %2$s</string>
+    <string name="swap_details">Detalles</string>
+    <string name="swap_paymentHash">Hash del pago</string>
+    <string name="swap_receiptFailed">No pudimos abrir el comprobante</string>
+    <string name="swap_unverified">No pudimos verificar el titular, revisalo después</string>
 </resources>
