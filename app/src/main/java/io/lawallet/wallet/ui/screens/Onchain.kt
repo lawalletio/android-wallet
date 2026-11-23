@@ -476,7 +476,8 @@ fun ImportOnchainWalletScreen() {
             if (scanning) QrCamera({ error = it; scanning = false }) { raw ->
                 if (!scanning) return@QrCamera
                 scanning = false
-                text = TextFieldValue(raw.trim(), TextRange(raw.trim().length))
+                val read = io.lawallet.wallet.core.btc.SeedQr.read(raw, bip39)?.first?.joinToString(" ") ?: raw.trim()
+                text = TextFieldValue(read, TextRange(read.length))
             }
             OutlinedTextField(
                 text, { text = it }, Modifier.fillMaxWidth().testTag("onchain-import-field"),

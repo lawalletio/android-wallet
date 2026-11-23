@@ -716,4 +716,5 @@
     <string name="onchain_detect_private">A spending wallet. The key is kept encrypted on this phone; there\'s no recovery phrase, so keep your own copy of it.</string>
     <string name="onchain_privateKey">Private key</string>
     <string name="onchain_remove_key">This wallet\'s private key is only on this phone. Make sure you have a copy before you remove it, or its bitcoin is lost.</string>
+    <string name="onchain_scan_phrase">%1$s detected: a recovery phrase. Import it as a wallet, and keep it secret.</string>
 </resources>

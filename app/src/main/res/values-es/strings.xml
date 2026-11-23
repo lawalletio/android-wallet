@@ -717,4 +717,5 @@
     <string name="onchain_detect_private">Una billetera para gastar. La clave queda cifrada en este teléfono; no hay frase de recuperación, así que guardá tu propia copia.</string>
     <string name="onchain_privateKey">Clave privada</string>
     <string name="onchain_remove_key">La clave privada de esta billetera está solo en este teléfono. Asegurate de tener una copia antes de eliminarla, o sus bitcoin se pierden.</string>
+    <string name="onchain_scan_phrase">%1$s detectado: una frase de recuperación. Importala como billetera, y mantenela en secreto.</string>
 </resources>

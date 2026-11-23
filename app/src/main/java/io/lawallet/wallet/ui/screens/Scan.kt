@@ -122,6 +122,17 @@ sealed interface ScanOutcome {
     data class Failed(val message: String) : ScanOutcome
 }
 
+/**
+ * What a code says: its text, or for a binary code (a Compact SeedQR holds raw entropy, not text) its bytes as
+ * [io.lawallet.wallet.core.btc.SeedQr.BINARY]`<hex>`, so the router can tell it apart.
+ */
+private fun payload(b: Barcode): String? {
+    val text = b.rawValue
+    val bytes = b.rawBytes
+    val binary = text == null || text.any { it == '\uFFFD' || (it < ' ' && it !in "\n\r\t") }
+    return if (binary && bytes != null && bytes.isNotEmpty()) io.lawallet.wallet.core.btc.SeedQr.BINARY + bytes.joinToString("") { "%02x".format(it) } else text
+}
+
 /** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
 suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome {
     // Magic link: the landing checks the link's community against ours (it may offer to switch).
@@ -135,7 +146,12 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
             // Not a payment: say what it is, and open the screen that takes it (import, with it already filled in).
             c.flow.onchainImport = r.text
             c.activityBridge.activity?.let { a ->
-                android.widget.Toast.makeText(a, a.getString(if (r.private) R.string.onchain_scan_privateKey else R.string.onchain_scan_walletKey, r.label), android.widget.Toast.LENGTH_LONG).show()
+                val msg = when (r.kind) {
+                    ScanResult.KeyKind.PUBLIC -> R.string.onchain_scan_walletKey
+                    ScanResult.KeyKind.PRIVATE -> R.string.onchain_scan_privateKey
+                    ScanResult.KeyKind.PHRASE -> R.string.onchain_scan_phrase
+                }
+                android.widget.Toast.makeText(a, a.getString(msg, r.label.ifEmpty { a.getString(R.string.onchain_backup_title) }), android.widget.Toast.LENGTH_LONG).show()
             }
             nav.navigate(R0.ONCHAIN_IMPORT) { launchSingleTop = true }
             ScanOutcome.Handled
@@ -344,7 +360,7 @@ private fun CameraFeed(busy: Boolean, onError: (String?) -> Unit, onCode: (Strin
                     // screen is gone the executor is shut: drop them, the camera is unbound by then.
                     val bg = java.util.concurrent.Executor { r -> runCatching { analyzerExecutor.execute(r) } }
                     scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> main.execute { if (!disposed) code(v) } } }
+                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { payload(it) }?.let { v -> main.execute { if (!disposed) code(v) } } }
                         .addOnCompleteListener(bg) { proxy.close() }
                 }
                 provider.unbindAll()
