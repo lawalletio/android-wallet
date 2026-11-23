@@ -131,6 +131,8 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Cashu -> { c.flow.cashu = r.token; nav.navigate(R0.CASHU); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
+        is ScanResult.Onchain -> startOnchainSend(c, r.request)?.let { nav.navigate(it) { launchSingleTop = true }; ScanOutcome.Handled }
+            ?: ScanOutcome.Failed(c.text(R.string.onchain_send_noWallet, "No onchain wallet here can pay this address"))
         is ScanResult.InstallPlugin -> {
             // Through the Plugins list, so Install lands back on it (and its sign-in) like Add Plugin does.
             nav.navigate(R0.PLUGINS) { launchSingleTop = true }

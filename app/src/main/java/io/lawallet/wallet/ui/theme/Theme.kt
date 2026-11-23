@@ -33,6 +33,8 @@ object Lw {
     val LncurlGreen = Color(0xFF9BE88A) // the LNCurl wordmark
     val Gold = Color(0xFFF5A623)
     val Bitcoin = Color(0xFFF7931A)
+    /** Signet (test coins): violet, so a test wallet never reads as real bitcoin. */
+    val Signet = Color(0xFFA78BFA)
     val Lightning = Color(0xFF4C8DFF)
     val Tether = Color(0xFF009393) // Tether brand green (tether.to brand guidelines)
     val Neutral400 = Color(0xFFA3A3A3)

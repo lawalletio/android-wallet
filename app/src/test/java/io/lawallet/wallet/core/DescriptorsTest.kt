@@ -139,6 +139,20 @@ class DescriptorsTest {
         assertNull(Descriptors.chainOf("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyv"))
     }
 
+    @Test fun scansRouteOnchain() = kotlinx.coroutines.runBlocking<Unit> {
+        val router = io.lawallet.wallet.core.ln.ScanRouter(io.lawallet.wallet.core.ln.Lnurl(okhttp3.OkHttpClient()))
+        suspend fun route(s: String) = router.route(s, emptySet())
+        val onchain = route("bitcoin:tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl?amount=0.001") as io.lawallet.wallet.core.ln.ScanResult.Onchain
+        assertEquals(100_000L, onchain.request.sats)
+        assertTrue(route("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu") is io.lawallet.wallet.core.ln.ScanResult.Onchain)
+        // A unified QR with a Lightning invoice pays over Lightning.
+        val bolt11 = "lnbc10u1pj9rk5zpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdqqcqzzsxqyz5vqsp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypq9qyyssq0"
+        val unified = route("bitcoin:bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu?amount=0.00001&lightning=$bolt11")
+        assertTrue(unified.toString(), unified !is io.lawallet.wallet.core.ln.ScanResult.Onchain || io.lawallet.wallet.core.ln.DestinationParser.runCatching { parse(bolt11) }.isFailure)
+        // Not an address: falls through to the Lightning parsers as before.
+        assertTrue(route("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyv") is io.lawallet.wallet.core.ln.ScanResult.Error)
+    }
+
     @Test fun scripthash() {
         // Electrum protocol docs example: P2PKH script of 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa.
         val script = "76a91462e907b15cbf27d5425399ebf6f0fb50ebb88f1888ac".chunked(2).map { it.toInt(16).toByte() }.toByteArray()

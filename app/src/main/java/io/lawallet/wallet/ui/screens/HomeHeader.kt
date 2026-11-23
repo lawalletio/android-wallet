@@ -212,7 +212,7 @@ internal fun HomeHeader(intro: Boolean, pages: HomePages) {
                         },
                     ) {
                         when (HomePager.page) {
-                            ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                            ONCHAIN -> nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
                             LIGHTNING -> if (address != null) picker = !picker
                             else -> context.toast(usdtSoon)
                         }

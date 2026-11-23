@@ -20,6 +20,13 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -77,6 +84,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.OnchainWallet
+import io.lawallet.wallet.app.OnchainTx
+import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.core.fx.Rates
 import io.lawallet.wallet.ui.LocalContainer
@@ -98,9 +107,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.composables.icons.lucide.R as L
 
-/** Onchain is an upcoming feature: the page shows "Soon" for its balance and its ways in are disabled. Flip to ship. */
-internal const val ONCHAIN_SOON = true
-
 /*
  * Home's Onchain page: the Lightning page's layout for the onchain wallets kept on this device. Balance,
  * activity, and the wallet deck a swipe down reveals (tap a card to make it primary, hold it for its menu).
@@ -108,21 +114,28 @@ internal const val ONCHAIN_SOON = true
 
 /** "Native SegWit", "Watch-only · Taproot", or the backup warning: what a wallet is, in one line. */
 @Composable
-internal fun onchainSubtitle(w: OnchainWallet) = when {
-    !w.backedUp -> stringResource(R.string.onchain_notBackedUp)
-    w.watchOnly -> stringResource(R.string.onchain_watchOnly) + " · " + (w.script?.label ?: stringResource(R.string.onchain_address))
-    else -> w.script?.label.orEmpty()
+internal fun onchainSubtitle(w: OnchainWallet): String {
+    val kind = when {
+        !w.backedUp -> return stringResource(R.string.onchain_notBackedUp)
+        w.multisig -> w.quorum?.let { (m, n) -> stringResource(R.string.onchain_multisig_label, m, n) } ?: stringResource(R.string.onchain_kind_multisig)
+        w.watchOnly -> stringResource(R.string.onchain_watchOnly) + " · " + (w.script?.label ?: stringResource(R.string.onchain_address))
+        else -> w.script?.label.orEmpty()
+    }
+    return if (w.chain == Chain.SIGNET) stringResource(R.string.onchain_signet) + " · " + kind else kind
 }
 
 /** The wallet's tile: the ₿ for keys held here, an eye for watch-only. */
 @Composable
 internal fun OnchainMark(w: OnchainWallet, size: Int, sel: Float = 1f) {
-    val accent = lerp(Lw.MutedFg, Lw.Bitcoin, sel)
+    val accent = lerp(Lw.MutedFg, if (w.chain == Chain.SIGNET) Lw.Signet else Lw.Bitcoin, sel)
     Box(
         Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.32f).dp))
             .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f + 0.2f * sel), accent.copy(alpha = 0.06f + 0.04f * sel)))),
         contentAlignment = Alignment.Center,
-    ) { LwIcon(if (w.watchOnly) L.drawable.lucide_ic_eye else L.drawable.lucide_ic_bitcoin, size = (size * 0.5f).dp, tint = lerp(Lw.MutedFg, Lw.Bitcoin, 0.4f + 0.6f * sel)) }
+    ) {
+        val icon = when { w.multisig -> L.drawable.lucide_ic_users; w.watchOnly -> L.drawable.lucide_ic_eye; else -> L.drawable.lucide_ic_bitcoin }
+        LwIcon(icon, size = (size * 0.5f).dp, tint = lerp(Lw.MutedFg, if (w.chain == Chain.SIGNET) Lw.Signet else Lw.Bitcoin, 0.4f + 0.6f * sel))
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -140,8 +153,8 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
     val rates by c.rates.rates.collectAsState()
     val code = currencies.selected.takeIf { it in currencies.active } ?: "SAT"
     val primary = wallets.firstOrNull { it.isPrimary }
-    // ponytail: UI only, no chain backend yet: every wallet reads 0. Feed real balances here once addresses are derived and synced.
-    val balances = remember(wallets) { wallets.associate { it.id to 0L } }
+    val states by c.onchainWallets.states.collectAsState()
+    val balances = remember(wallets, states) { wallets.associate { it.id to states[it.id]?.balance?.total } }
     val shown = primary?.let { balances[it.id] } ?: 0L
     val press = remember { MutableInteractionSource() }
     val hold = holdProgress(press)
@@ -199,7 +212,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                     onClickLabel = showLabel,
                                     onLongClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                                        nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
                                     },
                                 ) { if (hidden) sensitiveGate { c.prefs.setHideBalance(false) } else c.prefs.setHideBalance(true) })
                                 .padding(top = 16.dp, bottom = 2.dp).heightIn(min = 76.dp).testTag("onchain-balance-toggle")
@@ -219,8 +232,7 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                                 contentAlignment = Alignment.Center,
                                 label = "currency",
                             ) { cc ->
-                                if (ONCHAIN_SOON) Txt(stringResource(R.string.onchain_soon_short), size = 56.sp, weight = FontWeight.SemiBold, color = Lw.MutedFg, lineHeight = 60.sp, letterSpacing = (-1.5).sp, modifier = Modifier.testTag("onchain-soon"))
-                                else BalanceFigure(shown, cc, rates, hidden, null, fromZero = false)
+                                BalanceFigure(shown, cc, rates, hidden, null, fromZero = false)
                             }
                         }
                         if (currencies.active.size >= 2) CurrencyToggle(
@@ -245,14 +257,19 @@ internal fun OnchainPage(current: Boolean, anchors: HomePages) {
                 Box(Modifier.graphicsLayer {
                     translationY = reveal.progress * (reveal.range + 160.dp.toPx())
                     alpha = (1f - reveal.progress * 1.6f).coerceIn(0f, 1f)
-                }) { AssetActivity(sheet, stringResource(if (wallets.isNotEmpty()) R.string.onchain_activity_empty else R.string.onchain_activity_noWallet), Modifier.pinned(anchors, ONCHAIN)) }
+                }) {
+                    val txs = primary?.let { states[it.id]?.txs }.orEmpty()
+                    if (primary == null || txs.isEmpty()) AssetActivity(sheet, stringResource(if (wallets.isNotEmpty()) R.string.onchain_activity_empty else R.string.onchain_activity_noWallet), Modifier.pinned(anchors, ONCHAIN))
+                    else OnchainActivity(sheet, primary, txs, Modifier.pinned(anchors, ONCHAIN))
+                }
             },
         )
         RevealDeck(
             reveal, wallets.sortedBy { it.isPrimary }, { it.id }, Modifier.testTag("onchain-wallets"),
-            header = { DeckTitle(reveal, stringResource(R.string.onchain_wallets), null, { nav.navigate(R0.ONCHAIN_ADD) }, "onchain-wallets-add", addEnabled = !ONCHAIN_SOON) },
+            header = { DeckTitle(reveal, stringResource(R.string.onchain_wallets), null, { nav.navigate(R0.ONCHAIN_ADD) }, "onchain-wallets-add") },
             empty = { DeckEmpty(L.drawable.lucide_ic_bitcoin, stringResource(R.string.onchain_empty_title)) },
-            footer = { if (wallets.size > 1) WalletsTotal(wallets.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal) },
+            // Signet coins are worthless: the total (and its fiat) counts mainnet wallets only.
+            footer = { if (wallets.size > 1) WalletsTotal(wallets.filter { it.chain == Chain.MAINNET }.sumOf { balances[it.id] ?: 0L }, code, rates, hidden, reveal) },
         ) { w ->
             OnchainRevealCard(
                 w, balances[w.id], code, rates, hidden, reveal,
@@ -282,11 +299,10 @@ private fun OnchainCta(modifier: Modifier, onCreate: () -> Unit, onImport: () ->
             LwIcon(L.drawable.lucide_ic_bitcoin, size = 18.dp, tint = Lw.Bitcoin)
             Spacer(Modifier.width(8.dp))
             Txt(stringResource(R.string.onchain_cta_title), size = 14.sp, weight = FontWeight.SemiBold)
-            if (ONCHAIN_SOON) { Spacer(Modifier.width(8.dp)); Pill(stringResource(R.string.onchain_soon_short), Lw.Bitcoin) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LwButton(stringResource(R.string.onchain_create), onCreate, Modifier.weight(1f).testTag("onchain-cta-create"), BtnVariant.Secondary, enabled = !ONCHAIN_SOON, height = 40.dp, icon = L.drawable.lucide_ic_plus)
-            LwButton(stringResource(R.string.onchain_import), onImport, Modifier.weight(1f).testTag("onchain-cta-import"), BtnVariant.Secondary, enabled = !ONCHAIN_SOON, height = 40.dp, icon = L.drawable.lucide_ic_import)
+            LwButton(stringResource(R.string.onchain_create), onCreate, Modifier.weight(1f).testTag("onchain-cta-create"), BtnVariant.Secondary, height = 40.dp, icon = L.drawable.lucide_ic_plus)
+            LwButton(stringResource(R.string.onchain_import), onImport, Modifier.weight(1f).testTag("onchain-cta-import"), BtnVariant.Secondary, height = 40.dp, icon = L.drawable.lucide_ic_import)
         }
     }
 }
@@ -396,3 +412,56 @@ internal fun RemoveOnchainDialog(w: OnchainWallet, onDismiss: () -> Unit, onConf
 /** "12 words", "24 words + passphrase". */
 @Composable
 internal fun phraseSummary(w: OnchainWallet) = pluralStringResource(R.plurals.onchain_word_count, w.words, w.words) + if (w.passphrase) " + passphrase" else ""
+
+/**
+ * The primary onchain wallet's activity: pending txs first, each saying what it waits for (a send offers Speed up on
+ * its detail), then the confirmed ones by day, in the same rows as Lightning's.
+ */
+@Composable
+private fun OnchainActivity(sheet: ActivitySheet, w: OnchainWallet, txs: List<OnchainTx>, pin: Modifier) {
+    val nav = LocalNav.current
+    val labels = rememberDayLabels()
+    val pending = txs.filter { it.pending }
+    val done = remember(txs) { txs.filter { !it.pending }.map { it.toTx() } }
+    val rows = remember(done) { activityRows(done, months = true) { true } }
+    val paging = remember { ActivityPaging().apply { hasMore = false } }
+    Column(Modifier.fillMaxSize().padding(top = 16.dp)) {
+        Box(Modifier.align(Alignment.CenterHorizontally).then(pin).size(36.dp, 4.dp).graphicsLayer { alpha = 0.16f + 0.24f * sheet.progress }.background(Color.White, CircleShape))
+        SheetTitle(sheet, pin)
+        Box(Modifier.weight(1f).sheetTailFade(sheet)) {
+            LazyColumn(Modifier.fillMaxSize().testTag("onchain-activity"), contentPadding = PaddingValues(bottom = 260.dp)) {
+                if (pending.isNotEmpty()) {
+                    item("pending-title") { Txt(stringResource(R.string.onchain_pending), Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg) }
+                    items(pending.size, key = { "p:" + pending[it].txid }) { i -> PendingRow(pending[i]) { nav.navigate(R0.onchainTx(w.id, pending[i].txid)) } }
+                }
+                activityList(rows, done, labels, paging) { nav.navigate(R0.onchainTx(w.id, it.paymentHash)) }
+            }
+        }
+    }
+}
+
+/** A tx still in the mempool: a slow pulse on its clock, what it waits for, and the amount. */
+@Composable
+private fun PendingRow(tx: OnchainTx, onClick: () -> Unit) {
+    val color = if (tx.incoming) Lw.Green else Lw.Bitcoin
+    val pulse by rememberInfiniteTransition(label = "pending").animateFloat(0.45f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "pulse")
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp).clip(RoundedCornerShape(20.dp))
+            .background(color.copy(alpha = 0.07f)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp).testTag("onchain-pending-row"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+            LwIcon(L.drawable.lucide_ic_clock, Modifier.graphicsLayer { alpha = pulse }, size = 20.dp, tint = color)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(stringResource(if (tx.incoming) R.string.onchain_pending_in else R.string.onchain_pending_out), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+            Txt(pendingLine(tx), size = 12.sp, color = Lw.MutedFg, maxLines = 1)
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Txt((if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amount), size = 14.sp, weight = FontWeight.SemiBold, color = color)
+            Spacer(Modifier.width(4.dp))
+            Txt("sats", size = 12.sp, color = Lw.MutedFg)
+        }
+    }
+}

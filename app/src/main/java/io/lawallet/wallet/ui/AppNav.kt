@@ -217,6 +217,15 @@ object R0 {
     const val ONCHAIN_IMPORT = "onchain/import"
     fun onchainWallet(id: String) = "onchain/wallet/$id"
     fun onchainBackup(id: String) = "onchain/backup/$id"
+    fun onchainReceive(id: String) = "onchain/receive/$id"
+    const val ONCHAIN_SEND = "onchain/send"
+    const val ONCHAIN_SEND_AMOUNT = "onchain/send/amount"
+    const val ONCHAIN_SEND_REVIEW = "onchain/send/review"
+    const val ONCHAIN_SENT = "onchain/sent"
+    fun onchainTx(walletId: String, txid: String) = "onchain/tx/$walletId/$txid"
+    fun onchainPsbt(id: String) = "onchain/psbt/$id"
+    const val ONCHAIN_MULTISIG = "onchain/multisig"
+    const val ONCHAIN_SETTINGS = "settings/onchain"
     fun poll(slug: String) = "poll/$slug"
 }
 
@@ -309,12 +318,14 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
     val tabs by remember(route) { derivedStateOf { sheet() < 1f } }
     val search by remember(route) { derivedStateOf { sheet() > 0f } }
     val context = LocalContext.current
-    val onchainSoon = stringResource(R.string.onchain_soon)
     val usdtSoon = stringResource(R.string.usdt_soon)
-    // Off Lightning (Onchain, USDT), Home's Receive / Send aren't wired yet.
+    // On USDT, Home's Receive / Send aren't wired yet. On Onchain they act for the primary onchain wallet.
     // derivedStateOf: HomePager.page reads the live swipe offset, which would recompose the bar every swipe frame.
     val homePage by remember { derivedStateOf { HomePager.page } }
-    val soon = if (route == R0.HOME && homePage != LIGHTNING) { if (homePage == USDT) usdtSoon else onchainSoon } else null
+    val soon = if (route == R0.HOME && homePage == USDT) usdtSoon else null
+    val onchainPage = route == R0.HOME && homePage == ONCHAIN
+    val onchainWallets by c.onchain.wallets.collectAsState()
+    val onchainPrimary = onchainWallets.firstOrNull { it.isPrimary }
     // Home's address drop-down covers everything: the bar fades out under it (and leaves once gone, taking no taps).
     val overlay by animateFloatAsState(if (route == R0.HOME && AddressPickerOverlay.open) 1f else 0f, tween(180), label = "pickerOverlay")
     // Both tabs composed = switching tabs: the bar stays put.
@@ -324,14 +335,25 @@ private fun TabBar(route: String?, shown: Map<String, State<Float>>, nav: NavHos
         translationY = d * 48.dp.toPx()
     }, contentAlignment = Alignment.BottomCenter) {
         if (tabs && overlay < 1f && !deckOut) NavTabBar(
-            // ponytail: onchain send/receive are UI-only for now; wire them when the wallets can derive addresses and sign.
-            onReceive = { if (soon != null) context.toast(soon) else nav.navigate(R0.RECEIVE) { launchSingleTop = true } },
-            onSend = { if (soon != null) context.toast(soon) else nav.navigate(R0.SEND) { launchSingleTop = true } },
+            onReceive = {
+                when {
+                    soon != null -> context.toast(soon)
+                    onchainPage -> nav.navigate(onchainPrimary?.let { R0.onchainReceive(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                    else -> nav.navigate(R0.RECEIVE) { launchSingleTop = true }
+                }
+            },
+            onSend = {
+                when {
+                    soon != null -> context.toast(soon)
+                    onchainPage -> nav.navigate(if (onchainPrimary == null) R0.ONCHAIN_ADD else R0.ONCHAIN_SEND) { launchSingleTop = true }
+                    else -> nav.navigate(R0.SEND) { launchSingleTop = true }
+                }
+            },
             onScan = { nav.navigate(R0.SCAN) { launchSingleTop = true } },
             haze = haze,
             // On Lightning, a free address has nothing to receive into or send from; an alias only forwards.
-            canReceive = soon != null || (!(route == R0.HOME && HomeLightningAddress.free) && (client != null || settings?.lncurlAutoCreate == true)),
-            canSend = soon != null || (!(route == R0.HOME && (HomeLightningAddress.free || HomeLightningAddress.alias)) && client != null),
+            canReceive = soon != null || onchainPage || (!(route == R0.HOME && HomeLightningAddress.free) && (client != null || settings?.lncurlAutoCreate == true)),
+            canSend = soon != null || onchainPage || (!(route == R0.HOME && (HomeLightningAddress.free || HomeLightningAddress.alias)) && client != null),
             // Home tints it with the page tone, blending 1:1 with the swipe (Bitcoin orange ⇄ Lightning blue).
             accent = if (route == R0.HOME) ({ pageTone() }) else null,
             modifier = Modifier.graphicsLayer {
@@ -487,6 +509,15 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.ONCHAIN_IMPORT) { ImportOnchainWalletScreen() }
                 composable("onchain/wallet/{id}") { OnchainWalletDetailScreen(it.arguments?.getString("id").orEmpty()) }
                 composable("onchain/backup/{id}") { OnchainBackupScreen(it.arguments?.getString("id").orEmpty()) }
+                composable("onchain/receive/{id}") { OnchainReceiveScreen(it.arguments?.getString("id").orEmpty()) }
+                composable(R0.ONCHAIN_SEND) { OnchainSendScreen() }
+                composable(R0.ONCHAIN_SEND_AMOUNT) { OnchainSendAmountScreen() }
+                composable(R0.ONCHAIN_SEND_REVIEW) { OnchainSendReviewScreen() }
+                composable(R0.ONCHAIN_SENT) { OnchainSentScreen() }
+                composable("onchain/tx/{wallet}/{txid}") { OnchainTxScreen(it.arguments?.getString("wallet").orEmpty(), it.arguments?.getString("txid").orEmpty()) }
+                composable("onchain/psbt/{id}") { OnchainPsbtScreen(it.arguments?.getString("id").orEmpty()) }
+                composable(R0.ONCHAIN_MULTISIG) { CreateMultisigScreen() }
+                composable(R0.ONCHAIN_SETTINGS) { OnchainSettingsScreen() }
                 composable(R0.CURRENCIES) { CurrenciesScreen() }
                 composable(R0.PAYMENTS) { PaymentsScreen() }
                 composable(R0.INSTANCE) { InstanceScreen() }
