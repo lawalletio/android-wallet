@@ -284,7 +284,8 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: B
         else {
             val labels = rememberDayLabels()
             // Bottom padding lets the last rows scroll clear of the faded tail and the tab bar.
-            val rows = remember(filtered) { activityRows(filtered, months = true) }
+            // Each cash-out is its own row: they share an invoice description, but not a recipient.
+            val rows = remember(filtered, swaps) { activityRows(filtered, months = true) { !it.incoming && c.swaps.byHash(it.paymentHash) != null } }
             val expanded by remember { derivedStateOf { sheet.progress > 0.98f } }
             Box(Modifier.weight(1f).sheetTailFade(sheet)) {
                 LazyColumn(Modifier.fillMaxSize().testTag("home-activity"), state = list, contentPadding = PaddingValues(bottom = 260.dp)) {

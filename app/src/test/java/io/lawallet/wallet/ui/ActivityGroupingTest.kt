@@ -30,6 +30,13 @@ class ActivityGroupingTest {
         assertEquals(activityKeys(dup).size, activityKeys(dup).toSet().size)
     }
 
+    /** Cash-outs share an invoice description but each goes to its own account: never one run. */
+    @Test fun aloneTxsNeverGroup() {
+        val desc = "LaWallet swap"
+        val runs = groupRuns(listOf(tx(desc, n = 1), tx(desc, n = 2), tx(desc, n = 3))) { it.paymentHash != "h3" }
+        assertEquals(listOf(1, 1, 1), runs.map { it.size })
+    }
+
     @Test fun directionBlankAndPendingNeverGroup() {
         val runs = groupRuns(listOf(
             tx("x", n = 1), tx("x", type = "incoming", n = 2), // different direction

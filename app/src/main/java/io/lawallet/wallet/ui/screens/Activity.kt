@@ -110,14 +110,14 @@ internal sealed interface ActivityRow {
     data class Run(val txs: List<Tx>) : ActivityRow
 }
 
-/** Day groups (and, with [months], a header whenever the month changes), then runs of transactions. */
-internal fun activityRows(items: List<Tx>, months: Boolean): List<ActivityRow> = buildList {
+/** Day groups (and, with [months], a header whenever the month changes), then runs of transactions; [alone] never joins a run. */
+internal fun activityRows(items: List<Tx>, months: Boolean, alone: (Tx) -> Boolean = { false }): List<ActivityRow> = buildList {
     var month = -1L
     items.groupBy { dayLabel(it.createdAt) }.forEach { (day, txs) ->
         val m = monthStart(day.first)
         if (months && m != month) { month = m; add(ActivityRow.Month(m)) }
         add(ActivityRow.Day(day))
-        groupRuns(txs).forEach { add(ActivityRow.Run(it)) }
+        groupRuns(txs, alone).forEach { add(ActivityRow.Run(it)) }
     }
 }
 
@@ -176,8 +176,8 @@ internal fun LazyListScope.activityList(rows: List<ActivityRow>, items: List<Tx>
  * Consecutive settled payments with the same direction and description (e.g. a stream of
  * "LNCurl hosting fee") collapse into one run; everything else stays a run of one.
  */
-internal fun groupRuns(txs: List<Tx>): List<List<Tx>> {
-    fun key(tx: Tx) = tx.description?.takeIf { it.isNotBlank() && tx.state != "pending" && tx.state != "failed" }?.let { tx.incoming to it }
+internal fun groupRuns(txs: List<Tx>, alone: (Tx) -> Boolean = { false }): List<List<Tx>> {
+    fun key(tx: Tx) = tx.description?.takeIf { it.isNotBlank() && tx.state != "pending" && tx.state != "failed" && !alone(tx) }?.let { tx.incoming to it }
     val out = mutableListOf<MutableList<Tx>>()
     for (tx in txs) {
         val prev = out.lastOrNull()?.last()
