@@ -706,4 +706,5 @@
     <string name="onchain_settings_signetBody">Ofrece signet al agregar una billetera, para probar con monedas de prueba sin valor.</string>
     <string name="receive_tab_onchain">Onchain</string>
     <string name="receive_tab_lightning">Lightning</string>
+    <string name="receive_action_amount">Monto</string>
 </resources>

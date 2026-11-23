@@ -45,6 +45,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.lawallet.wallet.R
+import io.lawallet.wallet.ui.components.shareText
+import io.lawallet.wallet.ui.components.qrBitmap
+import io.lawallet.wallet.ui.theme.GlassLevel
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.ColumnScope
@@ -103,83 +113,138 @@ fun ReceiveScreen(start: Int) {
     }
 }
 
-/** "₿ Onchain  ⚡ Lightning": the page in front lit in its tone, 1:1 with the swipe; tap one to go there. */
+/** Onchain | Lightning, segmented: the thumb slides and takes each page's tone 1:1 with the swipe; tap to go there. */
 @Composable
 private fun ReceiveTabs(pager: androidx.compose.foundation.pager.PagerState) {
     val scope = rememberCoroutineScope()
-    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
-        listOf(Triple(ONCHAIN, L.drawable.lucide_ic_bitcoin, R.string.receive_tab_onchain), Triple(LIGHTNING, L.drawable.lucide_ic_zap, R.string.receive_tab_lightning)).forEach { (page, icon, label) ->
-            Row(
-                Modifier.clip(CircleShape).clickable { scope.launch { pager.animateScrollToPage(page) } }
-                    .graphicsLayer { alpha = 0.4f + 0.6f * HomePager.weight(page, pager.currentPage + pager.currentPageOffsetFraction) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp).testTag("receive-tab-$page"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LwIcon(icon, size = 16.dp, tint = PAGE_TONES[page])
-                Spacer(Modifier.width(6.dp))
-                Txt(stringResource(label), size = 14.sp, weight = FontWeight.SemiBold)
+    val pos = { pager.currentPage + pager.currentPageOffsetFraction }
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().height(52.dp).glass(CircleShape, GlassLevel.Thin).padding(4.dp).testTag("receive-tabs"),
+    ) {
+        val half = maxWidth / 2
+        Box(Modifier.width(half).fillMaxHeight().graphicsLayer { translationX = pos().coerceIn(0f, 1f) * half.toPx() }.drawBehind {
+            val tone = androidx.compose.ui.graphics.lerp(PAGE_TONES[ONCHAIN], PAGE_TONES[LIGHTNING], pos().coerceIn(0f, 1f))
+            val r = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
+            drawRoundRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(tone.copy(alpha = 0.42f), tone.copy(alpha = 0.22f))), cornerRadius = r)
+            drawRoundRect(tone.copy(alpha = 0.7f), cornerRadius = r, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        })
+        Row(Modifier.fillMaxSize()) {
+            listOf(Triple(ONCHAIN, L.drawable.lucide_ic_bitcoin, R.string.receive_tab_onchain), Triple(LIGHTNING, L.drawable.lucide_ic_zap, R.string.receive_tab_lightning)).forEach { (page, icon, label) ->
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().clip(CircleShape).clickable { scope.launch { pager.animateScrollToPage(page) } }
+                        .graphicsLayer { alpha = 0.55f + 0.45f * HomePager.weight(page, pos()) }.testTag("receive-tab-$page"),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LwIcon(icon, size = 18.dp, tint = Lw.Foreground)
+                    Spacer(Modifier.width(8.dp))
+                    Txt(stringResource(label), size = 15.sp, weight = FontWeight.SemiBold)
+                }
             }
         }
     }
 }
 
-/** The Lightning page: the account's address (or a way to get one) and an amount request. */
+/** A round action under the QR: a glass disc with its icon, the label under it. */
+internal data class ReceiveAction(val icon: Int, val label: String, val tag: String, val loading: Boolean = false, val onClick: () -> Unit)
+
+@Composable
+internal fun ReceiveActions(actions: List<ReceiveAction>) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+    actions.forEach { a ->
+        Column(Modifier.width(80.dp).clip(RoundedCornerShape(20.dp)).clickable(enabled = !a.loading, onClick = a.onClick).padding(vertical = 6.dp).testTag(a.tag), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(56.dp).glass(CircleShape, GlassLevel.Regular), contentAlignment = Alignment.Center) {
+                if (a.loading) Spinner(20.dp) else LwIcon(a.icon, size = 22.dp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Txt(a.label, size = 12.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.85f), align = TextAlign.Center, maxLines = 2, lineHeight = 15.sp)
+        }
+    }
+}
+
+/**
+ * The QR, as big as the screen allows (up to 340dp): white on a glass frame in the page's [tone], the network's [mark]
+ * in the middle (error correction Q leaves room for it). Tap copies. A payment arriving flashes its amount over it.
+ */
+@Composable
+internal fun BigQr(data: String?, tone: Color, mark: Int, credit: Long?, onTap: () -> Unit) {
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, data) {
+        value = data?.let { d -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { qrBitmap(d, com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.Q).asImageBitmap() } }
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        val side = (maxWidth - 24.dp).coerceAtMost(340.dp)
+        Box(
+            Modifier.size(side).glass(RoundedCornerShape(36.dp), GlassLevel.Regular, tint = tone.copy(alpha = 0.10f))
+                .border(1.dp, androidx.compose.ui.graphics.Brush.verticalGradient(listOf(tone.copy(alpha = 0.55f), tone.copy(alpha = 0.10f))), RoundedCornerShape(36.dp)).padding(12.dp),
+        ) {
+            Box(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(26.dp)).background(Color.White).clickable(onClickLabel = stringResource(R.string.common_copy), onClick = onTap).padding(18.dp).testTag("qr"),
+                contentAlignment = Alignment.Center,
+            ) {
+                val b = bmp
+                if (b == null) Spinner(color = Color.Black)
+                else {
+                    androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize(), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+                    Box(Modifier.fillMaxSize(0.2f).clip(CircleShape).background(Color.White).padding(5.dp).clip(CircleShape).background(tone), contentAlignment = Alignment.Center) {
+                        LwIcon(mark, Modifier.fillMaxSize(0.56f), tint = Color.White)
+                    }
+                }
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(credit != null, Modifier.padding(top = 20.dp), enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
+            Txt("+" + Currencies.formatSats(credit ?: 0) + " sats", Modifier.clip(RoundedCornerShape(50)).background(Lw.Green).padding(horizontal = 16.dp, vertical = 8.dp), size = 18.sp, weight = FontWeight.SemiBold, color = Color.White)
+        }
+    }
+}
+
+/** The Lightning page: the account's address as a big QR and headline, Copy / Share / Amount under it. */
 @Composable
 private fun ColumnScope.LightningReceivePage() {
     val c = LocalContainer.current
     val nav = LocalNav.current
+    val context = LocalContext.current
     val me by c.session.me.collectAsState()
     var credit by remember { mutableStateOf<Long?>(null) }
+    val copied = stringResource(R.string.common_copied)
     LaunchedEffect(Unit) { runCatching { c.session.refreshMe() } }
     LaunchedEffect(Unit) {
         c.wallet.notices.filter { it.type == "payment_received" }.collect { credit = it.tx.amountSats; delay(2500); credit = null }
     }
-    run {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(24.dp))
-            val address = c.wallet.shownAddress(me)
-            if (address != null) {
-                AddressHero(address)
-                Spacer(Modifier.height(20.dp))
-                Box(contentAlignment = Alignment.TopCenter) {
-                    // Lowercase: an address gains nothing from QR alphanumeric mode ("@" is outside it), and some wallets reject an uppercased one.
-                    QrDisplay("lightning:$address", null, copyValue = address)
-                    androidx.compose.animation.AnimatedVisibility(credit != null, enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
-                        Txt("+" + Currencies.formatSats(credit ?: 0), Modifier.clip(RoundedCornerShape(50)).background(Lw.Green.copy(alpha = 0.15f)).padding(horizontal = 14.dp, vertical = 6.dp), size = 20.sp, weight = FontWeight.SemiBold, color = Lw.Green)
-                    }
-                }
-            } else if (me != null) {
-                MutedText(stringResource(R.string.receive_noAddress), align = TextAlign.Center)
-                Spacer(Modifier.height(16.dp))
-                LwButton(stringResource(R.string.receive_claimUsername), { nav.navigate("${R0.CLAIM}?from=&bonus=0") }, Modifier.fillMaxWidth(), BtnVariant.Secondary)
-            } else Spinner()
-        }
-        LwButton(stringResource(R.string.receive_requestAmount), { c.flow.resetReceive(); nav.navigate(R0.RECEIVE_AMOUNT) }, Modifier.fillMaxWidth().padding(16.dp).testTag("request-amount"), BtnVariant.Theme)
+    val address = c.wallet.shownAddress(me)
+    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Spacer(Modifier.height(4.dp))
+        if (address != null) {
+            // Lowercase: an address gains nothing from QR alphanumeric mode ("@" is outside it), and some wallets reject an uppercased one.
+            BigQr("lightning:$address", PAGE_TONES[LIGHTNING], L.drawable.lucide_ic_zap, credit) { context.copyToClipboard(address, copied) }
+            AddressHero(address)
+            ReceiveActions(listOf(
+                ReceiveAction(L.drawable.lucide_ic_copy, stringResource(R.string.common_copy), "receive-copy") { context.copyToClipboard(address, copied) },
+                ReceiveAction(L.drawable.lucide_ic_share_2, stringResource(R.string.common_share), "receive-share") { context.shareText(address) },
+                ReceiveAction(L.drawable.lucide_ic_hash, stringResource(R.string.receive_action_amount), "request-amount") { c.flow.resetReceive(); nav.navigate(R0.RECEIVE_AMOUNT) },
+            ))
+        } else if (me != null) {
+            Spacer(Modifier.height(40.dp))
+            MutedText(stringResource(R.string.receive_noAddress), align = TextAlign.Center)
+            LwButton(stringResource(R.string.receive_claimUsername), { nav.navigate("${R0.CLAIM}?from=&bonus=0") }, Modifier.fillMaxWidth(), BtnVariant.Secondary)
+        } else { Spacer(Modifier.height(80.dp)); Spinner() }
+        Spacer(Modifier.height(16.dp))
     }
 }
 
-/** The address as the headline: big username, brand-tinted @domain, on a glowing glass pill. Tap copies. */
+/** The address as the headline under the QR: big username, @domain in the Lightning tone. Tap copies. */
 @Composable
 private fun AddressHero(address: String) {
     val context = LocalContext.current
-    val brand = io.lawallet.wallet.ui.theme.LocalBrand.current
     val copied = stringResource(R.string.common_copied)
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClickLabel = stringResource(R.string.common_copy)) { context.copyToClipboard(address, copied) }
+            .padding(horizontal = 12.dp, vertical = 4.dp).testTag("receive-address"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Txt(stringResource(R.string.receive_yourAddress), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
+        Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            LwIcon(com.composables.icons.lucide.R.drawable.lucide_ic_zap, size = 14.dp, tint = brand.t400)
-            Spacer(Modifier.width(6.dp))
-            Txt(stringResource(R.string.receive_yourAddress), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(
-            Modifier.glass(RoundedCornerShape(24.dp), tint = brand.t400.copy(alpha = 0.14f))
-                .clickable(onClickLabel = stringResource(R.string.common_copy)) { context.copyToClipboard(address, copied) }
-                .padding(horizontal = 22.dp, vertical = 14.dp).testTag("receive-address"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
             // Username leads and may ellipsize; the domain never truncates.
             Txt(address.substringBefore('@'), Modifier.weight(1f, fill = false), size = 26.sp, weight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.4).sp)
-            Txt("@" + address.substringAfter('@'), size = 26.sp, weight = FontWeight.Medium, color = brand.t300, maxLines = 1, letterSpacing = (-0.4).sp)
+            Txt("@" + address.substringAfter('@'), size = 26.sp, weight = FontWeight.Medium, color = PAGE_TONES[LIGHTNING], maxLines = 1, letterSpacing = (-0.4).sp)
         }
     }
 }

@@ -89,7 +89,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
             c.onchainWallets.received.collect { (w, tx) ->
                 val notice = PaymentNotice("onchain:${tx.txid}", "payment_received", tx.toTx().copy(description = w.name))
                 runCatching { PaymentSound.play(this@LaWalletApp, c.prefs.paymentSound.value, notice.id) }.onFailure { Diagnostics.nonFatal(it) }
-                if (!inForeground) runCatching { Notifications.showPayment(this@LaWalletApp, notice, "onchain/tx/${w.id}/${tx.txid}") }.onFailure { Diagnostics.nonFatal(it) }
+                if (!inForeground) runCatching { Notifications.showPayment(this@LaWalletApp, notice, "onchain/tx/${w.id}/${tx.txid}", R.drawable.ic_notification_bitcoin) }.onFailure { Diagnostics.nonFatal(it) }
             }
         }
 

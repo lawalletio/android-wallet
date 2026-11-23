@@ -175,17 +175,18 @@ fun OnchainReceiveScreen(id: String) {
     }
 }
 
-/** Receive's Onchain page: the primary onchain wallet's address, or the ways to get a wallet. */
+/** Receive's Onchain page: the primary onchain wallet's address (its chip switches wallet), or the ways to get a wallet. */
 @Composable
 internal fun ColumnScope.OnchainReceivePage() {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val wallets by c.onchain.wallets.collectAsState()
-    val primary = wallets.firstOrNull { it.isPrimary }
-    if (primary != null) { OnchainReceiveBody(primary.id); return }
+    var picked by rememberSaveable { mutableStateOf<String?>(null) }
+    val w = wallets.firstOrNull { it.id == picked } ?: wallets.firstOrNull { it.isPrimary }
+    if (w != null) { OnchainReceiveBody(w.id) { picked = it }; return }
     Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
-        LwIcon(L.drawable.lucide_ic_bitcoin, size = 40.dp, tint = Lw.Bitcoin)
-        Txt(stringResource(R.string.onchain_cta_title), size = 17.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
+        Box(Modifier.size(72.dp).glass(CircleShape, GlassLevel.Regular, tint = Lw.Bitcoin.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 34.dp, tint = Lw.Bitcoin) }
+        Txt(stringResource(R.string.onchain_cta_title), size = 18.sp, weight = FontWeight.SemiBold, align = TextAlign.Center)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             LwButton(stringResource(R.string.onchain_create), { nav.navigate(R0.ONCHAIN_CREATE) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_plus)
             LwButton(stringResource(R.string.onchain_import), { nav.navigate(R0.ONCHAIN_IMPORT) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_import)
@@ -193,8 +194,12 @@ internal fun ColumnScope.OnchainReceivePage() {
     }
 }
 
+/**
+ * One wallet's receive: its chip (tap to pick another wallet when [onPick] is set), the big QR of its unused address
+ * (BIP-21 with the amount, when one is set), the address in groups of four, and Copy / Share / Amount / New address.
+ */
 @Composable
-private fun ColumnScope.OnchainReceiveBody(id: String) {
+private fun ColumnScope.OnchainReceiveBody(id: String, onPick: ((String) -> Unit)? = null) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val context = LocalContext.current
@@ -204,58 +209,68 @@ private fun ColumnScope.OnchainReceiveBody(id: String) {
     val w = wallets.find { it.id == id }
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val address = states[id]?.receive
-    var sats by rememberSaveable { mutableStateOf<Long?>(null) }
+    var sats by rememberSaveable(id) { mutableStateOf<Long?>(null) }
     var amountOpen by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
     var credit by remember { mutableStateOf<Long?>(null) }
     var busy by remember { mutableStateOf(false) }
     val copied = stringResource(R.string.common_copied)
     val gap = stringResource(R.string.onchain_receive_gap)
     val offline = stringResource(R.string.onchain_err_offline)
     LaunchedEffect(id) { c.onchainWallets.received.filter { it.first.id == id }.collect { credit = it.second.amount; delay(3000); credit = null } }
-    run {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OnchainMark(w, 24)
-                Txt(w.name, size = 15.sp, weight = FontWeight.SemiBold, maxLines = 1)
-                if (w.chain == Chain.SIGNET) Pill(stringResource(R.string.onchain_signet), Lw.Signet)
-            }
-            Spacer(Modifier.height(20.dp))
-            if (address == null) Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) { Spinner() }
-            else {
-                val request = Bip21(address, sats)
-                Box(contentAlignment = Alignment.TopCenter) {
-                    // Upper-cased in the QR (alphanumeric mode, a smaller code); copied and shared as typed.
-                    QrDisplay(request.uri(qr = true), null, copyValue = if (sats == null) address else request.uri())
-                    androidx.compose.animation.AnimatedVisibility(credit != null, enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
-                        Txt("+" + Currencies.formatSats(credit ?: 0), Modifier.clip(RoundedCornerShape(50)).background(Lw.Green.copy(alpha = 0.15f)).padding(horizontal = 14.dp, vertical = 6.dp), size = 20.sp, weight = FontWeight.SemiBold, color = Lw.Green)
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Txt(
-                    grouped(address), Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).clickable { context.copyToClipboard(address, copied) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp).testTag("onchain-address"),
-                    size = 15.sp, mono = true, align = TextAlign.Center, lineHeight = 22.sp,
-                )
-                if (sats != null) {
-                    Spacer(Modifier.height(10.dp))
-                    Txt(stringResource(R.string.common_sats, Currencies.formatSats(sats!!)), size = 15.sp, weight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.height(12.dp))
-                MutedText(stringResource(if (w.chain == Chain.SIGNET) R.string.onchain_receive_signetHint else R.string.onchain_receive_hint), align = TextAlign.Center, size = 13.sp)
+    val request = address?.let { Bip21(it, sats) }
+    val copyValue = if (sats == null) address else request?.uri()
+    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        val choosable = onPick != null && wallets.size > 1
+        Row(
+            Modifier.clip(CircleShape).glass(CircleShape, GlassLevel.Thin).then(if (choosable) Modifier.clickable { picking = true } else Modifier)
+                .padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 6.dp).testTag("receive-wallet"),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OnchainMark(w, 28)
+            Txt(w.name, size = 15.sp, weight = FontWeight.SemiBold, maxLines = 1)
+            if (w.chain == Chain.SIGNET) Pill(stringResource(R.string.onchain_signet), Lw.Signet)
+            if (choosable) LwIcon(L.drawable.lucide_ic_chevrons_up_down, size = 16.dp, tint = Lw.MutedFg)
+        }
+        // Upper-cased in the QR (alphanumeric mode, a smaller code); copied and shared as typed.
+        BigQr(request?.uri(qr = true), if (w.chain == Chain.SIGNET) Lw.Signet else Lw.Bitcoin, L.drawable.lucide_ic_bitcoin, credit) { copyValue?.let { context.copyToClipboard(it, copied) } }
+        if (address != null) Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Txt(
+                grouped(address), Modifier.clip(RoundedCornerShape(16.dp)).clickable { context.copyToClipboard(address, copied) }.padding(horizontal = 12.dp, vertical = 4.dp).testTag("onchain-address"),
+                size = 16.sp, mono = true, align = TextAlign.Center, lineHeight = 24.sp,
+            )
+            if (sats != null) Row(
+                Modifier.clip(CircleShape).background(Lw.Bitcoin.copy(alpha = 0.16f)).clickable { sats = null }.padding(start = 14.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt(stringResource(R.string.common_sats, Currencies.formatSats(sats!!)), size = 15.sp, weight = FontWeight.SemiBold)
+                Spacer(Modifier.width(6.dp))
+                LwIcon(L.drawable.lucide_ic_x, size = 14.dp, tint = Lw.MutedFg)
             }
         }
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            LwButton(stringResource(if (sats == null) R.string.onchain_receive_amount else R.string.onchain_receive_editAmount), { amountOpen = true }, Modifier.weight(1f).testTag("onchain-receive-amount"), BtnVariant.Secondary, icon = L.drawable.lucide_ic_hash)
-            if (w.descriptors != null) LwButton(stringResource(R.string.onchain_receive_newAddress), {
+        ReceiveActions(buildList {
+            add(ReceiveAction(L.drawable.lucide_ic_copy, stringResource(R.string.common_copy), "onchain-copy") { copyValue?.let { context.copyToClipboard(it, copied) } })
+            add(ReceiveAction(L.drawable.lucide_ic_share_2, stringResource(R.string.common_share), "onchain-share") { copyValue?.let { context.shareText(it) } })
+            add(ReceiveAction(L.drawable.lucide_ic_hash, stringResource(R.string.receive_action_amount), "onchain-receive-amount") { amountOpen = true })
+            if (w.descriptors != null) add(ReceiveAction(L.drawable.lucide_ic_refresh_cw, stringResource(R.string.onchain_receive_newAddress), "onchain-new-address", busy) {
                 busy = true
                 scope.launch {
                     runCatching { c.onchainWallets.newAddress(id) }.onFailure { context.toast(if ((it as? OnchainException)?.reason == OnchainException.Reason.GAP) gap else offline) }
                     busy = false
                 }
-            }, Modifier.weight(1f).testTag("onchain-new-address"), BtnVariant.Secondary, loading = busy, icon = L.drawable.lucide_ic_refresh_cw)
-        }
+            })
+        })
+        MutedText(stringResource(if (w.chain == Chain.SIGNET) R.string.onchain_receive_signetHint else R.string.onchain_receive_hint), Modifier.padding(horizontal = 12.dp), align = TextAlign.Center, size = 12.sp)
+        Spacer(Modifier.height(16.dp))
     }
     if (amountOpen) AmountSheet(sats, { amountOpen = false }) { sats = it; amountOpen = false }
+    if (picking) LwBottomSheet({ picking = false }, "receive-wallet-sheet") {
+        wallets.forEach { o ->
+            SettingsRow(o.name, { picking = false; onPick?.invoke(o.id) }, leading = { OnchainMark(o, 36) }, subtitle = onchainSubtitle(o),
+                trailing = { if (o.id == id) LwIcon(L.drawable.lucide_ic_check, size = 18.dp, tint = Lw.Bitcoin) })
+        }
+        Spacer(Modifier.height(16.dp).navigationBarsPadding())
+    }
 }
 
 /** The keypad in a sheet, for a receive request's amount (0 clears it). */
