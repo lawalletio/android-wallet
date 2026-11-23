@@ -22,6 +22,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -151,7 +153,10 @@ internal fun BankSuggestions(input: String, enabled: Boolean, onPick: (BankAccou
     val c = LocalContainer.current
     val q = input.trim()
     val kind = BankDestination.kind(q)
-    val saved = remember(q) { c.swaps.matching(q).take(4) }
+    val all by c.swaps.recipients.collectAsState()
+    val saved = remember(q, all) { c.swaps.matching(q).take(4) }
+    var menuFor by remember { mutableStateOf<io.lawallet.wallet.app.BankRecipient?>(null) }
+    menuFor?.let { r -> SavedRecipientSheet(r, { menuFor = null }) { c.swaps.forget(r) } }
     val known = saved.any { it.account.cvu == q || it.account.alias.equals(q, true) }
     var lookup by remember { mutableStateOf<Lookup>(Lookup.Idle) }
     LaunchedEffect(q) {
@@ -182,7 +187,7 @@ internal fun BankSuggestions(input: String, enabled: Boolean, onPick: (BankAccou
     Column {
         Txt(stringResource(R.string.swap_bankAccounts), Modifier.padding(start = 6.dp, bottom = 8.dp), size = 13.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
         Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).animateContentSize().testTag("bank-suggestions")) {
-            saved.forEach { r -> BankRow(r.account, r.holderName, enabled = enabled) { onPick(r.account, r.holderName) } }
+            saved.forEach { r -> BankRow(r.account, r.holderName, enabled = enabled, onLongClick = { menuFor = r }) { onPick(r.account, r.holderName) } }
             when (val l = lookup) {
                 is Lookup.Found -> if (saved.none { it.account.cvu == l.account.cvu }) BankRow(l.account, l.account.owners.firstOrNull()?.name, expanded = true, enabled = enabled) { onPick(l.account, null) }
                 Lookup.Loading -> StatusRow(stringResource(R.string.cashOut_lookingUp), loading = true)
@@ -205,9 +210,10 @@ private fun StatusRow(text: String, loading: Boolean = false) = Row(Modifier.fil
 
 /** One bank account: logo, holder, bank and ID, then the alias or CBU. */
 @Composable
-private fun BankRow(account: BankAccount, name: String?, expanded: Boolean = false, enabled: Boolean = true, note: String? = null, onClick: () -> Unit) {
+private fun BankRow(account: BankAccount, name: String?, expanded: Boolean = false, enabled: Boolean = true, note: String? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val owner = account.owners.firstOrNull()
-    Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = if (expanded) 16.dp else 12.dp).testTag("bank-row"), verticalAlignment = Alignment.CenterVertically) {
+    val haptics = LocalHapticFeedback.current
+    Row(Modifier.fillMaxWidth().combinedClickable(enabled = enabled, onLongClick = onLongClick?.let { { haptics.performHapticFeedback(HapticFeedbackType.LongPress); it() } }, onClick = onClick).padding(horizontal = 16.dp, vertical = if (expanded) 16.dp else 12.dp).testTag("bank-row"), verticalAlignment = Alignment.CenterVertically) {
         BankAvatar(account.icon, if (expanded) 52.dp else 40.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -222,6 +228,23 @@ private fun BankRow(account: BankAccount, name: String?, expanded: Boolean = fal
             }
         }
         LwIcon(L.drawable.lucide_ic_chevron_right, size = 18.dp, tint = Lw.MutedFg)
+    }
+}
+
+/** A saved bank account's menu (long press on Send): take it off the list. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SavedRecipientSheet(r: io.lawallet.wallet.app.BankRecipient, onDismiss: () -> Unit, onRemove: () -> Unit) {
+    val state = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    LwBottomSheet(onDismiss, "bank-recipient-menu", state) {
+        BankRow(r.account, r.holderName, expanded = true, enabled = false) {}
+        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        SheetAction(L.drawable.lucide_ic_trash_2, stringResource(R.string.swap_removeSaved), Lw.Red, "bank-recipient-remove", Lw.Red) {
+            onRemove()
+            scope.launch { state.hide() }.invokeOnCompletion { onDismiss() }
+        }
+        Spacer(Modifier.height(16.dp).navigationBarsPadding())
     }
 }
 

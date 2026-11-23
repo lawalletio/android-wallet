@@ -579,4 +579,5 @@
     <string name="cards_lastUsed">Last used</string>
     <string name="cards_linkedTo">%1$s now pays from %2$s</string>
     <string name="swap_delivered">Delivered</string>
+    <string name="swap_removeSaved">Remove from list</string>
 </resources>

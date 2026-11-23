@@ -170,11 +170,17 @@ class SwapRepository(
 
     suspend fun receipt(id: String, share: Boolean) = api.swapReceipt(id, share)
 
-    private fun remember(r: BankRecipient) {
-        fun key(x: BankRecipient) = x.account.cvu.ifEmpty { x.account.alias.orEmpty() }
-        val next = (listOf(r) + _recipients.value.filter { key(it) != key(r) }).take(12)
+    /** Takes a saved account off Send's suggestions. */
+    fun forget(r: BankRecipient) = saveRecipients(_recipients.value.filter { it != r })
+
+    private fun saveRecipients(next: List<BankRecipient>) {
         _recipients.value = next
         prefs.setCached(RECIPIENTS, RECIPIENT_LIST, next)
+    }
+
+    private fun remember(r: BankRecipient) {
+        fun key(x: BankRecipient) = x.account.cvu.ifEmpty { x.account.alias.orEmpty() }
+        saveRecipients((listOf(r) + _recipients.value.filter { key(it) != key(r) }).take(12))
     }
 
     private fun put(s: Swap, notify: Boolean = true) {
