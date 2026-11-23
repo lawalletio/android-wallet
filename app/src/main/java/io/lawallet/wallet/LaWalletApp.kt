@@ -21,6 +21,7 @@ import io.lawallet.wallet.app.Diagnostics
 import io.lawallet.wallet.service.Notifications
 import io.lawallet.wallet.service.PaymentListenerService
 import io.lawallet.wallet.service.PaymentSound
+import io.lawallet.wallet.app.PaymentNotice
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -42,8 +43,10 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
     val inForeground: Boolean
         get() = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
-    /** Logged in, listener enabled and a wallet connected. */
-    private fun shouldListen() = container.let { it.session.auth.value == AuthState.LoggedIn && it.prefs.backgroundListener.value && it.wallet.client.value != null }
+    /** Logged in, listener enabled and a wallet to listen to: a Lightning connection, or onchain wallets on this phone. */
+    private fun shouldListen() = container.let {
+        it.session.auth.value == AuthState.LoggedIn && it.prefs.backgroundListener.value && (it.wallet.client.value != null || it.onchain.wallets.value.isNotEmpty())
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +65,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
                 c.wallet.active.value = true
                 c.rates.active.value = true
                 io.lawallet.wallet.core.nwc.RelayPool.foreground()
+                c.onchainWallets.start()
                 runCatching { Notifications.clearPayments(this@LaWalletApp) }
                 c.scope.launch { c.updater.checkIfDue() }
                 c.session.retryIfOffline()
@@ -76,8 +80,23 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
                 // running (kept alive by the listener service when enabled).
                 c.wallet.active.value = false
                 io.lawallet.wallet.core.nwc.RelayPool.background()
+                // Electrum subscriptions stay open only for the listener (the service keeps the process alive).
+                if (!shouldListen()) c.onchainWallets.stop()
             }
         })
+
+        // In the foreground too: "it's in a block" is news even with the app open (Android shows it as a heads-up).
+        c.scope.launch {
+            c.onchainWallets.confirmed.collect { (w, tx) -> runCatching { Notifications.showConfirmed(this@LaWalletApp, w, tx) }.onFailure { Diagnostics.nonFatal(it) } }
+        }
+
+        c.scope.launch {
+            c.onchainWallets.received.collect { (w, tx) ->
+                val notice = PaymentNotice("onchain:${tx.txid}", "payment_received", tx.toTx().copy(description = w.name))
+                runCatching { PaymentSound.play(this@LaWalletApp, c.prefs.paymentSound.value, notice.id) }.onFailure { Diagnostics.nonFatal(it) }
+                if (!inForeground) runCatching { Notifications.showPayment(this@LaWalletApp, notice, "onchain/tx/${w.id}/${tx.txid}", R.drawable.ic_notification_bitcoin) }.onFailure { Diagnostics.nonFatal(it) }
+            }
+        }
 
         c.scope.launch {
             c.wallet.notices.collect { notice ->
@@ -98,7 +117,7 @@ class LaWalletApp : Application(), SingletonImageLoader.Factory {
         }
 
         c.scope.launch {
-            combine(c.session.auth, c.prefs.backgroundListener, c.wallet.client) { _, _, _ -> shouldListen() }.collect { listen ->
+            combine(c.session.auth, c.prefs.backgroundListener, c.wallet.client, c.onchain.wallets) { _, _, _, _ -> shouldListen() }.collect { listen ->
                 if (listen) { if (inForeground) PaymentListenerService.start(this@LaWalletApp) } else PaymentListenerService.stop(this@LaWalletApp)
             }
         }

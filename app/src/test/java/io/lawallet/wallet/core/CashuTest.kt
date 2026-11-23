@@ -5,7 +5,7 @@ import com.sparrowwallet.hummingbird.UREncoder
 import io.lawallet.wallet.core.ln.CashuException
 import io.lawallet.wallet.core.ln.CashuMint
 import io.lawallet.wallet.core.ln.CashuToken
-import io.lawallet.wallet.core.ln.CashuUrScanner
+import io.lawallet.wallet.core.btc.UrAssembler
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -46,7 +46,7 @@ class CashuTest {
 
     @Test fun assemblesAnimatedQr() {
         val enc = UREncoder(UR.fromBytes(v4.toByteArray()), 60, 10, 0)
-        val scanner = CashuUrScanner()
+        val scanner = UrAssembler()
         var out: String? = null
         var frames = 0
         while (out == null && frames < 200) { out = scanner.receive(enc.nextPart().uppercase()).second; frames++ }

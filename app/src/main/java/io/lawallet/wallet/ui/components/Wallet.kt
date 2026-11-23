@@ -455,8 +455,8 @@ fun TransactionGroup(txs: List<Tx>, onOpen: (Tx) -> Unit) {
 }
 
 /** One pixel per module (size 0): drawn scaled with [FilterQuality.None]. A 720px render cost ~4 MB and a 518k-pixel loop on the main thread per open. */
-fun qrBitmap(data: String): Bitmap {
-    val m = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M, EncodeHintType.MARGIN to 0))
+fun qrBitmap(data: String, ec: ErrorCorrectionLevel = ErrorCorrectionLevel.M): Bitmap {
+    val m = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 0, 0, mapOf(EncodeHintType.ERROR_CORRECTION to ec, EncodeHintType.MARGIN to 0))
     val w = m.width
     val px = IntArray(w * w) { if (m[it % w, it / w]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt() }
     return Bitmap.createBitmap(px, w, w, Bitmap.Config.ARGB_8888)
