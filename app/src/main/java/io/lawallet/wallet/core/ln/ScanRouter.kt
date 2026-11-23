@@ -41,7 +41,7 @@ class ScanRouter(private val lnurl: Lnurl, private val plugins: Boolean = false)
         }
         CashuToken.parse(text)?.let { return ScanResult.Cashu(it) }
         BtcImport.walletKey(text)?.let { k ->
-            return ScanResult.WalletKey(text, BtcImport.keyLabel(text), (k as? io.lawallet.wallet.core.btc.BtcInput.Rejected)?.reason == io.lawallet.wallet.core.btc.Unsupported.PRIVATE_KEY)
+            return ScanResult.WalletKey(text, BtcImport.keyLabel(text), k is io.lawallet.wallet.core.btc.BtcInput.PrivateKey || (k as? io.lawallet.wallet.core.btc.BtcInput.Rejected)?.reason == io.lawallet.wallet.core.btc.Unsupported.PRIVATE_KEY)
         }
         // BIP-21: a unified QR pays over Lightning when it can; otherwise (or a bare address) onchain.
         Bip21.parse(text)?.let { b ->

@@ -39,17 +39,32 @@ object Descriptors {
     fun fromPhrase(words: List<String>, passphrase: String?, script: ScriptType, chain: Chain): DescriptorPair =
         secret(words, passphrase, script, chain).let { DescriptorPair(it[0].asPublic().toString(), it[1].asPublic().toString()) }
 
+    private fun wrap(script: ScriptType, key: String) = when (script) {
+        ScriptType.P2WPKH -> "wpkh($key)"
+        ScriptType.P2TR -> "tr($key)"
+        ScriptType.P2SH_P2WPKH -> "sh(wpkh($key))"
+        ScriptType.P2PKH -> "pkh($key)"
+    }
+
     /** Watch-only from an account key (xpub/ypub/zpub/tpub/vpub…), with no origin info (the key doesn't carry it). */
     fun fromXpub(key: String, script: ScriptType, chain: Chain): DescriptorPair {
-        val k = requireNotNull(BtcImport.extendedKey(key)) { "not an extended public key" }.xpub
-        fun d(branch: Int) = when (script) {
-            ScriptType.P2WPKH -> "wpkh($k/$branch/*)"
-            ScriptType.P2TR -> "tr($k/$branch/*)"
-            ScriptType.P2SH_P2WPKH -> "sh(wpkh($k/$branch/*))"
-            ScriptType.P2PKH -> "pkh($k/$branch/*)"
-        }
-        return DescriptorPair(Descriptor(d(0), chain.kind).toString(), Descriptor(d(1), chain.kind).toString())
+        val k = requireNotNull(BtcImport.extendedKey(key)?.takeIf { !it.private }) { "not an extended public key" }.xpub
+        return DescriptorPair(Descriptor(wrap(script, "$k/0/*"), chain.kind).toString(), Descriptor(wrap(script, "$k/1/*"), chain.kind).toString())
     }
+
+    /**
+     * A wallet from an extended private key's signing descriptors (both chains). A master key (depth 0) takes the
+     * script's standard account, m/84'/coin'/0' and so on; an account key (what Sparrow and Electrum export) is used
+     * as is. Hold them only while signing.
+     */
+    fun xprvSecret(key: String, script: ScriptType, chain: Chain): List<Descriptor> {
+        val k = requireNotNull(BtcImport.extendedKey(key)?.takeIf { it.private && !it.multisig }) { "not an extended private key" }
+        val base = if (k.depth == 0) "${k.xpub}/${script.purpose}'/${chain.coin}'/0'" else k.xpub
+        return listOf(0, 1).map { Descriptor(wrap(script, "$base/$it/*"), chain.kind) }
+    }
+
+    fun fromXprv(key: String, script: ScriptType, chain: Chain): DescriptorPair =
+        xprvSecret(key, script, chain).let { DescriptorPair(it[0].asPublic().toString(), it[1].asPublic().toString()) }
 
     /**
      * Any public descriptor: a multipath `<0;1>` one, or a receive one whose change chain is the same with `/1/…`.
@@ -81,7 +96,7 @@ object Descriptors {
     fun cosignerKey(raw: String): Pair<String, Chain>? {
         val s = raw.trim().replace(Regex("\\s"), "").substringBefore("/<").removeSuffix("/*").removeSuffix("/0").removeSuffix("/1")
         val m = Regex("^(\\[[0-9a-fA-F]{8}(/[0-9]+['hH]?)*])?([1-9A-HJ-NP-Za-km-z]{100,})$").find(s) ?: return null
-        val k = BtcImport.extendedKey(m.groupValues[3]) ?: return null
+        val k = BtcImport.extendedKey(m.groupValues[3])?.takeIf { !it.private } ?: return null
         return (m.groupValues[1] + k.xpub) to k.chain
     }
 

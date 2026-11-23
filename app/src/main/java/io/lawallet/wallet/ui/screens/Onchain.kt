@@ -455,9 +455,10 @@ fun ImportOnchainWalletScreen() {
     val phrase = detected as? BtcInput.Phrase
     // Signet material needs signet turned on (Settings → Onchain): until then it reads as unsupported.
     val watch = (detected as? BtcInput.WatchOnly)?.takeIf { it.chain == Chain.MAINNET || signet }
-    val ready = (phrase != null && phrase.problem == null) || watch != null
-    val chain = watch?.chain ?: phraseChain
-    val effective = script ?: watch?.script ?: ScriptType.P2WPKH
+    val priv = (detected as? BtcInput.PrivateKey)?.takeIf { it.chain == Chain.MAINNET || signet }
+    val ready = (phrase != null && phrase.problem == null) || watch != null || priv != null
+    val chain = watch?.chain ?: priv?.chain ?: phraseChain
+    val effective = script ?: watch?.script ?: priv?.script ?: ScriptType.P2WPKH
     val exists = stringResource(R.string.onchain_import_exists)
     val unreadable = stringResource(R.string.onchain_import_invalid)
     val defaultName = stringResource(if (watch != null) R.string.onchain_name_watch else R.string.onchain_name_imported)
@@ -522,6 +523,11 @@ fun ImportOnchainWalletScreen() {
                     Detected(if (d.kind == WatchKind.MULTISIG) L.drawable.lucide_ic_users else L.drawable.lucide_ic_eye, "$kind · $what$net", Lw.Green)
                     MutedText(stringResource(if (d.kind == WatchKind.MULTISIG) R.string.onchain_detect_multisig else R.string.onchain_detect_watch), Modifier.padding(horizontal = 4.dp), size = 13.sp)
                 }
+                is BtcInput.PrivateKey -> if (priv == null) Detected(L.drawable.lucide_ic_circle_alert, stringResource(R.string.onchain_reject_testnet), Lw.Red) else {
+                    val net = if (d.chain == Chain.SIGNET) " · " + stringResource(R.string.onchain_signet) else ""
+                    Detected(L.drawable.lucide_ic_key_round, stringResource(R.string.onchain_kind_xprv) + " · " + effective.label + net, Lw.Green)
+                    MutedText(stringResource(R.string.onchain_detect_private), Modifier.padding(horizontal = 4.dp), size = 13.sp)
+                }
                 is BtcInput.Rejected -> Detected(
                     L.drawable.lucide_ic_circle_alert,
                     stringResource(when (d.reason) { Unsupported.PRIVATE_KEY -> R.string.onchain_reject_private; Unsupported.TESTNET -> R.string.onchain_reject_testnet; Unsupported.MULTISIG -> R.string.onchain_reject_multisig; Unsupported.INVALID -> R.string.onchain_reject_invalid }),
@@ -531,7 +537,7 @@ fun ImportOnchainWalletScreen() {
             if (ready) {
                 // A phrase or an xpub doesn't say which accounts it was used with (BlueWallet scans; here the user says).
                 // ypub/zpub, descriptors and addresses do, so theirs is shown, not offered.
-                val pickable = phrase != null || watch?.value?.let { it.startsWith("xpub") || it.startsWith("tpub") } == true
+                val pickable = phrase != null || (watch?.value ?: priv?.value)?.let { it.startsWith("xpub") || it.startsWith("tpub") || it.startsWith("xprv") || it.startsWith("tprv") } == true
                 if (phrase != null) NetworkPicker(phraseChain) { phraseChain = it }
                 if (watch?.kind != WatchKind.MULTISIG && (watch?.kind != WatchKind.ADDRESS || watch.script != null)) {
                     ScriptPicker(effective, { script = it }, locked = !pickable, chain = chain)
@@ -552,12 +558,16 @@ fun ImportOnchainWalletScreen() {
                             val passphrase = pass.takeIf { usePass && it.isNotEmpty() }
                             val d = when {
                                 phrase != null -> Descriptors.fromPhrase(phrase.words, passphrase, effective, chain)
+                                priv != null -> Descriptors.fromXprv(priv.value, effective, chain)
                                 watch!!.kind == WatchKind.ADDRESS -> null
                                 watch.kind == WatchKind.XPUB -> Descriptors.fromXpub(watch.value, effective, chain)
                                 else -> Descriptors.fromDescriptor(watch.value, chain)
                             }
                             if (d != null && wallets.any { it.descriptors == d } || watch != null && wallets.any { it.source == watch.value }) return@runCatching false
-                            if (phrase != null) {
+                            if (priv != null) {
+                                // Kept like a phrase: Keystore-wrapped, out of the record. Its owner already has it (it was imported).
+                                c.onchain.add(OnchainWallet(name = label, script = effective, chain = chain, descriptors = d), io.lawallet.wallet.app.OnchainStore.KEY + priv.value)
+                            } else if (phrase != null) {
                                 // An imported phrase is already written down somewhere: no backup step.
                                 val w = OnchainWallet(name = label, script = effective, words = phrase.words.size, passphrase = passphrase != null, chain = chain, descriptors = d)
                                 c.onchain.add(w, phrase.words.joinToString(" ") + if (passphrase != null) "\n$passphrase" else "")
@@ -604,6 +614,9 @@ fun OnchainWalletDetailScreen(id: String) {
     var renaming by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
     var showing by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var secret by remember { mutableStateOf(false) }
+    val sensitiveGate = rememberSensitiveGate()
+    val privateTitle = stringResource(R.string.onchain_privateKey)
     val scope = rememberCoroutineScope()
     val copied = stringResource(R.string.common_copied)
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
@@ -657,7 +670,15 @@ fun OnchainWalletDetailScreen(id: String) {
             SettingsGroup(stringResource(R.string.onchain_details)) {
                 SettingsRow(stringResource(R.string.onchain_type), null, icon = L.drawable.lucide_ic_layers, value = if (w.multisig) "P2WSH" else w.script?.label ?: stringResource(R.string.onchain_address))
                 w.path?.let { GroupDivider(); SettingsRow(stringResource(R.string.onchain_path), null, icon = L.drawable.lucide_ic_hash, value = it) }
-                if (w.seed) { GroupDivider(); SettingsRow(stringResource(R.string.onchain_backup_title), { nav.navigate(R0.onchainBackup(id)) }, icon = L.drawable.lucide_ic_key_round, value = phraseSummary(w)) }
+                if (w.seed && !w.keyOnly) { GroupDivider(); SettingsRow(stringResource(R.string.onchain_backup_title), { nav.navigate(R0.onchainBackup(id)) }, icon = L.drawable.lucide_ic_key_round, value = phraseSummary(w)) }
+                if (w.keyOnly) {
+                    GroupDivider()
+                    SettingsRow(stringResource(R.string.onchain_privateKey), {
+                        sensitiveGate {
+                            scope.launch { withContext(Dispatchers.IO) { c.onchain.privateKey(id) }?.let { showing = privateTitle to it; secret = true } }
+                        }
+                    }, icon = L.drawable.lucide_ic_key_round, value = "••••••", modifier = Modifier.testTag("onchain-private-key"))
+                }
                 if (w.multisig) {
                     GroupDivider()
                     SettingsRow(stringResource(R.string.onchain_signsWith), null, icon = L.drawable.lucide_ic_key_round,
@@ -676,7 +697,7 @@ fun OnchainWalletDetailScreen(id: String) {
             }
             if (w.descriptors != null) SettingsGroup {
                 SettingsRow(descriptorTitle, { showing = descriptorTitle to w.descriptors.external }, icon = L.drawable.lucide_ic_file_text, subtitle = stringResource(R.string.onchain_descriptor_body), modifier = Modifier.testTag("onchain-descriptor"))
-                if (w.seed) {
+                if (w.seed && !w.keyOnly) {
                     GroupDivider()
                     SettingsRow(cosignerTitle, {
                         scope.launch {
@@ -697,7 +718,9 @@ fun OnchainWalletDetailScreen(id: String) {
         }
     }
     showing?.let { (title, value) ->
-        LwBottomSheet({ showing = null }, "onchain-export-sheet") {
+        // A private key on screen: kept out of screenshots and the recents thumbnail, like the phrase.
+        if (secret) SecureWindow()
+        LwBottomSheet({ showing = null; secret = false }, "onchain-export-sheet") {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 DialogTitle(title)
                 QrDisplay(value, null)

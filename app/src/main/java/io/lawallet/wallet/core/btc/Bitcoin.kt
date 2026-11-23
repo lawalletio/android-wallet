@@ -111,10 +111,12 @@ sealed interface BtcInput {
      */
     data class WatchOnly(val kind: WatchKind, val value: String, val script: ScriptType?, val chain: Chain = Chain.MAINNET) : BtcInput
     data class Rejected(val reason: Unsupported) : BtcInput
+    /** A single-key extended private key (xprv/yprv/zprv, tprv/uprv/vprv): a spending wallet without a phrase. */
+    data class PrivateKey(val value: String, val script: ScriptType?, val chain: Chain = Chain.MAINNET) : BtcInput
 }
 
 /** An extended public key, decoded: re-encoded as xpub/tpub (what descriptors take), plus what its SLIP-132 prefix said. */
-data class ExtendedKey(val xpub: String, val chain: Chain, val script: ScriptType?, val multisig: Boolean)
+data class ExtendedKey(val xpub: String, val chain: Chain, val script: ScriptType?, val multisig: Boolean, val private: Boolean = false, val depth: Int = 0)
 
 object BtcImport {
     // SLIP-132 versions: xpub/tpub are ambiguous in practice; like BlueWallet we read them as BIP44 (the user can change it).
@@ -122,7 +124,14 @@ object BtcImport {
         0x0488B21E to (Chain.MAINNET to ScriptType.P2PKH), 0x049D7CB2 to (Chain.MAINNET to ScriptType.P2SH_P2WPKH), 0x04B24746 to (Chain.MAINNET to ScriptType.P2WPKH),
         0x043587CF to (Chain.SIGNET to ScriptType.P2PKH), 0x044A5262 to (Chain.SIGNET to ScriptType.P2SH_P2WPKH), 0x045F1CF6 to (Chain.SIGNET to ScriptType.P2WPKH),
     )
-    private val PRIVATE = setOf(0x0488ADE4, 0x049D7878, 0x04B2430C, 0x04358394, 0x044A4E28, 0x045F18BC, 0x0295B005, 0x02AA7A99, 0x024285B5, 0x02575048)
+    private val PRIVATE = mapOf(
+        0x0488ADE4 to (Chain.MAINNET to ScriptType.P2PKH), 0x049D7878 to (Chain.MAINNET to ScriptType.P2SH_P2WPKH), 0x04B2430C to (Chain.MAINNET to ScriptType.P2WPKH),
+        0x04358394 to (Chain.SIGNET to ScriptType.P2PKH), 0x044A4E28 to (Chain.SIGNET to ScriptType.P2SH_P2WPKH), 0x045F18BC to (Chain.SIGNET to ScriptType.P2WPKH),
+    )
+    // Yprv, Zprv, Uprv, Vprv: a multisig cosigner's private key.
+    private val PRIVATE_MULTISIG = mapOf(0x0295B005 to Chain.MAINNET, 0x02AA7A99 to Chain.MAINNET, 0x024285B5 to Chain.SIGNET, 0x02575048 to Chain.SIGNET)
+    private const val XPRV = 0x0488ADE4
+    private const val TPRV = 0x04358394
     // Ypub, Zpub (mainnet), Upub, Vpub (testnet/signet): multisig cosigner keys.
     private val MULTISIG = mapOf(0x0295B43F to Chain.MAINNET, 0x02AA7ED3 to Chain.MAINNET, 0x024289EF to Chain.SIGNET, 0x02575483 to Chain.SIGNET)
     private const val XPUB = 0x0488B21E
@@ -157,24 +166,29 @@ object BtcImport {
     private fun payload(key: String) = Base58.decodeCheck(key)?.takeIf { it.size == 78 }
     private fun version(p: ByteArray) = (0..3).fold(0) { acc, i -> (acc shl 8) or (p[i].toInt() and 0xff) }
 
-    /** Any SLIP-132 public key (xpub, ypub, zpub, Zpub, tpub, vpub…) as xpub/tpub, or null if [key] isn't one. */
+    /**
+     * Any SLIP-132 extended key (xpub, ypub, zpub, Zpub, tpub, vpub…, and their private twins) re-encoded as xpub/tpub or
+     * xprv/tprv, or null if [key] isn't one. [ExtendedKey.depth] 0 is a master key, 3 an account key.
+     */
     fun extendedKey(key: String): ExtendedKey? {
         val p = payload(key.trim()) ?: return null
         val v = version(p)
-        val pub = PUBLIC[v]
-        val chain = pub?.first ?: MULTISIG[v] ?: return null
-        val target = if (chain == Chain.MAINNET) XPUB else TPUB
+        val single = PUBLIC[v] ?: PRIVATE[v]
+        val private = v in PRIVATE || v in PRIVATE_MULTISIG
+        val chain = single?.first ?: MULTISIG[v] ?: PRIVATE_MULTISIG[v] ?: return null
+        val target = if (private) (if (chain == Chain.MAINNET) XPRV else TPRV) else (if (chain == Chain.MAINNET) XPUB else TPUB)
         val out = byteArrayOf((target ushr 24).toByte(), (target ushr 16).toByte(), (target ushr 8).toByte(), target.toByte()) + p.copyOfRange(4, 78)
-        return ExtendedKey(Base58.encodeCheck(out), chain, pub?.second, pub == null)
+        return ExtendedKey(Base58.encodeCheck(out), chain, single?.second, single == null, private, p[4].toInt() and 0xff)
     }
 
     /** Every SLIP-132 key in [s] rewritten as xpub/tpub, so a Sparrow or Coldcard descriptor with zpubs parses in BDK. */
     fun normalizeKeys(s: String): String = KEY.replace(s) { extendedKey(it.value)?.xpub ?: it.value }
 
     private fun extended(s: String): BtcInput? {
-        val p = payload(s) ?: return null
-        if (version(p) in PRIVATE) return BtcInput.Rejected(Unsupported.PRIVATE_KEY)
+        payload(s) ?: return null
         val k = extendedKey(s) ?: return BtcInput.Rejected(Unsupported.INVALID)
+        // A single-key private key is a spending wallet; a multisig cosigner's (Zprv…) isn't one by itself.
+        if (k.private) return if (k.multisig) BtcInput.Rejected(Unsupported.PRIVATE_KEY) else BtcInput.PrivateKey(s, k.script, k.chain)
         // A Zpub/Vpub is one cosigner of a multisig vault, not a wallet by itself.
         if (k.multisig) return BtcInput.Rejected(Unsupported.MULTISIG)
         return BtcInput.WatchOnly(WatchKind.XPUB, s, k.script, k.chain)

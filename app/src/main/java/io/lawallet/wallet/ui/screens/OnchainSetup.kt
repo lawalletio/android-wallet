@@ -97,7 +97,7 @@ fun CreateMultisigScreen() {
     var pickingSeed by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val seeds = wallets.filter { it.seed && it.chain == chain && it.script != null }
+    val seeds = wallets.filter { it.seed && !it.keyOnly && it.chain == chain && it.script != null }
     val n = keys.size
     val m = threshold.coerceIn(1, n.coerceAtLeast(1))
     val dup = stringResource(R.string.onchain_ms_keyDup)

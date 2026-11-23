@@ -220,7 +220,8 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
 
     /** Public descriptors for a record made before they were stored (or null: a single address). */
     private fun derive(w: OnchainWallet): DescriptorPair? = when (w.watch) {
-        null -> store.secret(w.id)?.let { (words, pass) -> Descriptors.fromPhrase(words, pass, w.script ?: return null, w.chain) }
+        null -> store.privateKey(w.id)?.let { Descriptors.fromXprv(it, w.script ?: return null, w.chain) }
+            ?: store.secret(w.id)?.let { (words, pass) -> Descriptors.fromPhrase(words, pass, w.script ?: return null, w.chain) }
         WatchKind.XPUB -> Descriptors.fromXpub(w.source ?: return null, w.script ?: return null, w.chain)
         WatchKind.DESCRIPTOR, WatchKind.MULTISIG -> Descriptors.fromDescriptor(w.source ?: return null, w.chain)
         WatchKind.ADDRESS -> null
@@ -467,6 +468,7 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
     /** The keys this phone holds for [w]: its own phrase, or the seed wallet that cosigns a vault. Blocking (Keystore). */
     private fun signers(w: OnchainWallet): List<SignersContainer>? {
         val seedId = if (w.seed) w.id else w.signer ?: return null
+        if (w.keyOnly) return store.privateKey(w.id)?.let { k -> Descriptors.xprvSecret(k, w.script ?: return null, w.chain).map { SignersContainer.fromDescriptor(it) } }
         val (words, pass) = store.secret(seedId) ?: return null
         val ds = if (w.multisig) Descriptors.multisigSecret(w.descriptors ?: return null, words, pass, w.chain) else Descriptors.secret(words, pass, w.script ?: return null, w.chain)
         return ds?.map { SignersContainer.fromDescriptor(it) }

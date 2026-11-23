@@ -50,7 +50,9 @@ class BitcoinTest {
         assertEquals(BtcInput.WatchOnly(WatchKind.XPUB, vpub, ScriptType.P2WPKH, Chain.SIGNET), d(vpub))
         assertEquals(WatchKind.MULTISIG, (d("wsh(sortedmulti(2,[73c5da0a/48'/1'/0'/2']$vpub/0/*,$vpub/0/*))") as BtcInput.WatchOnly).kind)
         assertEquals(BtcInput.Rejected(Unsupported.MULTISIG), d(reversion(zpub, 0x02AA7ED3)))
-        assertEquals(BtcInput.Rejected(Unsupported.PRIVATE_KEY), d(reversion(zpub, 0x04B2430C)))
+        // A zprv is a spending wallet now; a Zprv (one multisig cosigner's private key) still isn't one.
+        assertEquals(BtcInput.PrivateKey(reversion(zpub, 0x04B2430C), ScriptType.P2WPKH), d(reversion(zpub, 0x04B2430C)))
+        assertEquals(BtcInput.Rejected(Unsupported.PRIVATE_KEY), d(reversion(zpub, 0x02AA7A99)))
         // Normalising keeps the key material: a zpub becomes the xpub of the same key.
         assertEquals(BtcImport.extendedKey(zpub)!!.xpub, BtcImport.extendedKey(reversion(zpub, 0x0488B21E))!!.xpub)
         assertEquals(reversion(zpub, 0x0488B21E), BtcImport.extendedKey(zpub)!!.xpub)

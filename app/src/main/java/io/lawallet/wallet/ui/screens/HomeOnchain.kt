@@ -408,7 +408,7 @@ private fun OnchainActionsSheet(w: OnchainWallet, onDismiss: () -> Unit, onDetai
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
         SheetAction(L.drawable.lucide_ic_info, stringResource(R.string.sweep_menu_details), Lw.Foreground, "onchain-menu-details") { then(onDetails) }
         SheetAction(L.drawable.lucide_ic_pencil, stringResource(R.string.rw_rename), Lw.Foreground, "onchain-menu-rename") { then(onRename) }
-        if (!w.watchOnly) SheetAction(L.drawable.lucide_ic_key_round, stringResource(if (w.backedUp) R.string.onchain_showPhrase else R.string.onchain_backupNow), Lw.Bitcoin, "onchain-menu-backup") { then(onBackup) }
+        if (w.seed && !w.keyOnly) SheetAction(L.drawable.lucide_ic_key_round, stringResource(if (w.backedUp) R.string.onchain_showPhrase else R.string.onchain_backupNow), Lw.Bitcoin, "onchain-menu-backup") { then(onBackup) }
         SheetAction(L.drawable.lucide_ic_trash_2, stringResource(R.string.onchain_remove), Lw.Red, "onchain-menu-remove", Lw.Red) { then(onDelete) }
         Spacer(Modifier.height(16.dp).navigationBarsPadding())
     }
@@ -421,7 +421,7 @@ internal fun RemoveOnchainDialog(w: OnchainWallet, onDismiss: () -> Unit, onConf
     title = { DialogTitle(w.name) },
     text = {
         Txt(
-            stringResource(when { w.watchOnly -> R.string.onchain_remove_watch; !w.backedUp -> R.string.onchain_remove_notBackedUp; else -> R.string.onchain_remove_seed }),
+            stringResource(when { w.watchOnly -> R.string.onchain_remove_watch; w.keyOnly -> R.string.onchain_remove_key; !w.backedUp -> R.string.onchain_remove_notBackedUp; else -> R.string.onchain_remove_seed }),
             color = if (!w.watchOnly && !w.backedUp) Lw.Orange else Lw.MutedFg,
         )
     },

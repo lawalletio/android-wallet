@@ -322,7 +322,7 @@
     <string name="onchain_kind_xpub">Extended public key</string>
     <string name="onchain_kind_descriptor">Output descriptor</string>
     <string name="onchain_kind_address">Single address</string>
-    <string name="onchain_reject_private">Private keys can\'t be imported. Use the recovery phrase instead.</string>
+    <string name="onchain_reject_private">This kind of private key can\'t be imported. Use the recovery phrase, or an xprv/zprv.</string>
     <string name="onchain_reject_testnet">Signet or testnet: turn on signet in Settings → Onchain to use it</string>
     <string name="onchain_reject_multisig">That\'s one cosigner\'s key: add it in a multisig vault (Add wallet → Multisig vault)</string>
     <string name="onchain_reject_invalid">Not a valid Bitcoin phrase, key or address</string>
@@ -711,5 +711,9 @@
     <string name="onchain_notif_confirmed">Confirmed · %1$s sats</string>
     <string name="onchain_notif_confirmedBody">In a block now · %1$s</string>
     <string name="onchain_scan_walletKey">%1$s detected: add it as an onchain wallet</string>
-    <string name="onchain_scan_privateKey">%1$s detected: a private key. Keep it secret.</string>
+    <string name="onchain_scan_privateKey">%1$s detected: a private key. Import it as a spending wallet, and keep it secret.</string>
+    <string name="onchain_kind_xprv">Extended private key</string>
+    <string name="onchain_detect_private">A spending wallet. The key is kept encrypted on this phone; there\'s no recovery phrase, so keep your own copy of it.</string>
+    <string name="onchain_privateKey">Private key</string>
+    <string name="onchain_remove_key">This wallet\'s private key is only on this phone. Make sure you have a copy before you remove it, or its bitcoin is lost.</string>
 </resources>

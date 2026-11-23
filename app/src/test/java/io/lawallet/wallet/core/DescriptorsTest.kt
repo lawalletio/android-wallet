@@ -64,6 +64,30 @@ class DescriptorsTest {
         assertTrue(runCatching { Descriptors.fromDescriptor(seed.external.dropLast(1) + "q", Chain.MAINNET) }.isFailure)
     }
 
+    @Test fun privateKeys() {
+        // BIP-84 vectors: the master zprv and the account zprv both give the "abandon … about" wallet.
+        val root = "zprvAWgYBBk7JR8Gjrh4UJQ2uJdG1r3WNRRfURiABBE3RvMXYSrRJL62XuezvGdPvG6GFBZduosCc1YP5wixPox7zhZLfiUm8aunE96BBa4Kei5"
+        val account = "zprvAdG4iTXWBoARxkkzNpNh8r6Qag3irQB8PzEMkAFeTRXxHpbF9z4QgEvBRmfvqWvGp42t42nvgGpNgYSJA9iefm1yYNZKEm7z6qUWCroSQnE"
+        for (k in listOf(root, account)) {
+            val p = Descriptors.fromXprv(k, ScriptType.P2WPKH, Chain.MAINNET)
+            assertEquals("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu", first(p))
+            assertEquals("bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el", Descriptors.address(p.internal, 0, Chain.MAINNET))
+            assertFalse(p.external, "prv" in p.external) // the record keeps public descriptors only
+        }
+        // A cosigner field never takes a private key.
+        assertNull(Descriptors.cosignerKey(account))
+
+        // Signet: a tprv master key signs for its wallet.
+        val chain = Chain.SIGNET
+        val tprv = org.bitcoindevkit.DescriptorSecretKey(chain.kind, org.bitcoindevkit.Mnemonic.fromString(abandon.joinToString(" ")), null).toString().substringBefore('/')
+        val pair = Descriptors.fromXprv(tprv, ScriptType.P2WPKH, chain)
+        assertEquals("tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl", first(pair, chain))
+        val wallet = Wallet(Descriptor(pair.external, chain.kind), Descriptor(pair.internal, chain.kind), chain.bdk, Persister.newInMemory())
+        fund(wallet, 30_000)
+        val psbt = TxBuilder().drainWallet().drainTo(dest()).feeRate(FeeRate.fromSatPerVb(1u)).finish(wallet)
+        assertTrue(wallet.signWithSigners(psbt, Descriptors.xprvSecret(tprv, ScriptType.P2WPKH, chain).map { SignersContainer.fromDescriptor(it) }))
+    }
+
     @Test fun cosignerKeys() {
         val k = Descriptors.cosigner(abandon, null, Chain.SIGNET)
         assertTrue(k, Regex("^\\[73c5da0a/48'/1'/0'/2']tpub[1-9A-HJ-NP-Za-km-z]+$").matches(k))
