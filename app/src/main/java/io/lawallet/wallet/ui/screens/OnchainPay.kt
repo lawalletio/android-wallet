@@ -544,7 +544,11 @@ fun OnchainSentScreen() {
     )
     Column(Modifier.fillMaxSize()) {
         PaymentReceipt(stringResource(R.string.send_summary_title), "pending", d.amount, rows, listOf(stringResource(R.string.onchain_tx_id) to s.txid),
-            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = { c.flow.onchainSend = null; c.flow.revealOnchain = true; nav.goHome() })
+            PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = {
+                // Back to where the payment started: Home as it was (its page, the wallet list closed), not a fresh one.
+                c.flow.onchainSend = null
+                if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
+            })
     }
 }
 
