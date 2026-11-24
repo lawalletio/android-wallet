@@ -1,5 +1,6 @@
 package io.lawallet.wallet.core
 
+import io.lawallet.wallet.app.OnchainTx
 import io.lawallet.wallet.core.btc.Base58
 import io.lawallet.wallet.core.btc.Bip39
 import io.lawallet.wallet.core.btc.Chain
@@ -58,5 +59,12 @@ class BitcoinTest {
         assertEquals(reversion(zpub, 0x0488B21E), BtcImport.extendedKey(zpub)!!.xpub)
         assertNull(d("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3")) // bad checksum
         assertNull(d(""))
+    }
+
+    @Test fun sendAmount() {
+        fun tx(delta: Long, fee: Long?, paid: Long? = null) = OnchainTx("t", delta, fee, null, 1, 0, null, false, paid)
+        assertEquals(2500, tx(-2641, 141).amount)              // to someone else: delta less the fee
+        assertEquals(2500, tx(-141, 141, paid = 2500).amount)  // to our own address: delta is just the fee
+        assertEquals(2500, tx(2500, null).amount)              // received
     }
 }
