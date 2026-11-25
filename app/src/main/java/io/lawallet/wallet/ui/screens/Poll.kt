@@ -316,7 +316,7 @@ fun PollScreen(slug: String) {
 }
 
 /** Ranking: the stored answer (what it left out stays skipped), else every option in the poll's order. Single choice: every row. */
-private fun initialChoices(s: PollState): List<String> {
+internal fun initialChoices(s: PollState): List<String> {
     val ids = s.poll.options.map { it.id }
     val saved = s.response?.choices.orEmpty().filter { it in ids || it.startsWith(CUSTOM) }
     return when {

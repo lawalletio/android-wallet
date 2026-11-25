@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -295,5 +296,109 @@ class LaWalletApiTest {
         val req = server.takeRequest()
         assertEquals("/api/wallet/swaps/s1/receipt?variant=share", req.path)
         assertEquals("Bearer $stored", req.getHeader("Authorization"))
+    }
+
+    // ---------- one request per endpoint: method, path, body, decoded answer ----------
+
+    /** Answers [body] to one authed [call]; returns its result and the request the server saw. */
+    private fun <T> exchange(body: String, call: suspend LaWalletApi.() -> T): Pair<T, RecordedRequest> {
+        stored = jwt(86_400)
+        server.enqueue(MockResponse().setBody(body))
+        val result = runBlocking { api.call() }
+        return result to server.takeRequest()
+    }
+
+    private fun RecordedRequest.line() = "$method $path"
+
+    @Test fun publicSettingsVersionAndUsernameCheckSendNoToken() {
+        val (s, r1) = exchange("""{"domain":"x.io","integration_wapu":"true","email_login_enabled":"true","future_key":1}""") { settings() }
+        assertEquals("GET /api/settings", r1.line()); assertNull(r1.getHeader("Authorization"))
+        assertTrue(s.swapsEnabled && s.emailLoginEnabled && !s.bankLookupEnabled)
+        val (v, r2) = exchange("""{"currentVersion":"1.2.3"}""") { version() }
+        assertEquals("GET /api/version", r2.line()); assertEquals("1.2.3", v.currentVersion)
+        val (u, r3) = exchange("""{"available":false}""") { checkUsername("ana maría") }
+        assertEquals("GET /api/lightning-addresses/check?username=ana%20mar%C3%ADa", r3.line()); assertNull(r3.getHeader("Authorization"))
+        assertFalse(u.available)
+    }
+
+    @Test fun emailLoginRequestPreviewAndVerify() {
+        val (_, r1) = exchange("""{"ok":true}""") { requestEmailLogin("a@b.c", "es") }
+        assertEquals("POST /api/auth/email/request", r1.line())
+        assertEquals("""{"email":"a@b.c","locale":"es","context":"wallet"}""", r1.body.readUtf8())
+        val (p, r2) = exchange("""{"isNew":true,"email":"a•••c@b.c"}""") { emailLoginPreview("tok") }
+        assertEquals("POST /api/auth/email/preview", r2.line()); assertEquals("""{"token":"tok"}""", r2.body.readUtf8())
+        assertTrue(p.isNew); assertNull(p.displayName)
+        val (v, r3) = exchange("""{"secretHex":"00","pubkey":"pk"}""") { emailLoginVerify("tok") }
+        assertEquals("POST /api/auth/email/verify", r3.line()); assertNull(r3.getHeader("Authorization"))
+        assertEquals("pk", v.pubkey); assertFalse(v.isNew)
+    }
+
+    @Test fun addressesListCreatePrimaryAndInvoice() {
+        val (list, r1) = exchange("""[{"username":"ana","isPrimary":true,"mode":"CUSTOM_NWC","remoteWalletId":"w1"},{"username":"b"}]""") { addresses() }
+        assertEquals("GET /api/wallet/addresses", r1.line()); assertEquals("Bearer $stored", r1.getHeader("Authorization"))
+        assertEquals("w1", list[0].remoteWalletId); assertEquals("IDLE", list[1].mode)
+        val (a, r2) = exchange("""{"username":"ana2","mode":"IDLE"}""") { createAddress("ana2", mode = "IDLE") }
+        assertEquals("POST /api/wallet/addresses", r2.line()); assertEquals("""{"username":"ana2","mode":"IDLE"}""", r2.body.readUtf8())
+        assertEquals("ana2", a.username)
+        assertEquals("""{"username":"x"}""", exchange("""{"username":"x"}""") { createAddress("x") }.second.body.readUtf8())
+        assertEquals("POST /api/wallet/addresses/ana%202/primary", exchange("{}") { setPrimaryAddress("ana 2") }.second.line())
+        val (inv, r3) = exchange("""{"id":"i1","bolt11":"lnbc1","amountSats":1000,"free":false}""") { createAddressInvoice("ana") }
+        assertEquals("POST /api/invoices", r3.line())
+        assertEquals("""{"purpose":"wallet-address","metadata":{"username":"ana"}}""", r3.body.readUtf8())
+        assertEquals(1000L, inv.amountSats)
+        val (claim, r4) = exchange("""{"success":true,"lightningAddress":"ana@x.io"}""") { claimInvoice("i1", "ab") }
+        assertEquals("POST /api/invoices/i1/claim", r4.line()); assertEquals("""{"preimage":"ab"}""", r4.body.readUtf8())
+        assertEquals("ana@x.io", claim.lightningAddress)
+    }
+
+    @Test fun addressRoutingAndRemoval() {
+        val route = exchange("{}") { routeAddressToWallet("ana", "w1") }.second
+        assertEquals("PUT /api/wallet/addresses/ana", route.line())
+        assertEquals("""{"mode":"CUSTOM_NWC","remoteWalletId":"w1"}""", route.body.readUtf8())
+        assertEquals("""{"mode":"ALIAS","redirect":"x@y.z"}""", exchange("{}") { redirectAddress("ana", "x@y.z") }.second.body.readUtf8())
+        assertEquals("""{"mode":"IDLE"}""", exchange("{}") { freeAddress("ana") }.second.body.readUtf8())
+        val del = exchange("") { deleteAddress("ana") }.second
+        assertEquals("DELETE /api/wallet/addresses/ana", del.line()); assertEquals(0L, del.bodySize)
+    }
+
+    @Test fun remoteWalletReadUpdateDelete() {
+        val (w, r1) = exchange("""{"id":"w1","name":"Alby","status":"DISABLED","provider":"lncurl"}""") { remoteWallet("w1") }
+        assertEquals("GET /api/remote-wallets/w1", r1.line()); assertFalse(w.isActive); assertTrue(w.isLncurl)
+        val (b, r2) = exchange("""{"balanceSats":21}""") { remoteWalletBalance("w1") }
+        assertEquals("GET /api/remote-wallets/w1/balance", r2.line()); assertEquals(21L, b)
+        val (u, r3) = exchange("""{"id":"w1","name":"New","isDefault":true}""") { updateRemoteWallet("w1", name = "New", isDefault = true) }
+        assertEquals("PATCH /api/remote-wallets/w1", r3.line()); assertEquals("""{"name":"New","isDefault":true}""", r3.body.readUtf8())
+        assertTrue(u.isDefault)
+        assertEquals("""{"status":"ACTIVE"}""", exchange("""{"id":"w1","name":"n"}""") { updateRemoteWallet("w1", status = "ACTIVE") }.second.body.readUtf8())
+        assertEquals("DELETE /api/remote-wallets/w1", exchange("") { deleteRemoteWallet("w1") }.second.line())
+        assertEquals("DELETE /api/remote-wallets/w1?permanent=true", exchange("") { deleteRemoteWallet("w1", permanent = true) }.second.line())
+    }
+
+    @Test fun cardsBindLinkAndEnable() {
+        val card = """{"id":"c1","remoteWalletId":"w2","disabled":true,"unknown":"x"}"""
+        val (c, r1) = exchange(card) { bindCardToWallet("c1", "w2") }
+        assertEquals("PATCH /api/wallet/cards/c1", r1.line()); assertEquals("""{"remoteWalletId":"w2"}""", r1.body.readUtf8())
+        assertEquals("w2", c.remoteWalletId); assertTrue(c.disabled); assertEquals("SIMPLE", c.kind)
+        assertEquals("""{"linkDefaultWallet":true}""", exchange(card) { linkCardToDefaultWallet("c1") }.second.body.readUtf8())
+        assertEquals("""{"enabled":false}""", exchange(card) { setCardEnabled("c1", false) }.second.body.readUtf8())
+    }
+
+    @Test fun passkeysAndOauthGrants() {
+        val (keys, r1) = exchange("""{"credentials":[{"id":"k1","label":"Pixel","backedUp":true}]}""") { passkeys() }
+        assertEquals("GET /api/auth/passkey/credentials", r1.line()); assertEquals("Pixel", keys.single().label)
+        val rename = exchange("{}") { renamePasskey("k1", "Phone") }.second
+        assertEquals("PATCH /api/auth/passkey/credentials/k1", rename.line()); assertEquals("""{"label":"Phone"}""", rename.body.readUtf8())
+        assertEquals("DELETE /api/auth/passkey/credentials/k1", exchange("") { deletePasskey("k1") }.second.line())
+        val (grants, r2) = exchange("""{"grants":[{"id":"g1","clientName":"Shop","scopes":["pay"],"spendLimitSats":5000}]}""") { oauthGrants() }
+        assertEquals("GET /api/oauth/grants", r2.line()); assertEquals(5000L, grants.single().spendLimitSats)
+        assertEquals("DELETE /api/oauth/grants/g1", exchange("") { revokeGrant("g1") }.second.line())
+        assertEquals(emptyList<Any>(), exchange("{}") { oauthGrants() }.first) // older server: no list
+    }
+
+    @Test fun swapsListAndOne() {
+        val (list, r1) = exchange("""{"items":[{"id":"s1","provider":"wapu","status":"COMPLETED","updatedAt":"2026-11-23T12:00:00Z"}],"total":1}""") { swaps() }
+        assertEquals("GET /api/wallet/swaps?page=1&pageSize=50", r1.line()); assertEquals("COMPLETED", list.single().status)
+        val (s, r2) = exchange("""{"id":"s 1","provider":"bullbitcoin"}""") { swap("s 1") }
+        assertEquals("GET /api/wallet/swaps/s%201", r2.line()); assertEquals("PENDING", s.status)
     }
 }

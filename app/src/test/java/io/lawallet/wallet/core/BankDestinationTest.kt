@@ -42,4 +42,14 @@ class BankDestinationTest {
         assertEquals(100_000_000.0, BankDestination.arsPerBtc(Swap("s", "wapu", amountArs = 50_000.0, amountSats = 50_000))!!, 0.001)
         assertNull(BankDestination.arsPerBtc(Swap("s", "wapu", amountSats = 0)))
     }
+
+    // regression: f99004c fix(activity): a delivered cash-out sits at the time the pesos landed
+    @Test fun regression_f99004c_deliveredIsTheCompletedOrderLastUpdate() {
+        val s = Swap("s", "wapu", status = "COMPLETED", createdAt = "2026-11-23T12:00:00Z", paidAt = "2026-11-23T12:01:00Z", updatedAt = "2026-11-23T12:20:00Z")
+        assertEquals(java.time.Instant.parse("2026-11-23T12:20:00Z").toEpochMilli(), BankDestination.deliveredMs(s))
+        assertNull(BankDestination.deliveredMs(s.copy(status = "PENDING"))) // paid, pesos not there yet
+        assertNull(BankDestination.deliveredMs(s.copy(status = "FAILED")))
+        assertNull(BankDestination.deliveredMs(s.copy(updatedAt = null)))
+        assertNull(BankDestination.deliveredMs(s.copy(updatedAt = "yesterday")))
+    }
 }

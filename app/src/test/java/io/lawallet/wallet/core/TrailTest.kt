@@ -29,4 +29,18 @@ class TrailTest {
         Trail.flush()
         assertTrue(Trail.tail(previous = false, 5).single().endsWith("app: start pid=222"))
     }
+
+    // regression: aabdae3 fix(trail): write a crash after the lines already queued
+    @Test
+    fun regression_aabdae3_crashLandsAfterTheQueuedLines() {
+        val dir = Files.createTempDirectory("trail").toFile()
+        Trail.open(dir, "start pid=333")
+        repeat(100) { Trail.add("nav", "line $it") }
+        Trail.crash(Thread.currentThread(), IllegalStateException())
+        Trail.flush()
+        val lines = Trail.tail(previous = false, 500)
+        val crash = lines.indexOfFirst { "E crash:" in it }
+        assertTrue(lines.joinToString("\n"), crash > lines.indexOfFirst { it.endsWith("nav: line 99") })
+        assertTrue(lines.first().endsWith("app: start pid=333"))
+    }
 }

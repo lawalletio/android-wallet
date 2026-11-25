@@ -20,6 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import io.lawallet.wallet.core.ln.ScanResult
 import org.junit.Test
 
 class LightningParsingTest {
@@ -134,5 +135,17 @@ class LightningParsingTest {
         assertEquals(lnurl.lowercase(), ScanRouter.unwrapLightningParam("https://pos.example.com/x?lightning=${lnurl.lowercase()}"))
         val plain = "https://terminal.blinkbtc.com/MASIZE?foo=bar"
         assertEquals(plain, ScanRouter.unwrapLightningParam(plain))
+    }
+
+    // regression: 767e573 fix: listener service start deadline, community host matching, activation copy
+    @Test fun regression_767e573_activationQrMatchesAnyCommunityHost() = kotlinx.coroutines.runBlocking {
+        val router = ScanRouter(Lnurl(okhttp3.OkHttpClient()))
+        // We talk to a LAN/staging URL; the QR carries the instance's advertised endpoint.
+        val hosts = setOf("10.0.2.2:3052", "beta.lawallet.io")
+        val qr = "https://Beta.LaWallet.io/wallet/activate/tok_1"
+        assertEquals(ScanResult.Activate("tok_1", true, qr), router.route(qr, hosts))
+        assertEquals(true, (router.route("http://10.0.2.2:3052/wallet/activate/t", hosts) as ScanResult.Activate).sameInstance)
+        assertEquals(false, (router.route("https://other.community/wallet/activate/t", hosts) as ScanResult.Activate).sameInstance)
+        assertEquals(false, (router.route("http://10.0.2.2:9999/wallet/activate/t", hosts) as ScanResult.Activate).sameInstance)
     }
 }

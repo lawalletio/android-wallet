@@ -6,7 +6,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
+import java.time.Duration
 
+/** Robolectric for checkIfDue (Context, SystemClock); the rest is pure. */
+@RunWith(RobolectricTestRunner::class)
+@Config(application = android.app.Application::class)
 class UpdaterTest {
     @Test
     fun versions() {
@@ -38,5 +46,36 @@ class UpdaterTest {
         assertEquals("d91373c5", Updater.expectedSha256(sums, "lawallet-1.0.1-arm64-v8a.apk"))
         assertEquals("8dfc3bbe", Updater.expectedSha256(sums, "lawallet-1.0.1-armeabi-v7a.apk"))
         assertNull(Updater.expectedSha256(sums, "lawallet-1.0.1-x86_64.apk"))
+    }
+
+    // regression: 52fa08a fix(updates): detect new releases on every app open
+    @Test
+    fun regression_52fa08a_checksEveryFewMinutesWithAConditionalRequest() = kotlinx.coroutines.runBlocking {
+        val server = okhttp3.mockwebserver.MockWebServer().apply { start() }
+        try {
+            // The feed URL is fixed: every request goes to the mock server.
+            val http = okhttp3.OkHttpClient.Builder().addInterceptor { ch -> ch.proceed(ch.request().newBuilder().url(server.url("/feed")).build()) }.build()
+            val updater = Updater(androidx.test.core.app.ApplicationProvider.getApplicationContext(), http)
+            fun release(tag: String, etag: String) = okhttp3.mockwebserver.MockResponse().setHeader("etag", etag).setBody("""{"tag_name":"$tag","assets":[]}""")
+            fun version() = (updater.state.value as Updater.State.Available).version
+
+            server.enqueue(release("v99.0.0", "e1"))
+            updater.checkIfDue()
+            assertEquals("99.0.0", version())
+            updater.checkIfDue() // a minute later: throttled
+            assertEquals(1, server.requestCount)
+            server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+
+            ShadowSystemClock.advanceBy(Duration.ofMinutes(6))
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setResponseCode(304))
+            updater.checkIfDue()
+            assertEquals("e1", server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)?.getHeader("if-none-match")) // free on GitHub's rate limit
+            assertEquals("99.0.0", version())
+
+            ShadowSystemClock.advanceBy(Duration.ofMinutes(6)) // well within the old hourly throttle
+            server.enqueue(release("v99.1.0", "e2"))
+            updater.checkIfDue()
+            assertEquals("99.1.0", version())
+        } finally { server.shutdown() }
     }
 }

@@ -45,4 +45,14 @@ class BitcoinTest {
         assertNull(d("1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3")) // bad checksum
         assertNull(d(""))
     }
+
+    @Test fun bip39SuggestAndProblemEdges() {
+        assertEquals(emptyList<String>(), bip39.suggest(""))
+        assertEquals(listOf("zebra", "zero", "zone", "zoo"), bip39.suggest("z", max = 10))
+        assertEquals(listOf("abandon"), bip39.suggest("ab", max = 1))
+        assertEquals(emptyList<String>(), bip39.suggest("xyz"))
+        assertEquals(PhraseProblem.UNKNOWN_WORD, bip39.problem(List(11) { "abandon" } + "Abandon")) // case matters: the list is lowercase
+        assertEquals(PhraseProblem.LENGTH, bip39.problem(emptyList()))
+        assertEquals(null, bip39.problem(("abandon ".repeat(11) + "about").split(" ")))
+    }
 }

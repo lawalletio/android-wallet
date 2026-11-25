@@ -17,7 +17,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /** Settings → Locking: device-lock gates on startup or every access to the app, on payments from a minimum, and on showing secrets. */
-class AppLock(private val prefs: Prefs, private val bridge: ActivityBridge) {
+class AppLock(
+    private val prefs: Prefs,
+    private val bridge: ActivityBridge,
+    /** The device-lock prompt; tests pass a fake. */
+    private val auth: suspend (FragmentActivity, String) -> Boolean = { a, t -> authenticate(a, t) },
+) {
     /** True while the lock screen covers the app. */
     val locked = MutableStateFlow(prefs.lock.value.let { it.onStartup || it.onAccess })
     private var relock = false
@@ -34,12 +39,12 @@ class AppLock(private val prefs: Prefs, private val bridge: ActivityBridge) {
 
     private val settings: LockPrefs get() = prefs.lock.value
     val sensitive: Boolean get() = settings.sensitive
-    private fun paymentNeedsAuth(sats: Long) = settings.let { it.payments && sats >= it.paymentsMinSats }
+    internal fun paymentNeedsAuth(sats: Long) = settings.let { it.payments && sats >= it.paymentsMinSats }
 
     /** While locked (an NFC payment standing in for the lock) every amount asks, and passing unlocks the app too. */
     suspend fun allowPayment(activity: FragmentActivity, title: String, sats: Long): Boolean {
-        if (!locked.value) return !paymentNeedsAuth(sats) || authenticate(activity, title)
-        return authenticate(activity, title).also { if (it) { locked.value = false; nfcPaying.value = false } }
+        if (!locked.value) return !paymentNeedsAuth(sats) || auth(activity, title)
+        return auth(activity, title).also { if (it) { locked.value = false; nfcPaying.value = false } }
     }
 
     /** Relocks every time the app comes back to the foreground, except from a signer round trip or a PIN screen (API 28–29) we started. */

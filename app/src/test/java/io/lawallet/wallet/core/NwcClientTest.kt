@@ -102,4 +102,39 @@ class NwcClientTest {
             assertEquals(1, wallet.server.requestCount)
         }
     }
+
+    @Test fun parseRejectsMissingSecretRelayOrBadKeys() {
+        val pk = "a".repeat(64)
+        val secret = "0".repeat(63) + "1"
+        fun bad(raw: String) = assertThrows(raw, IllegalArgumentException::class.java) { NwcUri.parse(raw) }
+        bad("nostr+walletconnect://$pk?relay=wss://r")
+        bad("nostr+walletconnect://$pk?secret=$secret")
+        bad("nostr+walletconnect://$pk")
+        bad("nostr+walletconnect://${"a".repeat(63)}?relay=wss://r&secret=$secret") // short pubkey
+        bad("nostr+walletconnect://$pk?relay=wss://r&secret=${"zz".repeat(32)}") // not hex
+        bad("nostr+walletconnect://$pk?relay=wss://r&secret=${"0".repeat(63)}") // odd length
+        bad("nostr+walletconnect://$pk?relay=wss://r&secret=${"0".repeat(64)}") // not a valid key
+        assertEquals(pk, NwcUri.parse(" NOSTR+WALLETCONNECT://${pk.uppercase()}/?relay=wss://r&secret=$secret ").walletPubkey)
+        assertEquals(pk, NwcUri.parse("nostrwalletconnect://$pk?relay=wss://r&secret=$secret").walletPubkey)
+    }
+
+    /** The REQ filter for notifications, captured off the relay's outgoing frames. */
+    private suspend fun notificationKinds(nip44: Boolean): String {
+        val (wallet, nwc) = client(nip44)
+        val sent = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val socket = nwc.relay.sink
+        nwc.relay.sink = { sent += it; socket(it) }
+        val first = scope.async { nwc.notifications().first() }
+        withTimeout(10_000) { while (sent.none { "\"ntf-" in it }) delay(20) }
+        wallet.notify(FakeNwcWallet.tx("incoming", 1_000, "k1"))
+        assertEquals("k1", withTimeout(10_000) { first.await() }.tx.paymentHash)
+        return Regex("\"kinds\":\\[([0-9,]+)]").find(sent.first { it.startsWith("[\"REQ\"") && "\"ntf-" in it })!!.groupValues[1]
+    }
+
+    // regression: 9a4eb0e fix(notifications): one notification per incoming payment (#19)
+    @Test fun regression_9a4eb0e_subscribesToTheOneNotificationKindOfTheEncryption() = runBlocking {
+        // A wallet that publishes each payment on both kinds would otherwise deliver it twice.
+        assertEquals("23197", notificationKinds(nip44 = true))
+        assertEquals("23196", notificationKinds(nip44 = false))
+    }
 }

@@ -233,9 +233,12 @@ fun NavHostController.goHome() = navigate(R0.HOME) { popUpTo(0) { inclusive = tr
 
 /** After a login: resume a pending card activation (1h TTL), else [fallback] (postAuthPath). */
 fun NavHostController.afterAuth(container: AppContainer, fallback: String = R0.HOME) {
-    val pending = container.prefs.pendingActivation?.takeIf { System.currentTimeMillis() - it.second < 3_600_000 }?.first
-    navigate(pending?.let { R0.activate(it) } ?: fallback) { popUpTo(0) { inclusive = true } }
+    navigate(resumeRoute(container.prefs.pendingActivation) ?: fallback) { popUpTo(0) { inclusive = true } }
 }
+
+/** The card activation left pending before the login (id, saved-at ms), while it's under an hour old. */
+internal fun resumeRoute(pending: Pair<String, Long>?, now: Long = System.currentTimeMillis()): String? =
+    pending?.takeIf { now - it.second < 3_600_000 }?.first?.let { R0.activate(it) }
 
 @Composable
 fun LaWalletRoot(container: AppContainer) {
