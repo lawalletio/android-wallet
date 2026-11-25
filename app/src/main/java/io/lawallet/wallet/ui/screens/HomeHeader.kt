@@ -212,7 +212,7 @@ internal fun HomeHeader(intro: Boolean, pages: HomePages) {
                         },
                     ) {
                         when (HomePager.page) {
-                            ONCHAIN -> if (!ONCHAIN_SOON) nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
+                            ONCHAIN -> nav.navigate(primary?.let { R0.onchainWallet(it.id) } ?: R0.ONCHAIN_ADD) { launchSingleTop = true }
                             LIGHTNING -> if (address != null) picker = !picker
                             else -> context.toast(usdtSoon)
                         }
@@ -224,7 +224,7 @@ internal fun HomeHeader(intro: Boolean, pages: HomePages) {
                 Row(face(ONCHAIN).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                     Box(Modifier.size(22.dp).clip(CircleShape).background(Lw.Bitcoin), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 15.dp, tint = Color.White) }
                     Spacer(Modifier.width(8.dp))
-                    Txt(primary?.name ?: stringResource(R.string.onchain_title), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
+                    Txt(stringResource(R.string.receive_tab_onchain), Modifier.weight(1f, fill = false), size = 16.sp, weight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Box(face(LIGHTNING), contentAlignment = Alignment.Center) {
                     if (address != null) {

@@ -466,6 +466,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
                                 pw, reveal, { sheet.progress * 2.2f },
                                 onOpen = { scope.launch { reveal.settleTo(1f) } },
                                 onMenu = { reveal.menuFor = pw.id },
+                                enabled = current,
                             )
                         } },
                     )

@@ -8,8 +8,6 @@ import co.nstant.`in`.cbor.model.DataItem
 import co.nstant.`in`.cbor.model.Map as CborMap
 import co.nstant.`in`.cbor.model.Number as CborNumber
 import co.nstant.`in`.cbor.model.UnicodeString
-import com.sparrowwallet.hummingbird.ResultType
-import com.sparrowwallet.hummingbird.URDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -81,21 +79,6 @@ data class CashuToken(val mint: String, val unit: String, val memo: String?, val
         private operator fun CborMap.get(key: String): DataItem? = get(UnicodeString(key))
         private fun JsonObject.s(k: String) = this[k]?.jsonPrimitive?.contentOrNull
     }
-}
-
-/** NUT-16 animated QR: feed every scanned `ur:bytes/…` frame until the token assembles. */
-class CashuUrScanner {
-    private var decoder = URDecoder()
-
-    /** 0..1 while collecting; the decoded text once complete (and then resets for the next scan). */
-    fun receive(part: String): Pair<Double, String?> {
-        decoder.receivePart(part.trim().lowercase())
-        val r = decoder.result ?: return decoder.estimatedPercentComplete to null
-        decoder = URDecoder()
-        return if (r.type == ResultType.SUCCESS) 1.0 to r.ur.toBytes().decodeToString() else 0.0 to null
-    }
-
-    companion object { fun isUr(text: String) = text.trim().startsWith("ur:", ignoreCase = true) }
 }
 
 /** Claims a token into the user's Lightning wallet: the token's mint pays (melts into) an invoice from that wallet (NUT-05). */

@@ -57,6 +57,22 @@ class FlowStore {
     )
     var cashOut = CashOut()
 
+    /** An onchain payment in progress: who pays, where to, how much ([max]: everything), then the built tx and its id. */
+    data class OnchainSend(
+        val walletId: String,
+        val address: String,
+        val sats: Long? = null,
+        val label: String? = null,
+        val max: Boolean = false,
+        val draft: OnchainDraft? = null,
+        val txid: String? = null,
+    )
+    var onchainSend: OnchainSend? = null
+    /** Wallet material the main scanner found, for onchain import to start from (consumed there). */
+    var onchainImport: String? = null
+    /** A PSBT on its way between signers (base64), for the PSBT screen. */
+    var psbt: String? = null
+
     var send = Send()
     var receive = Receive()
     var withdraw: WithdrawParams? = null

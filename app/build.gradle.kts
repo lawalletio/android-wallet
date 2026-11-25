@@ -227,6 +227,7 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.hummingbird)
     implementation(libs.cbor)
+    implementation(libs.bdk.android)
     implementation(libs.lucide)
     implementation(libs.haze)
     implementation(libs.reorderable)
@@ -238,6 +239,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm)
+    testImplementation(libs.bdk.jvm)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)

@@ -107,6 +107,8 @@ fun SettingsScreen() {
             SettingsGroup(stringResource(R.string.settings_preferences)) {
                 SettingsRow(stringResource(R.string.payments_title), { nav.navigate(R0.PAYMENTS) }, Modifier.testTag("settings-payments"), icon = L.drawable.lucide_ic_zap)
                 GroupDivider()
+                SettingsRow(stringResource(R.string.onchain_settings_title), { nav.navigate(R0.ONCHAIN_SETTINGS) }, Modifier.testTag("settings-onchain"), icon = L.drawable.lucide_ic_bitcoin)
+                GroupDivider()
                 SettingsSwitchRow(stringResource(R.string.bg_listener_title), bg, { c.prefs.setBackgroundListener(it) }, icon = L.drawable.lucide_ic_bell)
                 GroupDivider()
                 SettingsRow(stringResource(R.string.instance_title), { nav.navigate(R0.INSTANCE) }, Modifier.testTag("settings-instance"), icon = L.drawable.lucide_ic_server, value = c.session.instanceHost)

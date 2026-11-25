@@ -37,21 +37,37 @@ object Notifications {
         nm.activeNotifications.filter { it.notification.channelId == CHANNEL_PAYMENTS }.forEach { nm.cancel(it.tag, it.id) }
     }
 
-    fun showPayment(context: Context, notice: PaymentNotice) {
+    /** [route]: where tapping it goes; a Lightning payment's activity detail by default. */
+    fun showPayment(context: Context, notice: PaymentNotice, route: String = "activity/${notice.tx.paymentHash}", icon: Int = R.drawable.ic_notification) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val received = notice.type == "payment_received"
         val amount = (if (received) "+" else "−") + Currencies.formatSats(notice.tx.amountSats) + " sats"
         val title = context.getString(if (received) R.string.shared_tx_received else R.string.shared_tx_sent) + " · " + amount
         val n = NotificationCompat.Builder(context, CHANNEL_PAYMENTS)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(icon)
             .setContentTitle(title)
             .setContentText(notice.tx.description ?: context.getString(R.string.app_name))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
-            .setContentIntent(openAppIntent(context, "activity/${notice.tx.paymentHash}"))
+            .setContentIntent(openAppIntent(context, route))
             .setColor(if (received) 0xFF22C55E.toInt() else 0xFFF97316.toInt())
             .build()
         NotificationManagerCompat.from(context).notify("payment", notice.id.hashCode(), n)
+    }
+
+    /** An onchain tx got its first confirmation. Opens its detail. */
+    fun showConfirmed(context: Context, wallet: io.lawallet.wallet.app.OnchainWallet, tx: io.lawallet.wallet.app.OnchainTx) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val amount = (if (tx.incoming) "+" else "−") + Currencies.formatSats(tx.amount)
+        val n = NotificationCompat.Builder(context, CHANNEL_PAYMENTS)
+            .setSmallIcon(R.drawable.ic_notification_bitcoin)
+            .setContentTitle(context.getString(R.string.onchain_notif_confirmed, amount))
+            .setContentText(context.getString(R.string.onchain_notif_confirmedBody, wallet.name))
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context, "onchain/tx/${wallet.id}/${tx.txid}"))
+            .setColor(0xFFF7931A.toInt())
+            .build()
+        NotificationManagerCompat.from(context).notify("onchain-confirmed", tx.txid.hashCode(), n)
     }
 
     /** A cash-out order left PENDING: the pesos landed, or the transfer failed. Opens its status screen. */

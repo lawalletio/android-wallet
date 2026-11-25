@@ -870,7 +870,8 @@ internal const val PENDING = "PENDING"
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float, onOpen: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
+/** [enabled]: only on the page in front; the pinned pills of both pages lie stacked, and the other's takes no taps. */
+internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float, onOpen: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val haptics = LocalHapticFeedback.current
     val lncurl = w.isLncurl
     Row(
@@ -879,11 +880,12 @@ internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float
             // Once the list starts opening, [WalletPillMorph] draws it (and carries it into the card).
             .graphicsLayer { alpha = if (reveal.progress > 0f) 0f else 1f - hidden().coerceIn(0f, 1f) }
             .requiredHeight(PILL_H).widthIn(max = 240.dp).pillGlass()
-            .combinedClickable(
+            // No pointer modifier at all off-page: even a disabled one takes the hit from the page's pill underneath.
+            .then(if (!enabled) Modifier else Modifier.combinedClickable(
                 onClickLabel = stringResource(R.string.settings_remoteWallets),
                 onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onMenu() },
                 onClick = onOpen,
-            )
+            ))
             .padding(start = 3.dp, end = 14.dp)
             .testTag("home-wallet-pill"),
         verticalAlignment = Alignment.CenterVertically,
@@ -891,6 +893,28 @@ internal fun WalletPill(w: RemoteWallet, reveal: HomeReveal, hidden: () -> Float
         PillMark(w, Modifier.measureRoot { if (reveal.progress == 0f) reveal.pillMark = it })
         Spacer(Modifier.width(8.dp))
         PillName(w.name, Modifier.weight(1f, fill = false).measureRoot { if (reveal.progress == 0f) reveal.pillName = it })
+    }
+}
+
+/** Onchain's wallet pill: the primary onchain wallet's name where "Onchain balance" was. Tap opens the list, hold the wallet. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun OnchainWalletPill(w: io.lawallet.wallet.app.OnchainWallet, onOpen: () -> Unit, onHold: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier.requiredHeight(PILL_H).widthIn(max = 240.dp).pillGlass()
+            .then(if (!enabled) Modifier else Modifier.combinedClickable(
+                onClickLabel = stringResource(R.string.onchain_wallets),
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onHold() },
+                onClick = onOpen,
+            ))
+            .padding(start = 3.dp, end = 14.dp)
+            .testTag("onchain-wallet-pill"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OnchainMark(w, 24)
+        Spacer(Modifier.width(8.dp))
+        PillName(w.name, Modifier.weight(1f, fill = false))
     }
 }
 

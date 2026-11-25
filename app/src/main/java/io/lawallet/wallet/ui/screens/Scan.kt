@@ -94,7 +94,6 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import io.lawallet.wallet.R
 import io.lawallet.wallet.app.AppContainer
-import io.lawallet.wallet.core.ln.CashuUrScanner
 import io.lawallet.wallet.core.ln.PluginLink
 import io.lawallet.wallet.core.ln.ScanResult
 import io.lawallet.wallet.ui.LocalContainer
@@ -122,6 +121,17 @@ sealed interface ScanOutcome {
     data class Failed(val message: String) : ScanOutcome
 }
 
+/**
+ * What a code says: its text, or for a binary code (a Compact SeedQR holds raw entropy, not text) its bytes as
+ * [io.lawallet.wallet.core.btc.SeedQr.BINARY]`<hex>`, so the router can tell it apart.
+ */
+private fun payload(b: Barcode): String? {
+    val text = b.rawValue
+    val bytes = b.rawBytes
+    val binary = text == null || text.any { it == '\uFFFD' || (it < ' ' && it !in "\n\r\t") }
+    return if (binary && bytes != null && bytes.isNotEmpty()) io.lawallet.wallet.core.btc.SeedQr.BINARY + bytes.joinToString("") { "%02x".format(it) } else text
+}
+
 /** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
 suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome {
     // Magic link: the landing checks the link's community against ours (it may offer to switch).
@@ -131,6 +141,22 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Cashu -> { c.flow.cashu = r.token; nav.navigate(R0.CASHU); ScanOutcome.Handled }
         is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
+        is ScanResult.WalletKey -> {
+            // Not a payment: say what it is, and open the screen that takes it (import, with it already filled in).
+            c.flow.onchainImport = r.text
+            c.activityBridge.activity?.let { a ->
+                val msg = when (r.kind) {
+                    ScanResult.KeyKind.PUBLIC -> R.string.onchain_scan_walletKey
+                    ScanResult.KeyKind.PRIVATE -> R.string.onchain_scan_privateKey
+                    ScanResult.KeyKind.PHRASE -> R.string.onchain_scan_phrase
+                }
+                android.widget.Toast.makeText(a, a.getString(msg, r.label.ifEmpty { a.getString(R.string.onchain_backup_title) }), android.widget.Toast.LENGTH_LONG).show()
+            }
+            nav.navigate(R0.ONCHAIN_IMPORT) { launchSingleTop = true }
+            ScanOutcome.Handled
+        }
+        is ScanResult.Onchain -> startOnchainSend(c, r.request)?.let { nav.navigate(it) { launchSingleTop = true }; ScanOutcome.Handled }
+            ?: ScanOutcome.Failed(c.text(R.string.onchain_send_noWallet, "No onchain wallet here can pay this address"))
         is ScanResult.InstallPlugin -> {
             // Through the Plugins list, so Install lands back on it (and its sign-in) like Add Plugin does.
             nav.navigate(R0.PLUGINS) { launchSingleTop = true }
@@ -170,19 +196,20 @@ fun ScanScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var foreign by remember { mutableStateOf<ScanOutcome.Foreign?>(null) }
-    val ur = remember { CashuUrScanner() }
+    val ur = remember { io.lawallet.wallet.core.btc.UrAssembler() }
     var urProgress by remember { mutableStateOf<Float?>(null) }
 
     fun handle(raw: String) {
         if (busy) return
-        // Animated QR (NUT-16): collect frames until the token assembles, then route it like a static one.
-        if (CashuUrScanner.isUr(raw)) {
+        // Animated QR (BC-UR: Cashu NUT-16, wallet accounts, descriptors…): collect frames until it assembles, then
+        // route the result like a static code.
+        if (io.lawallet.wallet.core.btc.UrAssembler.isUr(raw)) {
             val (done, text) = ur.receive(raw)
             // The decoder's estimate can dip as fountain parts mix: the bar only moves forward.
             urProgress = maxOf(urProgress ?: 0f, done.toFloat())
             if (text == null) return
             urProgress = null
-            if (CashuUrScanner.isUr(text)) return
+            if (io.lawallet.wallet.core.btc.UrAssembler.isUr(text)) return
             return handle(text)
         }
         busy = true; error = null
@@ -251,6 +278,27 @@ fun ScanScreen() {
 }
 
 /** Square camera preview that reports QR payloads; requests the camera permission itself. */
+/**
+ * [QrCamera] that also reads animated BC-UR codes (a Keystone account, a PSBT, a Coldcard file over QR): frames
+ * collect until the payload assembles, with a progress line. [onText] gets a static code's text or the assembled UR's.
+ */
+@Composable
+fun QrReader(onError: (String?) -> Unit, onText: (String) -> Unit) {
+    val ur = remember { io.lawallet.wallet.core.btc.UrAssembler() }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        QrCamera(onError) { raw ->
+            if (!io.lawallet.wallet.core.btc.UrAssembler.isUr(raw)) return@QrCamera onText(raw)
+            val (p, text) = ur.receive(raw)
+            progress = maxOf(progress ?: 0f, p.toFloat())
+            if (text != null) { progress = null; onText(text) }
+        }
+        progress?.let { p ->
+            androidx.compose.material3.LinearProgressIndicator({ p }, Modifier.fillMaxWidth().testTag("ur-progress"), color = Lw.Bitcoin, trackColor = Color.White.copy(alpha = 0.1f))
+        }
+    }
+}
+
 @Composable
 fun QrCamera(onError: (String?) -> Unit, onCode: (String) -> Unit) {
     val granted = rememberCameraPermission()
@@ -333,7 +381,7 @@ private fun CameraFeed(busy: Boolean, onError: (String?) -> Unit, onCode: (Strin
                     // screen is gone the executor is shut: drop them, the camera is unbound by then.
                     val bg = java.util.concurrent.Executor { r -> runCatching { analyzerExecutor.execute(r) } }
                     scanner.process(InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees))
-                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { it.rawValue }?.let { v -> main.execute { if (!disposed) code(v) } } }
+                        .addOnSuccessListener(bg) { codes -> codes.firstNotNullOfOrNull { payload(it) }?.let { v -> main.execute { if (!disposed) code(v) } } }
                         .addOnCompleteListener(bg) { proxy.close() }
                 }
                 provider.unbindAll()

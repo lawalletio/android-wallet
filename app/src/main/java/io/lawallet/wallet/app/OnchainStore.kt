@@ -2,6 +2,9 @@ package io.lawallet.wallet.app
 
 import android.content.Context
 import androidx.core.content.edit
+import io.lawallet.wallet.core.btc.Chain
+import io.lawallet.wallet.core.btc.DescriptorPair
+import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.ScriptType
 import io.lawallet.wallet.core.btc.WatchKind
 import io.lawallet.wallet.core.store.SecretStore
@@ -29,9 +32,24 @@ data class OnchainWallet(
     val backedUp: Boolean = true,
     val isPrimary: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
+    val chain: Chain = Chain.MAINNET,
+    /** Public descriptors BDK derives from; null for a single-address watch, or until first derived (older records). */
+    val descriptors: DescriptorPair? = null,
+    /** Multisig ([watch] = MULTISIG): the seed wallet in this store holding one of its keys, if any. */
+    val signer: String? = null,
 ) {
-    val watchOnly get() = watch != null
-    val path get() = if (watch == WatchKind.ADDRESS) null else script?.path
+    val multisig get() = watch == WatchKind.MULTISIG
+    /** No key on this phone: spending goes out as a PSBT for other signers. */
+    val watchOnly get() = watch != null && signer == null
+    val seed get() = watch == null
+    /** A spending wallet from an extended private key: no phrase to show or back up. */
+    val keyOnly get() = seed && words == 0
+    val path get() = when {
+        watch == WatchKind.ADDRESS -> null
+        multisig -> Descriptors.cosignerPath(chain)
+        else -> script?.path(chain)
+    }
+    val quorum get() = descriptors?.let { Descriptors.quorum(it.external) }
 }
 
 /**
@@ -63,10 +81,36 @@ class OnchainStore(context: Context) {
     fun setPrimary(id: String) = save(_wallets.value.map { it.copy(isPrimary = it.id == id) })
     fun remove(id: String) {
         sp.edit { remove("secret:$id") }
-        save(_wallets.value.filter { it.id != id })
+        // A vault that signed with this seed's key now has no key here: it spends by PSBT only.
+        save(_wallets.value.filter { it.id != id }.map { if (it.signer == id) it.copy(signer = null) else it })
     }
 
-    /** Phrase words (and passphrase), or null. Blocking (Keystore). */
-    fun secret(id: String): Pair<List<String>, String?>? = sp.getString("secret:$id", null)?.let { runCatching { SecretStore.decrypt(it) }.getOrNull() }
+    private fun rawSecret(id: String) = sp.getString("secret:$id", null)?.let { runCatching { SecretStore.decrypt(it) }.getOrNull() }
+
+    /** Phrase words (and passphrase), or null (also for a wallet made from a private key). Blocking (Keystore). */
+    fun secret(id: String): Pair<List<String>, String?>? = rawSecret(id)?.takeIf { !it.startsWith(KEY) }
         ?.split('\n')?.let { it[0].split(' ') to it.getOrNull(1)?.takeIf(String::isNotEmpty) }
+
+    /** The extended private key a wallet was imported from, or null. Blocking (Keystore). */
+    fun privateKey(id: String): String? = rawSecret(id)?.takeIf { it.startsWith(KEY) }?.removePrefix(KEY)
+
+    // ---- settings: device-local too (which server sees this phone's addresses is about the phone, not the account) -
+
+    private val _electrum = Chain.entries.associateWith { MutableStateFlow(sp.getString("electrum:${it.name}", null) ?: it.electrum) }
+    fun electrum(chain: Chain): StateFlow<String> = _electrum.getValue(chain)
+    /** Null resets to the default server. */
+    fun setElectrum(chain: Chain, url: String?) {
+        _electrum.getValue(chain).value = url ?: chain.electrum
+        sp.edit { if (url == null) remove("electrum:${chain.name}") else putString("electrum:${chain.name}", url) }
+    }
+
+    companion object {
+        /** How a private-key secret is told from a phrase: [add] it as `KEY + xprv`. */
+        const val KEY = "xprv:"
+    }
+
+    private val _signet = MutableStateFlow(sp.getBoolean("signet", false))
+    /** Signet is offered when creating or importing (wallets already on signet show regardless). */
+    val signet: StateFlow<Boolean> = _signet
+    fun setSignet(v: Boolean) { _signet.value = v; sp.edit { putBoolean("signet", v) } }
 }
