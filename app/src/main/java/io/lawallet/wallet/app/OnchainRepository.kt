@@ -66,11 +66,13 @@ data class OnchainTx(
     val counterpart: String?,
     /** Signals BIP-125 replaceability: an unconfirmed send of ours can be sped up. */
     val rbf: Boolean,
+    /** A send: what its recipients got. Counted from the outputs, since [delta] nets out a self-transfer to zero. */
+    val paid: Long? = null,
 ) {
     val incoming get() = delta >= 0
     val pending get() = height == null
     /** What moved, fee aside. */
-    val amount get() = if (incoming) delta else abs(delta) - (fee ?: 0)
+    val amount get() = if (incoming) delta else paid ?: (abs(delta) - (fee ?: 0))
     fun confirmations(tip: Int?) = if (height == null || tip == null) 0 else (tip - height + 1).coerceAtLeast(1)
 
     /** As the app's [Tx], so Activity rows and grouping take it unchanged (the txid stands in for the payment hash). */
@@ -351,8 +353,9 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
             val tx = raw.getValue(id)
             val received = tx.output().filter { it.scriptPubkey.toBytes().contentEquals(script) }.sumOf { it.value.toSat().toLong() }
             val sent = tx.input().sumOf { ours["${it.previousOutput.txid}:${it.previousOutput.vout}"] ?: 0L }
-            val out = tx.output().firstOrNull { !it.scriptPubkey.toBytes().contentEquals(script) }
-            OnchainTx(id, received - sent, null, null, height, now, if (sent > 0) out?.let { addressOf(it.scriptPubkey.toBytes(), w.chain) } else w.source, tx.isExplicitlyRbf())
+            val others = tx.output().filter { !it.scriptPubkey.toBytes().contentEquals(script) }
+            OnchainTx(id, received - sent, null, null, height, now, if (sent > 0) others.firstOrNull()?.let { addressOf(it.scriptPubkey.toBytes(), w.chain) } else w.source, tx.isExplicitlyRbf(),
+                others.sumOf { it.value.toSat().toLong() }.takeIf { sent > 0 && it > 0 })
         }.sortedWith(compareBy<OnchainTx> { !it.pending }.thenByDescending { it.height ?: Int.MAX_VALUE })
         setBalance(w.id, OnchainBalance(confirmed + unconfirmed, confirmed, unconfirmed))
         setState(w.id) { it.copy(txs = txs, receive = w.source) }
@@ -371,12 +374,16 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
             val conf = ct.chainPosition as? ChainPosition.Confirmed
             val sent = d.sent.toSat() > 0u
             val outs = ct.transaction.output()
-            val to = (if (sent) outs.firstOrNull { !bdk.isMine(it.scriptPubkey) } ?: outs.firstOrNull() else outs.firstOrNull { bdk.isMine(it.scriptPubkey) })
+            // A send's recipients: outputs to others, or on a transfer to ourselves, those to our receive keychain (not change).
+            val paidTo = if (!sent) emptyList() else outs.filter { !bdk.isMine(it.scriptPubkey) }
+                .ifEmpty { outs.filter { bdk.derivationOfSpk(it.scriptPubkey)?.keychain == KeychainKind.EXTERNAL } }
+            val to = (if (sent) paidTo.firstOrNull() ?: outs.firstOrNull() else outs.firstOrNull { bdk.isMine(it.scriptPubkey) })
             OnchainTx(
                 txid.toString(), d.balanceDelta, d.fee?.toSat()?.toLong(), d.feeRate?.let { it.toSatPerKwu().toDouble() * 4 / 1000 },
                 conf?.confirmationBlockTime?.blockId?.height?.toInt(),
                 1000 * (conf?.confirmationBlockTime?.confirmationTime?.toLong() ?: (ct.chainPosition as? ChainPosition.Unconfirmed)?.timestamp?.toLong() ?: now),
                 to?.let { addressOf(it.scriptPubkey.toBytes(), w.chain) }, ct.transaction.isExplicitlyRbf(),
+                paidTo.sumOf { it.value.toSat().toLong() }.takeIf { it > 0 },
             )
         }.sortedWith(compareBy<OnchainTx> { !it.pending }.thenByDescending { it.time })
         val unused = bdk.listUnusedAddresses(KeychainKind.EXTERNAL)
