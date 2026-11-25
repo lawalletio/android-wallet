@@ -32,7 +32,15 @@ class SendFlowTest : FlowTest() {
         waitForText("Payment sent")
         assertTrue("pay_invoice" in instance.wallet.requests)
         // The fake wallet charges 1,000 sats per payment; Home picks up the new balance.
-        waitUntil { c.wallet.balance.value == 20_000L }
+        try {
+            waitUntil { c.wallet.balance.value == 20_000L }
+        } catch (e: Throwable) {
+            // Only CI has missed this so far: say where it stopped.
+            throw AssertionError(
+                "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
+                    "walletMsat=${instance.wallet.balanceMsat} requests=${instance.wallet.requests}", e,
+            )
+        }
     }
 
     @Test fun payAnInvoiceBySwiping() {
