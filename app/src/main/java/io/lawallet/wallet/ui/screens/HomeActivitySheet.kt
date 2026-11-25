@@ -65,6 +65,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
 import kotlin.math.roundToInt
@@ -252,6 +254,10 @@ internal fun ActivitySheetContent(sheet: ActivitySheet, all: List<Tx>, hasNwc: B
     val scope = rememberCoroutineScope()
     val paging = rememberActivityPaging(list, firstPage = false) { sheet.progress > 0.98f }
     BackHandler(current && sheet.progress > 0f) { scope.launch { launch { list.animateScrollToItem(0) }; sheet.collapse() } }
+    // Docked, the list always opens on the newest: keyed rows would keep the old top row in view when a payment
+    // lands above it, and a returning app would keep wherever it was left.
+    LaunchedEffect(recent.firstOrNull()) { if (sheet.progress == 0f) list.scrollToItem(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { if (sheet.progress == 0f) scope.launch { list.scrollToItem(0) } }
     // The bottom bar (AppNav) swaps to search + filters with this; docking clears them.
     LaunchedEffect(sheet) { snapshotFlow { sheet.progress }.collect { ActivitySearch.sheet = it; if (it == 0f) ActivitySearch.reset() } }
     DisposableEffect(Unit) { onDispose { ActivitySearch.sheet = 0f } }
