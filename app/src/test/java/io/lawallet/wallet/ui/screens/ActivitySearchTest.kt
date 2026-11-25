@@ -20,4 +20,18 @@ class ActivitySearchTest {
         assertEquals(listOf(21_000L, 1_000_000L), shown())
         reset()
     }
+
+    // regression: 5306075 fix(activity): search finds swap holders and saved recipients, not only descriptions
+    @Test fun regression_5306075_searchFindsRowLabels() = with(ActivitySearch) {
+        reset(); maxSats = 1_000_000
+        val cashOut = tx(17_800, null)
+        query = "ana"
+        assertEquals(false, matches(cashOut))
+        assertEquals(true, matches(cashOut, listOf("Ana Pérez", "ana.mp", "Mercado Pago")))
+        query = "MERCADO"
+        assertEquals(true, matches(cashOut, listOf("Ana Pérez", "Mercado Pago")))
+        query = "beto"
+        assertEquals(false, matches(cashOut, listOf("Ana Pérez")))
+        reset()
+    }
 }

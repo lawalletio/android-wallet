@@ -605,7 +605,7 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
       }
       WalletsReveal(
           // An address with a wallet of its own can't be pointed at a plugin (LaWallet routes addresses over NWC).
-          reveal, deck?.let { ws -> if (picked == null) ws else ws.filter { !it.isPlugin }.map { it.copy(isDefault = it.id == shownWallet) } }, walletBalances, code, rates, hidden,
+          reveal, deck?.let { markShown(it, picked != null, shownWallet) }, walletBalances, code, rates, hidden,
           onOpen = { nav.navigate(if (it.isPlugin) R0.PLUGINS else R0.remoteWallet(it.id)) },
           onSetPrimary = { w -> when { picked == null -> setPrimary(w); forwardTo != null -> confirmLink = w; else -> linkPicked(w) } },
           onAdd = { step ->
@@ -731,3 +731,10 @@ internal fun LightningPage(current: Boolean, intro: Boolean, anchors: HomePages)
 
 /** How long a deleted wallet's card takes to fold out of the list before it leaves it. */
 private const val LEAVE_MS = 450L
+
+/**
+ * The wallet list as Home marks it: the account's own primary when no other address is picked, else only the picked
+ * address's wallet (none when it routes to an archived or missing one; plugins can't back an address).
+ */
+internal fun markShown(wallets: List<io.lawallet.wallet.core.api.RemoteWallet>, picked: Boolean, shown: String?) =
+    if (!picked) wallets else wallets.filter { !it.isPlugin }.map { it.copy(isDefault = it.id == shown) }

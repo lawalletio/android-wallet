@@ -16,14 +16,17 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /** Hand-wired object graph — one instance per process. */
-class AppContainer(context: Context) {
+class AppContainer(
+    context: Context,
     // Long-lived collectors live here: an exception escaping one is reported, not a process crash.
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e -> Diagnostics.nonFatal(e) })
+    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, e -> Diagnostics.nonFatal(e) }),
+    // Tests pass one that reaches a fake instance.
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
-        .build()
+        .build(),
+) {
     val prefs = Prefs(context)
     val activityBridge = ActivityBridge()
     val avatars = Avatars(context.applicationContext)

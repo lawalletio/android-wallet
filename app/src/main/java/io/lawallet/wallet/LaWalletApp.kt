@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 
 class LaWalletApp : Application(), SingletonImageLoader.Factory {
     lateinit var container: AppContainer
-        private set
+        @androidx.annotation.VisibleForTesting internal set
 
     /** One image pipeline: the app's OkHttp pool, memory + disk caches, SVG for community logos. */
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)

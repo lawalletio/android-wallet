@@ -18,7 +18,9 @@ User-facing overview: [README.md](README.md).
 ## Commands
 
 ```bash
-./gradlew testDebugUnitTest                # JVM unit tests (fast; run these for any core/ change)
+./gradlew testDebugUnitTest                # JVM tests: unit, Robolectric, Compose flows (run for any change)
+./gradlew verifyRoborazziDebug             # screenshot goldens; recordRoborazziDebug rewrites them
+scripts/test-device.sh                     # instrumented + e2e on an emulator, as a separate .e2e copy: docs/testing.md
 ./gradlew lintDebug                        # lint; abortOnError = true, so warnings-as-errors matter
 ./gradlew assembleDebug                    # debug APK → app/build/outputs/apk/debug/
 ./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs on every PR
@@ -26,9 +28,11 @@ scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # perfo
 scripts/plugins-dev.py                     # serve plugins-dev/ (gitignored) to debug builds: docs/plugins.md
 ```
 
+- Tests: [docs/testing.md](docs/testing.md). A `fix(...)` commit ships with a regression test named
+  `regression_<sha>_<what>`.
 - Run a single test class: `./gradlew testDebugUnitTest --tests 'io.lawallet.wallet.core.NwcClientTest'`.
-- Instrumented tests: `./gradlew connectedDebugAndroidTest` **uninstalls the app afterwards and wipes the logged-in
-  account on that device.** To keep the data, install and run with `am instrument` instead:
+- Instrumented tests: use `scripts/test-device.sh`. `./gradlew connectedDebugAndroidTest` **uninstalls the app
+  afterwards and wipes the logged-in account on that device.** By hand, install and run with `am instrument`:
   ```bash
   ./gradlew installDebug installDebugAndroidTest
   adb shell am instrument -w -e class io.lawallet.wallet.AppLaunchTest io.lawallet.wallet.test/androidx.test.runner.AndroidJUnitRunner
@@ -64,8 +68,9 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 | `ui/components` | shared UI: `Basics.kt` (`Txt`, `LwButton`, `LwCard`, `SettingsRow`, `SettingsSwitchRow`, `SettingsPage`, `toastError`, …), `LwDialog.kt` (`LwAlertDialog`, `ConfirmDialog`, `DialogTitle`, `LwBottomSheet`), `Forms.kt` (`lwFieldColors`, `TextPrompt`, `TabSwitch`, `FieldCaption`) |
 | `ui/theme` | `Lw` colours/typography, `Glass` frosted surfaces |
 
-Tests: JVM tests in `app/src/test` (crypto vectors, NWC client against `FakeNwcWallet`, API client with
-MockWebServer, parsers). Compose UI tests in `app/src/androidTest`.
+Tests ([docs/testing.md](docs/testing.md)): JVM, Robolectric and Compose flow tests with screenshot goldens in
+`app/src/test`; on-device and e2e tests in `app/src/androidTest`; `FakeInstance` / `FakeNwcWallet` / `TestContainer`
+shared by both in `app/src/sharedTest`.
 
 ## Conventions
 

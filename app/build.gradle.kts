@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
     alias(libs.plugins.sentry)
+    alias(libs.plugins.roborazzi)
 }
 
 // Signing: a private keystore (never committed), from keystore.properties locally or the
@@ -138,6 +139,13 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric (Prefs, Session, Compose screens + Roborazzi screenshots) needs the merged resources.
+        unitTests.isIncludeAndroidResources = true
+    }
+    // Fakes both JVM and on-device tests use: FakeNwcWallet, FakeInstance (docs/testing.md).
+    sourceSets {
+        getByName("test").kotlin.directories += "src/sharedTest/java"
+        getByName("androidTest").kotlin.directories += "src/sharedTest/java"
     }
     packaging {
         resources.excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/{AL2.0,LGPL2.1}")
@@ -167,6 +175,11 @@ sentry {
 // ".bench", so measuring never replaces — or, when Gradle uninstalls after the run, wipes — a
 // real logged-in install. Set on the variant: the plugin configures these build types late.
 // They log in against an on-device fake instance (baselineprofile FakeInstance), never a real one.
+// Screenshot goldens (Roborazzi): `recordRoborazziDebug` writes them, `verifyRoborazziDebug` diffs against them.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
+}
+
 androidComponents {
     onVariants { variant ->
         if (variant.buildType == "nonMinifiedRelease" || variant.buildType == "benchmarkRelease") {
@@ -228,12 +241,22 @@ dependencies {
     testImplementation(libs.secp256k1.jvm)
     testImplementation(libs.bdk.jvm)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
     debugImplementation(libs.leakcanary)
     baselineProfile(project(":baselineprofile"))

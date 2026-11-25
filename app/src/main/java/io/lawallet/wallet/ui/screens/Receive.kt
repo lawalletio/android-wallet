@@ -182,7 +182,7 @@ internal fun BigQr(data: String?, tone: Color, mark: Int, credit: Long?, onTap: 
                 val b = bmp
                 if (b == null) Spinner(color = Color.Black)
                 else {
-                    androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize(), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+                    androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize().testTag("qr-image"), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
                     Box(Modifier.fillMaxSize(0.2f).clip(CircleShape).background(Color.White).padding(5.dp).clip(CircleShape).background(tone), contentAlignment = Alignment.Center) {
                         LwIcon(mark, Modifier.fillMaxSize(0.56f), tint = Color.White)
                     }
