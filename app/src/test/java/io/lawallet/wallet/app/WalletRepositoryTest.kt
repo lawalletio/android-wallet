@@ -8,8 +8,10 @@ import io.lawallet.wallet.core.nostr.Keys
 import io.lawallet.wallet.core.nostr.sha256
 import io.lawallet.wallet.core.nostr.toHex
 import io.lawallet.wallet.core.nwc.NwcClient
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.After
@@ -195,5 +197,22 @@ class WalletRepositoryTest {
         f.notify(FakeNwcWallet.tx("incoming", 5000, "old199"))
         deliver(f, FakeNwcWallet.tx("incoming", 1000, "after"))
         assertTrue(notices.none { it.tx.paymentHash == "old199" })
+    }
+
+    // Found by SendFlowTest on CI: a balance read sent before a payment and answered after it stood in for the refresh
+    // the payment asked for, so Home kept the old balance until the next poll.
+    @Test fun aRefreshNeverSharesABalanceReadSentBeforeIt() = runBlocking {
+        val (f, _) = fakeWallet()
+        listening(f)
+        eventually { h.wallet.balance.value == 21_000L }
+        f.holdBalance = true
+        val before = h.scope.async { h.wallet.refreshBalance() }
+        eventually { f.heldBalances.isNotEmpty() }
+        f.holdBalance = false
+        f.balanceMsat -= 1_000_000 // the payment lands while that read is still out
+        val after = h.scope.async { h.wallet.refreshBalance() }
+        f.releaseBalances() // the old read answers 21,000, then the refresh's own read goes out
+        withTimeout(10_000) { before.await(); after.await() }
+        assertEquals(20_000L, h.wallet.balance.value)
     }
 }

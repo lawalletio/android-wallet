@@ -94,8 +94,17 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
         val body = if (result != null) buildJsonObject { put("result_type", method); put("result", result) }
         else buildJsonObject { put("result_type", method); put("error", buildJsonObject { put("code", "INSUFFICIENT_BALANCE"); put("message", "Not enough sats") }) }
         val subId = subs.entries.first { (_, f) -> f["#e"]?.jsonArray?.any { it.jsonPrimitive.content == ev.id } == true }.key
-        send(ws, subId, NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id))))
+        val reply = { send(ws, subId, NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id)))) }
+        if (method == "get_balance" && holdBalance) heldBalances += reply else reply()
     }
+
+    /** True: get_balance answers (with the balance at the time it was asked) wait for [releaseBalances], like a slow wallet. */
+    @Volatile var holdBalance = false
+    val heldBalances = CopyOnWriteArrayList<() -> Unit>()
+    fun releaseBalances() { heldBalances.toList().also { heldBalances.clear() }.forEach { it() } }
+
+    /** The relay has a live subscription for [kind] (a REQ the client sent may not have been read yet). */
+    fun subscribedTo(kind: Int) = subs.values.any { f -> f["kinds"]?.jsonArray?.any { it.jsonPrimitive.int == kind } == true }
 
     fun notify(tx: JsonObject, type: String = "payment_received") {
         val kind = if (nip44) 23197 else 23196

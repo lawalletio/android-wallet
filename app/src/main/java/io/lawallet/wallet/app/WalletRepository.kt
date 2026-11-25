@@ -262,13 +262,31 @@ class WalletRepository(
         }
     }
 
-    /** The balance read in flight, shared: callers asking at once (Home opening, foreground, a payment) wait for one. */
-    private var balanceRead: Pair<Wallet, kotlinx.coroutines.Deferred<Unit>>? = null
+    /**
+     * The balance read in flight, and the one queued behind it. A read already sent may predate what the caller is
+     * reacting to (a payment it just made), so callers share the queued read, never the running one: the balance they
+     * get is at least as new as their call. Callers asking at once (Home opening, foreground, a payment) still share one.
+     */
+    private var balanceRead: Pair<Wallet, kotlinx.coroutines.CompletableDeferred<Unit>>? = null
+    private var balanceQueued: Pair<Wallet, kotlinx.coroutines.CompletableDeferred<Unit>>? = null
 
     suspend fun refreshBalance(c: Wallet? = _client.value) {
         c ?: return
-        val read = balanceRead?.takeIf { it.first === c && it.second.isActive }?.second
-            ?: scope.async { readBalance(c) }.also { balanceRead = c to it }
+        balanceQueued?.takeIf { it.first === c && it.second.isActive }?.let { return it.second.await() }
+        val running = balanceRead?.takeIf { it.first === c && it.second.isActive }?.second
+        val read = kotlinx.coroutines.CompletableDeferred<Unit>()
+        if (running == null) balanceRead = c to read else balanceQueued = c to read
+        scope.launch {
+            try {
+                if (running != null) {
+                    running.join()
+                    // Its request goes out now: later callers queue behind this one instead of sharing it.
+                    if (balanceQueued?.second === read) balanceQueued = null
+                    balanceRead = c to read
+                }
+                readBalance(c)
+            } finally { read.complete(Unit) }
+        }
         read.await()
     }
 

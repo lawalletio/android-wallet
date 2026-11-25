@@ -126,6 +126,8 @@ class NwcClientTest {
         nwc.relay.sink = { sent += it; socket(it) }
         val first = scope.async { nwc.notifications().first() }
         withTimeout(10_000) { while (sent.none { "\"ntf-" in it }) delay(20) }
+        // Sent isn't read: a notification published before the relay registers the REQ reaches no one.
+        withTimeout(10_000) { while (!wallet.subscribedTo(if (nip44) 23197 else 23196)) delay(20) }
         wallet.notify(FakeNwcWallet.tx("incoming", 1_000, "k1"))
         assertEquals("k1", withTimeout(10_000) { first.await() }.tx.paymentHash)
         return Regex("\"kinds\":\\[([0-9,]+)]").find(sent.first { it.startsWith("[\"REQ\"") && "\"ntf-" in it })!!.groupValues[1]

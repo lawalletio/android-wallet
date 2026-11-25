@@ -12,6 +12,8 @@ class ReceiveFlowTest : FlowTest() {
         waitUntil { c.wallet.client.value != null }
         tag("nav-receive").performClick()
         waitForTag("receive-address")
+        // The QR draws off the main thread: a screenshot before it lands catches the spinner.
+        waitForTag("qr-image")
     }
 
     @Test fun showsTheLightningAddress() {
