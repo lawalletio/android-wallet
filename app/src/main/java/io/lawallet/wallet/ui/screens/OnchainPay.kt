@@ -75,6 +75,10 @@ import io.lawallet.wallet.app.OnchainRepository
 import io.lawallet.wallet.app.OnchainWallet
 import io.lawallet.wallet.app.SendOutcome
 import io.lawallet.wallet.core.btc.Bip21
+import io.lawallet.wallet.ui.components.ConfirmDialog
+import io.lawallet.wallet.core.ln.DestinationParser
+import io.lawallet.wallet.core.ln.Destination
+import io.lawallet.wallet.core.btc.Bip353
 import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.Payjoin
@@ -134,6 +138,11 @@ import com.composables.icons.lucide.R as L
 
 /** Wallets on [chain] that can build a payment (all but a single watched address). */
 internal fun payingWallets(c: AppContainer, chain: Chain) = c.onchain.wallets.value.filter { it.chain == chain && it.descriptors != null }
+
+/** The wallet to suggest for [b] when the selected one is on another chain: the primary there, else the first. */
+internal fun chainPayer(c: AppContainer, b: Bip21) = Descriptors.chainOf(b.address)?.let { chain ->
+    payingWallets(c, chain).filter { it.seed || !SilentPayment.isAddress(b.address) }.let { w -> w.firstOrNull { it.isPrimary } ?: w.firstOrNull() }
+}
 
 /**
  * Starts an onchain send to [b] from [preferred] when it's on the address's chain, else the primary (or first) wallet
@@ -301,19 +310,69 @@ private fun AmountSheet(initial: Long?, onDismiss: () -> Unit, onDone: (Long?) -
 
 // ---- send -------------------------------------------------------------------------------------------------------
 
-/** Where to: an address or `bitcoin:` link, typed, pasted or scanned. */
+/** Where to: an address, `bitcoin:` link or BIP-353 name (`₿user@domain`), typed, pasted or scanned. */
 @Composable
 fun OnchainSendScreen(from: String? = null) {
     val c = LocalContainer.current
     val nav = LocalNav.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var resolving by remember { mutableStateOf(false) }
+    val wallets by c.onchain.wallets.collectAsState()
     val request = remember(text) { Bip21.parse(text)?.takeIf { Descriptors.chainOf(it.address) != null } }
+    val name = remember(text) { if (request == null) Bip353.parse(text) else null }
+    // What the name resolved to; one that isn't DNSSEC-signed waits in [unsigned] for the user's say.
+    var resolved by remember(text) { mutableStateOf<Bip21?>(null) }
+    var unsigned by remember(text) { mutableStateOf<Bip21?>(null) }
+    // Only Lightning pays it: an invoice or LNURL, or a name with no Bitcoin record that is a Lightning address.
+    var lnName by remember(text) { mutableStateOf<Destination?>(null) }
+    val lightning = remember(text) { if (request == null && name == null) lightningOnly(text) else null } ?: lnName
+    val target = request ?: resolved
+    // An address on another chain than the wallet this send started from: say so, and offer one that can pay it.
+    val current = wallets.firstOrNull { it.id == from } ?: wallets.firstOrNull { it.isPrimary }
+    val chain = target?.let { Descriptors.chainOf(it.address) }
+    val otherChain = chain != null && current != null && current.chain != chain
     val invalid = stringResource(R.string.onchain_send_invalid)
     val noWallet = stringResource(R.string.onchain_send_noWallet)
-    fun go(b: Bip21) { startOnchainSend(c, b, from)?.let { nav.navigate(it) } ?: run { error = noWallet } }
+    val nameErrors = name?.display.orEmpty().let { n ->
+        mapOf(
+            Bip353.Reason.NOT_FOUND to stringResource(R.string.onchain_send_name_notFound, n),
+            Bip353.Reason.INVALID to stringResource(R.string.onchain_send_name_invalid, n),
+            Bip353.Reason.AMBIGUOUS to stringResource(R.string.onchain_send_name_ambiguous, n),
+            Bip353.Reason.OFFLINE to stringResource(R.string.onchain_send_name_offline, n),
+        )
+    }
+    val noOnchain = stringResource(R.string.onchain_send_name_noOnchain, name?.display.orEmpty())
+    fun go(b: Bip21, wallet: String? = from) { startOnchainSend(c, b, wallet)?.let { nav.navigate(it) } ?: run { error = noWallet } }
+    fun accept(b: Bip21) { resolved = b; if (current == null || Descriptors.chainOf(b.address) == current.chain) go(b) }
+    fun lookUp(n: Bip353.Name) {
+        if (resolving) return
+        resolving = true; error = null
+        scope.launch {
+            try {
+                val found = c.bip353.resolve(n)
+                // The name stands in for the address on the next screens: it's what the user typed and checks.
+                val b = Bip21.parse(found.uri)?.takeIf { Descriptors.chainOf(it.address) != null }?.copy(label = n.display)
+                when {
+                    b == null -> error = noOnchain
+                    found.dnssec -> accept(b)
+                    else -> unsigned = b
+                }
+            } catch (e: Bip353.Bip353Exception) {
+                // A Lightning address isn't a payment name: offer to pay it over Lightning instead.
+                lnName = if (e.reason == Bip353.Reason.NOT_FOUND) lightningOnly(text) else null
+                if (lnName == null) error = nameErrors[e.reason]
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                io.lawallet.wallet.app.Diagnostics.nonFatal(e)
+                error = invalid
+            } finally { resolving = false }
+        }
+    }
+    fun next() { request?.let(::go) ?: resolved?.let(::accept) ?: name?.let(::lookUp) }
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(stringResource(R.string.onchain_send_title), { nav.popBackStack() }, close = true)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -321,10 +380,11 @@ fun OnchainSendScreen(from: String? = null) {
                 if (!scanning) return@QrCamera
                 scanning = false
                 text = raw.trim()
-                Bip21.parse(text)?.takeIf { Descriptors.chainOf(it.address) != null }?.let(::go)
+                Bip21.parse(text)?.takeIf { Descriptors.chainOf(it.address) != null }?.let { b -> if (current == null || Descriptors.chainOf(b.address) == current.chain) go(b) }
+                    ?: Bip353.parse(text)?.let(::lookUp)
             }
             OutlinedTextField(
-                text, { text = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("onchain-send-field"),
+                text, { text = it.trim(); error = null }, Modifier.fillMaxWidth().testTag("onchain-send-field"), enabled = !resolving,
                 placeholder = { Txt(stringResource(R.string.onchain_send_field), color = Lw.MutedFg) },
                 minLines = 2, maxLines = 4, colors = lwFieldColors(), shape = RoundedCornerShape(20.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
@@ -337,20 +397,65 @@ fun OnchainSendScreen(from: String? = null) {
                 LwButton(stringResource(if (scanning) R.string.common_cancel else R.string.shared_nav_scan), { scanning = !scanning }, Modifier.weight(1f),
                     BtnVariant.Secondary, height = 42.dp, icon = if (scanning) L.drawable.lucide_ic_x else L.drawable.lucide_ic_scan_qr_code)
             }
-            if (request != null) {
-                val chain = Descriptors.chainOf(request.address)!!
-                Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), GlassLevel.Thin, tint = Lw.Green.copy(alpha = 0.10f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    LwIcon(L.drawable.lucide_ic_circle_check, size = 18.dp, tint = Lw.Green)
-                    Spacer(Modifier.width(10.dp))
-                    Txt(short(request.address), Modifier.weight(1f), size = 14.sp, mono = true, maxLines = 1)
-                    if (chain == Chain.SIGNET) Pill(stringResource(R.string.onchain_signet), Lw.Signet)
+            when {
+                lightning != null -> NetworkSwitchCard(PayNetwork.LIGHTNING, {
+                    switchHome(PayNetwork.LIGHTNING)
+                    val here = nav.currentDestination?.id
+                    scope.launch {
+                        runCatching { startSend(c, lightning) }
+                            .onSuccess { route -> nav.navigate(route) { here?.let { popUpTo(it) { inclusive = true } } } }
+                            .onFailure { error = it.message ?: invalid }
+                    }
+                }, body = if (lnName != null) stringResource(R.string.network_name_lightning, name?.display.orEmpty()) else null)
+                otherChain -> {
+                    val b = target!!
+                    val payer = chainPayer(c, b)
+                    val chainName = chainName(chain!!)
+                    SwitchCard(
+                        L.drawable.lucide_ic_wallet, chainTone(chain), stringResource(R.string.onchain_send_otherChain_title, chainName),
+                        if (payer != null) stringResource(R.string.onchain_send_otherChain_body, current!!.name, chainName(current.chain), chainName) else stringResource(R.string.onchain_send_otherChain_none, chainName),
+                        if (payer != null) stringResource(R.string.onchain_send_otherChain_use, payer.name) else stringResource(R.string.onchain_add_title),
+                        { if (payer != null) { c.onchain.setPrimary(payer.id); go(b, payer.id) } else nav.navigate(R0.ONCHAIN_ADD) },
+                    )
                 }
-            } else if (text.length > 20) ErrorText(invalid)
+                target != null -> {
+                    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), GlassLevel.Thin, tint = Lw.Green.copy(alpha = 0.10f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        LwIcon(L.drawable.lucide_ic_circle_check, size = 18.dp, tint = Lw.Green)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            if (resolved != null) Txt(resolved!!.label.orEmpty(), size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+                            Txt(short(target.address), size = 14.sp, mono = true, maxLines = 1)
+                        }
+                        if (chain == Chain.SIGNET) Pill(stringResource(R.string.onchain_signet), Lw.Signet)
+                    }
+                }
+                name != null -> Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), GlassLevel.Thin, tint = Lw.Bitcoin.copy(alpha = 0.08f)).padding(14.dp).testTag("onchain-send-name"), verticalAlignment = Alignment.CenterVertically) {
+                    LwIcon(L.drawable.lucide_ic_shield_check, size = 18.dp, tint = Lw.Bitcoin)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(name.display, size = 14.sp, weight = FontWeight.Medium, maxLines = 1)
+                        MutedText(stringResource(R.string.onchain_send_name_lookup), size = 12.sp)
+                    }
+                }
+                text.length > 20 -> ErrorText(invalid)
+            }
             ErrorText(error)
         }
-        LwButton(stringResource(R.string.common_continue), { request?.let(::go) }, Modifier.fillMaxWidth().padding(16.dp).testTag("onchain-send-continue"), BtnVariant.Theme, enabled = request != null)
+        LwButton(stringResource(R.string.common_continue), ::next, Modifier.fillMaxWidth().padding(16.dp).testTag("onchain-send-continue"), BtnVariant.Theme,
+            enabled = (target != null || name != null) && !otherChain && lightning == null, loading = resolving)
+    }
+    unsigned?.let { b ->
+        ConfirmDialog(
+            stringResource(R.string.onchain_send_name_insecure, name?.display.orEmpty()), stringResource(R.string.onchain_send_name_payAnyway),
+            { unsigned = null; accept(b) }, { unsigned = null },
+            Modifier.testTag("onchain-send-insecure"), title = stringResource(R.string.onchain_send_name_insecure_title), destructive = true,
+        )
     }
 }
+
+/** What only Lightning pays: an invoice, or LNURL / a Lightning address. */
+internal fun lightningOnly(text: String): Destination? =
+    runCatching { DestinationParser.parse(text) }.getOrNull()?.takeIf { it is Destination.Invoice || it is Destination.LnurlPay }
 
 /** Who's paid; [payjoin]: the request offers one, badged so it's noticed from the first screen. */
 @Composable
@@ -599,6 +704,8 @@ fun OnchainTxScreen(walletId: String, txid: String) {
     val w = wallets.find { it.id == walletId }
     val tx = states[walletId]?.txs?.find { it.txid == txid }
     var speeding by remember { mutableStateOf(false) }
+    var explaining by remember { mutableStateOf(false) }
+    val sp = remember(txid) { if (tx?.incoming == false) c.onchainWallets.silentPayment(txid) else null }
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val tip by c.onchainWallets.tip(w.chain).collectAsState()
     val addressKey = stringResource(if (tx?.incoming == true) R.string.onchain_tx_address else R.string.send_to)
@@ -635,7 +742,12 @@ fun OnchainTxScreen(walletId: String, txid: String) {
                     BlockStrip(confirmations, if (tx.incoming) Lw.Green else Lw.Bitcoin, block = 14.dp)
                     Txt(statusText, size = 14.sp, align = TextAlign.End)
                 }
-            })) + listOfNotNull(tx.counterpart?.let { a -> addressKey to @Composable { CopyValue(short(a), a, Modifier.testTag("onchain-tx-address")) } }) + mapOf(explorer to {
+            })) + listOfNotNull(tx.counterpart?.let { a -> addressKey to @Composable {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (sp != null) Box(Modifier.clip(CircleShape).clickable { explaining = true }.testTag("onchain-tx-sp")) { Pill(stringResource(R.string.onchain_sp_badge), Lw.Bitcoin) }
+                    CopyValue(short(a), a, Modifier.testTag("onchain-tx-address"))
+                }
+            } }) + mapOf(explorer to {
                 Txt(
                     "mempool.space ↗", Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(w.chain.txUrl(tx.txid)))) } }.testTag("onchain-explorer"),
                     size = 14.sp, weight = FontWeight.Medium, color = Lw.Bitcoin,
@@ -643,9 +755,34 @@ fun OnchainTxScreen(walletId: String, txid: String) {
             }),
         )
     }
+    if (explaining && sp != null) SilentPaymentSheet(sp) { explaining = false }
     if (speeding && tx != null) SpeedUpSheet(w, tx.txid, tx.feeRate ?: OnchainRepository.MIN_RATE, { speeding = false }) { newTxid ->
         speeding = false
         nav.navigate(R0.onchainTx(walletId, newTxid)) { popUpTo(R0.onchainTx(walletId, txid)) { inclusive = true } }
+    }
+}
+
+/** What the SP badge means: a one-time address made from [sp], which the user pays again instead. */
+@Composable
+private fun SilentPaymentSheet(sp: String, onDismiss: () -> Unit) = LwBottomSheet(onDismiss, "onchain-sp-sheet") {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        DialogTitle(stringResource(R.string.onchain_sp_title))
+        @Composable fun Point(icon: Int, tone: androidx.compose.ui.graphics.Color, title: String, body: String, extra: (@Composable () -> Unit)? = null) =
+            Row(verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(36.dp).glass(CircleShape, GlassLevel.Thin, tint = tone.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) { LwIcon(icon, size = 18.dp, tint = tone) }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Txt(title, size = 15.sp, weight = FontWeight.SemiBold)
+                    MutedText(body, size = 14.sp)
+                    extra?.invoke()
+                }
+            }
+        Point(L.drawable.lucide_ic_eye_off, Lw.Bitcoin, stringResource(R.string.onchain_sp_private_title), stringResource(R.string.onchain_sp_private))
+        Point(L.drawable.lucide_ic_ban, Lw.Red, stringResource(R.string.onchain_sp_once_title), stringResource(R.string.onchain_sp_once))
+        Point(L.drawable.lucide_ic_repeat, Lw.Green, stringResource(R.string.onchain_sp_again_title), stringResource(R.string.onchain_sp_again)) {
+            CopyValue(short(sp), sp, Modifier.padding(top = 4.dp).testTag("onchain-sp-address"))
+        }
+        ModalAction(stringResource(R.string.onchain_sp_ok), onDismiss, Modifier.testTag("onchain-sp-ok"))
     }
 }
 

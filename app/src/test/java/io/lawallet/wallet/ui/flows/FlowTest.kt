@@ -46,6 +46,9 @@ abstract class FlowTest {
     @Before fun startInstance() {
         // Dates in activity rows render the same everywhere.
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+        // Home's page lives in a global: every test starts on Lightning, whatever the one before switched to.
+        io.lawallet.wallet.ui.screens.HomePager.show(io.lawallet.wallet.ui.screens.LIGHTNING)
+        io.lawallet.wallet.ui.screens.HomePager.pending = null
         instance = FakeInstance().start()
         c = TestContainer.create(context, instance)
         // No image loading at all (avatars, domain logos): nothing leaves the machine and screenshots don't wait on it.

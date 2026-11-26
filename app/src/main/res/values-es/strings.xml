@@ -611,7 +611,7 @@
     <string name="onchain_receive_gap">Usá primero una dirección que ya tenés: una billetera restaurada deja de buscar después de 20 sin usar seguidas.</string>
 
     <string name="onchain_send_title">Enviar bitcoin</string>
-    <string name="onchain_send_field">Dirección de Bitcoin o link bitcoin:</string>
+    <string name="onchain_send_field">Dirección de Bitcoin, link bitcoin: o ₿nombre@dominio</string>
     <string name="onchain_send_invalid">Eso no es una dirección de Bitcoin</string>
     <string name="onchain_send_noWallet">Ninguna billetera onchain de este teléfono puede pagar a esta dirección</string>
     <string name="onchain_send_from">Desde</string>
@@ -771,4 +771,38 @@
         <item quantity="many">%d cuentas</item>
         <item quantity="other">%d cuentas</item>
     </plurals>
+    <!-- Paying on the other network: scan / typed recipient on the wrong Home page, or an onchain wallet on another chain. -->
+    <string name="network_onchain">Bitcoin</string>
+    <string name="network_lightning">Lightning</string>
+    <string name="network_switch">Cambiar a %1$s</string>
+    <string name="network_onchain_title">Esto es una dirección de Bitcoin</string>
+    <string name="network_lightning_title">Esto es un pago Lightning</string>
+    <string name="network_scan_onchain">Estás en Lightning. Cambiá a Bitcoin para pagarlo onchain.</string>
+    <string name="network_scan_lightning">Estás en Bitcoin. Cambiá a Lightning para pagarlo.</string>
+    <string name="network_send_onchain">Lightning no puede pagar una dirección de Bitcoin. Cambiá a Bitcoin para enviarlo onchain.</string>
+    <string name="network_send_lightning">Una billetera onchain no puede pagarlo. Cambiá a Lightning para enviarlo.</string>
+    <string name="network_name_lightning">%1$s no tiene instrucciones de pago de Bitcoin, pero funciona como dirección Lightning. Cambiá a Lightning para pagarlo.</string>
+    <string name="onchain_send_otherChain_title">Esto es una dirección de %1$s</string>
+    <string name="onchain_send_otherChain_body">%1$s está en %2$s. Cambiá a una billetera en %3$s para pagarla.</string>
+    <string name="onchain_send_otherChain_use">Usar %1$s</string>
+    <string name="onchain_send_otherChain_none">Ninguna billetera de este teléfono está en %1$s. Agregá una para pagarla.</string>
+    <!-- BIP-353 payment names (₿user@domain), looked up in DNS on Continue. -->
+    <string name="onchain_send_name_lookup">Se verifica de forma segura (DNSSEC) al continuar</string>
+    <string name="onchain_send_name_insecure_title">Sin protección DNSSEC</string>
+    <string name="onchain_send_name_insecure">%1$s no está firmado con DNSSEC, así que tu red o el proveedor de DNS del dominio podrían haber cambiado la dirección que devolvió. Pagala solo si confiás en él.</string>
+    <string name="onchain_send_name_payAnyway">Pagar igual</string>
+    <string name="onchain_send_name_notFound">%1$s no tiene instrucciones de pago de Bitcoin</string>
+    <string name="onchain_send_name_invalid">No se pudo verificar %1$s: sus firmas DNSSEC no son válidas</string>
+    <string name="onchain_send_name_ambiguous">%1$s tiene más de unas instrucciones de pago, así que no se puede usar</string>
+    <string name="onchain_send_name_noOnchain">%1$s no ofrece una dirección onchain</string>
+    <string name="onchain_send_name_offline">No se pudo buscar %1$s. Revisá tu conexión y probá de nuevo.</string>
+    <string name="onchain_sp_badge">SP</string>
+    <string name="onchain_sp_title">Pago silencioso</string>
+    <string name="onchain_sp_private_title">Privado por diseño</string>
+    <string name="onchain_sp_private">Quien recibe comparte una sola dirección. Cada pago va a una dirección nueva que solo esa persona puede encontrar.</string>
+    <string name="onchain_sp_once_title">No reutilices esta dirección</string>
+    <string name="onchain_sp_once">La dirección de arriba se creó solo para este pago. Lo que se envíe de nuevo ahí puede no aparecerle nunca.</string>
+    <string name="onchain_sp_again_title">Para volver a pagarle</string>
+    <string name="onchain_sp_again">Usá su dirección de pago silencioso:</string>
+    <string name="onchain_sp_ok">Entendido</string>
 </resources>

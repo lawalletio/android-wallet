@@ -611,7 +611,7 @@
     <string name="onchain_receive_gap">Use an address you already have first: a restored wallet stops looking after 20 unused in a row.</string>
 
     <string name="onchain_send_title">Send bitcoin</string>
-    <string name="onchain_send_field">Bitcoin address or bitcoin: link</string>
+    <string name="onchain_send_field">Bitcoin address, bitcoin: link or ₿name@domain</string>
     <string name="onchain_send_invalid">That isn\'t a Bitcoin address</string>
     <string name="onchain_send_noWallet">No onchain wallet on this phone can pay to this address</string>
     <string name="onchain_send_from">From</string>
@@ -769,4 +769,38 @@
         <item quantity="one">%d account</item>
         <item quantity="other">%d accounts</item>
     </plurals>
+    <!-- Paying on the other network: scan / typed recipient on the wrong Home page, or an onchain wallet on another chain. -->
+    <string name="network_onchain">Bitcoin</string>
+    <string name="network_lightning">Lightning</string>
+    <string name="network_switch">Switch to %1$s</string>
+    <string name="network_onchain_title">This is a Bitcoin address</string>
+    <string name="network_lightning_title">This is a Lightning payment</string>
+    <string name="network_scan_onchain">You\'re on Lightning. Switch to Bitcoin to pay it onchain.</string>
+    <string name="network_scan_lightning">You\'re on Bitcoin. Switch to Lightning to pay it.</string>
+    <string name="network_send_onchain">Lightning can\'t pay a Bitcoin address. Switch to Bitcoin to send it onchain.</string>
+    <string name="network_send_lightning">An onchain wallet can\'t pay it. Switch to Lightning to send it.</string>
+    <string name="network_name_lightning">%1$s has no Bitcoin payment instructions, but it works as a Lightning address. Switch to Lightning to pay it.</string>
+    <string name="onchain_send_otherChain_title">This is a %1$s address</string>
+    <string name="onchain_send_otherChain_body">%1$s is on %2$s. Switch to a wallet on %3$s to pay it.</string>
+    <string name="onchain_send_otherChain_use">Use %1$s</string>
+    <string name="onchain_send_otherChain_none">None of the wallets on this phone is on %1$s. Add one to pay it.</string>
+    <!-- BIP-353 payment names (₿user@domain), looked up in DNS on Continue. -->
+    <string name="onchain_send_name_lookup">Looked up securely (DNSSEC) when you continue</string>
+    <string name="onchain_send_name_insecure_title">Not secured by DNSSEC</string>
+    <string name="onchain_send_name_insecure">%1$s isn\'t signed with DNSSEC, so the address it gave could have been swapped by your network or the domain\'s DNS provider. Only pay it if you trust it.</string>
+    <string name="onchain_send_name_payAnyway">Pay anyway</string>
+    <string name="onchain_send_name_notFound">%1$s has no Bitcoin payment instructions</string>
+    <string name="onchain_send_name_invalid">Couldn\'t verify %1$s: its DNSSEC signatures don\'t check out</string>
+    <string name="onchain_send_name_ambiguous">%1$s has more than one set of payment instructions, so it can\'t be used</string>
+    <string name="onchain_send_name_noOnchain">%1$s doesn\'t offer an onchain address</string>
+    <string name="onchain_send_name_offline">Couldn\'t look up %1$s. Check your connection and try again.</string>
+    <string name="onchain_sp_badge">SP</string>
+    <string name="onchain_sp_title">Silent payment</string>
+    <string name="onchain_sp_private_title">Private by design</string>
+    <string name="onchain_sp_private">The recipient shares one address. Each payment goes to a new address that only they can find.</string>
+    <string name="onchain_sp_once_title">Don\'t reuse this address</string>
+    <string name="onchain_sp_once">The address above was made for this payment only. Money sent to it again may never show up for them.</string>
+    <string name="onchain_sp_again_title">To pay them again</string>
+    <string name="onchain_sp_again">Use their silent payment address:</string>
+    <string name="onchain_sp_ok">Got it</string>
 </resources>

@@ -119,6 +119,10 @@ sealed interface ScanOutcome {
     data object Handled : ScanOutcome
     data class Foreign(val url: String, val host: String) : ScanOutcome
     data class Failed(val message: String) : ScanOutcome
+    /** Only [to] pays it, and the user is on the other network: [go] pays it there once they switch. */
+    class OtherNetwork(val to: PayNetwork, val go: suspend () -> ScanOutcome) : ScanOutcome
+    /** An address on [chain], but the selected wallet [current] is on another: [go] selects [payer] and pays from it. */
+    class OtherWallet(val chain: io.lawallet.wallet.core.btc.Chain, val current: io.lawallet.wallet.app.OnchainWallet, val payer: io.lawallet.wallet.app.OnchainWallet?, val go: suspend () -> ScanOutcome) : ScanOutcome
 }
 
 /**
@@ -132,15 +136,38 @@ private fun payload(b: Barcode): String? {
     return if (binary && bytes != null && bytes.isNotEmpty()) io.lawallet.wallet.core.btc.SeedQr.BINARY + bytes.joinToString("") { "%02x".format(it) } else text
 }
 
-/** scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. */
-suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false): ScanOutcome {
+/**
+ * scan-screen.tsx dispatch: activation → withdraw → send flow. Shared by camera, paste, deep links and NFC. [on]: the
+ * network the user scanned from; a payment only the other one makes asks first ([ScanOutcome.OtherNetwork]), and a
+ * unified `bitcoin:` QR pays on the one they're on.
+ */
+suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaNfc: Boolean = false, on: PayNetwork? = null): ScanOutcome {
     // Magic link: the landing checks the link's community against ours (it may offer to switch).
     io.lawallet.wallet.core.ln.EmailLoginUrl.parse(raw)?.let { nav.navigate(R0.emailAuth(it.token, it.host)) { launchSingleTop = true }; return ScanOutcome.Handled }
+    fun send(b: io.lawallet.wallet.core.btc.Bip21, from: String? = null) = startOnchainSend(c, b, from)?.let { nav.navigate(it) { launchSingleTop = true }; ScanOutcome.Handled }
+        ?: ScanOutcome.Failed(c.text(R.string.onchain_send_noWallet, "No onchain wallet here can pay this address"))
+    // Always from the selected wallet: one on another chain asks before switching to a wallet that can pay it.
+    fun onchain(b: io.lawallet.wallet.core.btc.Bip21): ScanOutcome {
+        val chain = io.lawallet.wallet.core.btc.Descriptors.chainOf(b.address)
+        val selected = c.onchain.wallets.value.firstOrNull { it.isPrimary }
+        if (chain == null || selected == null || selected.chain == chain) return send(b)
+        val payer = chainPayer(c, b)
+        return ScanOutcome.OtherWallet(chain, selected, payer) {
+            if (payer == null) { nav.navigate(R0.ONCHAIN_ADD) { launchSingleTop = true }; ScanOutcome.Handled }
+            else { c.onchain.setPrimary(payer.id); send(b, payer.id) }
+        }
+    }
+    if (on == PayNetwork.ONCHAIN) io.lawallet.wallet.core.btc.Bip21.parse(raw.trim())?.takeIf { it.lightning != null && io.lawallet.wallet.core.btc.Descriptors.chainOf(it.address) != null }?.let { b ->
+        if (c.onchain.wallets.value.any { it.chain == io.lawallet.wallet.core.btc.Descriptors.chainOf(b.address) }) return onchain(b)
+    }
     return when (val r = c.scanRouter.route(raw, c.session.instanceHosts)) {
         is ScanResult.Activate -> if (r.sameInstance) { nav.navigate(R0.activate(r.tokenId)); ScanOutcome.Handled } else ScanOutcome.Foreign(r.url, java.net.URI(r.url).host)
         is ScanResult.Withdraw -> { c.flow.withdraw = r.params; nav.navigate(R0.WITHDRAW); ScanOutcome.Handled }
         is ScanResult.Cashu -> { c.flow.cashu = r.token; nav.navigate(R0.CASHU); ScanOutcome.Handled }
-        is ScanResult.Pay -> runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") }
+        is ScanResult.Pay -> {
+            val pay = suspend { runCatching { nav.navigate(startSend(c, r.destination, viaNfc)) { launchSingleTop = true }; ScanOutcome.Handled }.getOrElse { ScanOutcome.Failed(it.message ?: "Unsupported code") } }
+            if (on == PayNetwork.ONCHAIN) ScanOutcome.OtherNetwork(PayNetwork.LIGHTNING, pay) else pay()
+        }
         is ScanResult.WalletKey -> {
             // Not a payment: say what it is, and open the screen that takes it (import, with it already filled in).
             c.flow.onchainImport = r.text
@@ -155,8 +182,7 @@ suspend fun routeScan(c: AppContainer, nav: NavHostController, raw: String, viaN
             nav.navigate(R0.ONCHAIN_IMPORT) { launchSingleTop = true }
             ScanOutcome.Handled
         }
-        is ScanResult.Onchain -> startOnchainSend(c, r.request)?.let { nav.navigate(it) { launchSingleTop = true }; ScanOutcome.Handled }
-            ?: ScanOutcome.Failed(c.text(R.string.onchain_send_noWallet, "No onchain wallet here can pay this address"))
+        is ScanResult.Onchain -> if (on == PayNetwork.LIGHTNING) ScanOutcome.OtherNetwork(PayNetwork.ONCHAIN) { onchain(r.request) } else onchain(r.request)
         is ScanResult.InstallPlugin -> {
             // Through the Plugins list, so Install lands back on it (and its sign-in) like Add Plugin does.
             nav.navigate(R0.PLUGINS) { launchSingleTop = true }
@@ -177,6 +203,12 @@ suspend fun handleScanPayload(c: AppContainer, nav: NavHostController, raw: Stri
         is ScanOutcome.Foreign -> c.activityBridge.activity?.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(o.url)))
         is ScanOutcome.Failed -> c.activityBridge.activity?.let { android.widget.Toast.makeText(it, o.message, android.widget.Toast.LENGTH_LONG).show() }
         ScanOutcome.Handled -> {}
+        is ScanOutcome.OtherNetwork -> o.go() // not asked for: no network given here
+        // No dialog here: say why, and leave the switch to the user.
+        is ScanOutcome.OtherWallet -> c.activityBridge.activity?.let { a ->
+            val name = { ch: io.lawallet.wallet.core.btc.Chain -> a.getString(if (ch == io.lawallet.wallet.core.btc.Chain.SIGNET) R.string.onchain_signet else R.string.onchain_settings_mainnet) }
+            android.widget.Toast.makeText(a, a.getString(R.string.onchain_send_otherChain_body, o.current.name, name(o.current.chain), name(o.chain)), android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 }
 
@@ -196,6 +228,14 @@ fun ScanScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var foreign by remember { mutableStateOf<ScanOutcome.Foreign?>(null) }
+    var other by remember { mutableStateOf<ScanOutcome.OtherNetwork?>(null) }
+    var otherWallet by remember { mutableStateOf<ScanOutcome.OtherWallet?>(null) }
+    // A switch's next step: an error to show, or the wallet question (the network switch can lead to it).
+    fun after(o: ScanOutcome) = when (o) {
+        is ScanOutcome.Failed -> { error = o.message; busy = false }
+        is ScanOutcome.OtherWallet -> otherWallet = o
+        else -> {}
+    }
     val ur = remember { io.lawallet.wallet.core.btc.UrAssembler() }
     var urProgress by remember { mutableStateOf<Float?>(null) }
 
@@ -215,10 +255,13 @@ fun ScanScreen() {
         busy = true; error = null
         scope.launch {
             // Handled stays busy while navigating away, or the next camera frame routes the same code again.
-            when (val o = routeScan(c, nav, raw)) {
+            when (val o = routeScan(c, nav, raw, on = PayNetwork.current())) {
                 ScanOutcome.Handled -> {}
                 is ScanOutcome.Foreign -> { foreign = o; busy = false }
                 is ScanOutcome.Failed -> { error = o.message; busy = false }
+                // Stays busy while the dialog asks: the camera keeps seeing the same code.
+                is ScanOutcome.OtherNetwork -> other = o
+                is ScanOutcome.OtherWallet -> otherWallet = o
             }
         }
     }
@@ -274,6 +317,19 @@ fun ScanScreen() {
         text = { Txt(stringResource(R.string.scan_foreignCard, f.host, c.session.instanceHost), color = Lw.MutedFg) },
         confirmButton = { ModalAction(stringResource(R.string.scan_openLink), { foreign = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.url))) }) },
     )
+    }
+    other?.let { o ->
+        NetworkSwitchDialog(o.to, onSwitch = {
+            other = null
+            switchHome(o.to)
+            scope.launch { after(o.go()) }
+        }, onDismiss = { other = null; busy = false })
+    }
+    otherWallet?.let { o ->
+        WalletSwitchDialog(o.chain, o.current, o.payer, onSwitch = {
+            otherWallet = null
+            scope.launch { after(o.go()) }
+        }, onDismiss = { otherWallet = null; busy = false })
     }
 }
 

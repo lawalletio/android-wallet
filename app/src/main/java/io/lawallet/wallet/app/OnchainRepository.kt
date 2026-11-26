@@ -605,6 +605,9 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
      * Whether a send from [w] to [address] can be a payjoin: it needs this phone to sign alone, twice. Not to a silent
      * payment, whose output is derived from our inputs alone (the receiver adding one would break it).
      */
+    /** The silent payment address (`sp1…`) a send of ours paid, or null when it was a plain one. */
+    fun silentPayment(txid: String): String? = cache.getString("sp:$txid", null)
+
     fun canPayjoin(w: OnchainWallet, address: String) = !w.watchOnly && !w.multisig && !SilentPayment.isAddress(address)
 
     /** Adds this phone's signature to [psbt] (base64), if it holds a key for the wallet. */
