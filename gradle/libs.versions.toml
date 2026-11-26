@@ -44,6 +44,8 @@ hummingbird = "1.7.6"
 cbor = "0.9"
 # Onchain wallets: descriptors, sync, coin selection, PSBT, RBF (16 KB-aligned .so since 2.2).
 bdk = "3.1.1"
+# The Payjoin Dev Kit bindings (org.payjoindevkit) load their .so through JNA, the version bdk-android brings.
+jna = "5.14.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -82,6 +84,7 @@ hummingbird = { module = "com.sparrowwallet:hummingbird", version.ref = "humming
 cbor = { module = "co.nstant.in:cbor", version.ref = "cbor" }
 bdk-android = { module = "org.bitcoindevkit:bdk-android", version.ref = "bdk" }
 bdk-jvm = { module = "org.bitcoindevkit:bdk-jvm", version.ref = "bdk" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 quickjs-android = { module = "wang.harlon.quickjs:wrapper-android", version.ref = "quickjs" }
 lucide = { module = "com.composables:icons-lucide-android", version.ref = "lucide" }

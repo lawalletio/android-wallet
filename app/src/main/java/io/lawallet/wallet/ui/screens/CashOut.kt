@@ -605,7 +605,7 @@ private fun CopyRow(key: String, value: String) {
         Spacer(Modifier.width(16.dp))
         Txt(if (value.length > 20) value.take(8) + "…" + value.takeLast(8) else value, Modifier.weight(1f), size = 14.sp, maxLines = 1, align = TextAlign.End)
         Spacer(Modifier.width(6.dp))
-        LwIcon(L.drawable.lucide_ic_copy, size = 14.dp, tint = Lw.MutedFg)
+        LwIcon(R.drawable.ic_copy, size = 14.dp, tint = Lw.MutedFg)
     }
 }
 

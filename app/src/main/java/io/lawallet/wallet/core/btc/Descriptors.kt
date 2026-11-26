@@ -131,8 +131,8 @@ object Descriptors {
     fun scripthash(script: ByteArray): String = sha256(script).reversedArray().joinToString("") { "%02x".format(it) }
 }
 
-/** A BIP-21 payment request: `bitcoin:<address>?amount=<btc>&label=…&message=…&lightning=…`. */
-data class Bip21(val address: String, val sats: Long? = null, val label: String? = null, val message: String? = null, val lightning: String? = null) {
+/** A BIP-21 payment request: `bitcoin:<address>?amount=<btc>&label=…&message=…&lightning=…&pj=…` ([pj]: a payjoin endpoint). */
+data class Bip21(val address: String, val sats: Long? = null, val label: String? = null, val message: String? = null, val lightning: String? = null, val pj: String? = null) {
     /** As a URI. Bech32 addresses are upper-cased when [qr] (QR alphanumeric mode: a smaller code). */
     fun uri(qr: Boolean = false): String {
         val a = if (qr && (address.startsWith("bc1", true) || address.startsWith("tb1", true))) address.uppercase() else address
@@ -153,11 +153,12 @@ data class Bip21(val address: String, val sats: Long? = null, val label: String?
             val body = if (s.startsWith("bitcoin:", ignoreCase = true)) s.substring(8) else if (':' in s || s.isEmpty()) return null else s
             val address = body.substringBefore('?').takeIf { it.isNotEmpty() } ?: return null
             val params = body.substringAfter('?', "").split('&').filter { '=' in it }
-                .associate { it.substringBefore('=').lowercase() to URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+                // A `+` stays a `+` (not a space): BIP-77's `pj` fragment used it as a separator.
+                .associate { it.substringBefore('=').lowercase() to URLDecoder.decode(it.substringAfter('=').replace("+", "%2B"), "UTF-8") }
             // An unknown required parameter (BIP-21 `req-`) means we can't honour the request.
             if (params.keys.any { it.startsWith("req-") }) return null
             val sats = params["amount"]?.let { runCatching { BigDecimal(it).movePointRight(8).longValueExact() }.getOrNull() ?: return null }
-            return Bip21(address.let { if (it.startsWith("BC1") || it.startsWith("TB1")) it.lowercase() else it }, sats, params["label"], params["message"], params["lightning"])
+            return Bip21(address.let { if (it.startsWith("BC1") || it.startsWith("TB1")) it.lowercase() else it }, sats, params["label"], params["message"], params["lightning"], params["pj"])
         }
     }
 }

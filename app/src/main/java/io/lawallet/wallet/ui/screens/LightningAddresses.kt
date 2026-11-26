@@ -129,7 +129,7 @@ fun LightningAddressesScreen() {
                     Txt(heroText.substringBefore('@'), size = 24.sp, weight = FontWeight.SemiBold, maxLines = 1)
                     Txt("@" + heroText.substringAfter('@'), size = 16.sp, weight = FontWeight.Medium, color = Lw.Foreground.copy(alpha = 0.6f), maxLines = 1)
                     Spacer(Modifier.height(14.dp))
-                    LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(heroText, copied) }, Modifier.testTag("addresses-copy"), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_copy)
+                    LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(heroText, copied) }, Modifier.testTag("addresses-copy"), BtnVariant.Secondary, height = 36.dp, icon = R.drawable.ic_copy)
                 } else if (addresses == null) Spinner() else MutedText(stringResource(R.string.addresses_empty))
             }
             val list = addresses
@@ -234,7 +234,7 @@ private fun AddressActionsSheet(full: String, isPrimary: Boolean, onDismiss: () 
                 Txt("@" + full.substringAfter('@'), size = 14.sp, color = Lw.MutedFg, maxLines = 1)
             }
             // Copy sits with the address it copies; the sheet stays open.
-            GlassIconButton(L.drawable.lucide_ic_copy, onCopy, Modifier.testTag("address-menu-copy"), size = 40.dp, contentDescription = stringResource(R.string.common_copy))
+            GlassIconButton(R.drawable.ic_copy, onCopy, Modifier.testTag("address-menu-copy"), size = 40.dp, contentDescription = stringResource(R.string.common_copy))
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
         if (!isPrimary) SheetAction(L.drawable.lucide_ic_circle_check, stringResource(R.string.addresses_setPrimary), brand.t400, "address-menu-primary") { then(onPrimary) }

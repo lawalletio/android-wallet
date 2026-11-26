@@ -314,6 +314,18 @@ fun KeyValueRow(key: String, value: String, maxLines: Int = 2, content: (@Compos
     }
 }
 
+/** A [KeyValueRow] value shown as [text] (e.g. shortened) that copies [copy] when tapped. */
+@Composable
+fun CopyValue(text: String, copy: String, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val copied = stringResource(R.string.common_copied)
+    Row(modifier.clip(RoundedCornerShape(8.dp)).clickable { context.copyToClipboard(copy, copied) }, verticalAlignment = Alignment.CenterVertically) {
+        Txt(text, size = 14.sp, align = TextAlign.End)
+        Spacer(Modifier.width(6.dp))
+        LwIcon(R.drawable.ic_copy, size = 14.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
+    }
+}
+
 /** A glass surface. */
 @Composable
 fun LwCard(modifier: Modifier = Modifier, radius: Dp = 20.dp, level: GlassLevel = GlassLevel.Regular, content: @Composable () -> Unit) {
