@@ -90,13 +90,17 @@ abstract class FlowTest {
     private val balances = java.util.concurrent.CopyOnWriteArrayList<Long?>()
 
     private fun await(timeoutMs: Long, condition: () -> Boolean) = try {
-        rule.waitUntil(timeoutMs, condition)
+        // Each check first runs what's due on the main looper: the app's scope resumes there after a wallet reply,
+        // and on CI a reply that had arrived was still waiting there when the wait timed out.
+        rule.waitUntil(timeoutMs) { shadowOf(android.os.Looper.getMainLooper()).idle(); condition() }
     } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
         val relay = (c.wallet.client.value as? io.lawallet.wallet.core.nwc.NwcClient)?.relay
         throw AssertionError(
             "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
                 "connected=${relay?.connected?.value} open=${relay?.openSubIds()} queued=${relay?.queuedSubIds()} " +
-                "balances=$balances wallet: requests=${instance.wallet.requests} ${instance.wallet.state()}", e,
+                "balances=$balances wallet: requests=${instance.wallet.requests} ${instance.wallet.state()} " +
+                "mainLooper idle=${shadowOf(android.os.Looper.getMainLooper()).isIdle} trail:\n" +
+                io.lawallet.wallet.core.diag.Trail.run { flush(); tail(false, 40) }.joinToString("\n"), e,
         )
     }
 
