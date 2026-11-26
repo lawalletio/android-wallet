@@ -71,7 +71,9 @@ abstract class FlowTest {
         if (loggedIn) runBlocking { c.loginThrowaway(TEST_SECRET) }
         // In the foreground, as LaWalletApp's process observer sets it: balance polling runs.
         c.wallet.active.value = true
-        c.scope.launch { c.wallet.balance.collect { balances += it } }
+        // Unconfined: runs in the writer's thread, so no value is conflated away before it's recorded.
+        c.scope.launch(kotlinx.coroutines.Dispatchers.Unconfined) { c.wallet.balance.collect { balances += it } }
+        io.lawallet.wallet.core.diag.Trail.open(java.nio.file.Files.createTempDirectory("trail").toFile(), "flow test")
         // Screens prompt for the device lock through a FragmentActivity, as MainActivity is.
         shadowOf(context.packageManager).addActivityIfNotPresent(ComponentName(context, FragmentActivity::class.java))
         scenario = ActivityScenario.launch(FragmentActivity::class.java).onActivity {
