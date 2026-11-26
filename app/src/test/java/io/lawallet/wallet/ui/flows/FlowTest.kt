@@ -78,13 +78,28 @@ abstract class FlowTest {
         }
     }
 
+    /**
+     * [rule].waitUntil, but a timeout says where the wallet stood: CI has timed out waiting on NWC replies that never
+     * fail locally, and the plain ComposeTimeoutException says nothing about them.
+     */
+    private fun await(timeoutMs: Long, condition: () -> Boolean) = try {
+        rule.waitUntil(timeoutMs, condition)
+    } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+        val relay = (c.wallet.client.value as? io.lawallet.wallet.core.nwc.NwcClient)?.relay
+        throw AssertionError(
+            "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
+                "connected=${relay?.connected?.value} open=${relay?.openSubIds()} queued=${relay?.queuedSubIds()} " +
+                "wallet: requests=${instance.wallet.requests} ${instance.wallet.state()}", e,
+        )
+    }
+
     protected fun waitForTag(tag: String, timeoutMs: Long = 10_000) =
-        rule.waitUntil(timeoutMs) { rule.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        await(timeoutMs) { rule.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
     protected fun waitForText(text: String, timeoutMs: Long = 10_000, substring: Boolean = false) =
-        rule.waitUntil(timeoutMs) { rule.onAllNodes(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        await(timeoutMs) { rule.onAllNodes(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
-    protected fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) = rule.waitUntil(timeoutMs, condition)
+    protected fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) = await(timeoutMs, condition)
 
     /** Settles animations, then records/compares `<name>_<lang>.png`. */
     protected fun shot(name: String) {
@@ -96,7 +111,7 @@ abstract class FlowTest {
     protected fun tag(tag: String): SemanticsNodeInteraction = rule.onNode(hasTestTag(tag), useUnmergedTree = true)
 
     /** Waits until the node tagged [tag] shows exactly [text]. */
-    protected fun waitForTagText(tag: String, text: String, timeoutMs: Long = 10_000) = rule.waitUntil(timeoutMs) {
+    protected fun waitForTagText(tag: String, text: String, timeoutMs: Long = 10_000) = await(timeoutMs) {
         rule.onAllNodes(hasTestTag(tag) and hasText(text), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
 

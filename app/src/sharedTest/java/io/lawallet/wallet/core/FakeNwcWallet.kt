@@ -109,6 +109,9 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
             .forEach { id -> sockets.forEach { send(it, id, reply) } }
     }
 
+    /** For a failing test's message: the relay's subscriptions and the replies it has published. */
+    fun state() = "subs=${subs.keys} replies=${replies.size} held=${heldBalances.size} sockets=${sockets.size}"
+
     /** True: get_balance answers (with the balance at the time it was asked) wait for [releaseBalances], like a slow wallet. */
     @Volatile var holdBalance = false
     val heldBalances = CopyOnWriteArrayList<() -> Unit>()
