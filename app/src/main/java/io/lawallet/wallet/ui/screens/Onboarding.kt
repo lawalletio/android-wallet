@@ -153,7 +153,7 @@ fun SecretKeyReveal(nsec: String, confirmed: Boolean?, onConfirmed: ((Boolean) -
         LwButton(
             stringResource(if (copied) R.string.common_copied else R.string.auth_copyKey),
             { context.copyToClipboard(nsec); copied = true }, Modifier.fillMaxWidth(), BtnVariant.Secondary, enabled = enabled, height = 40.dp,
-            icon = if (copied) L.drawable.lucide_ic_check else L.drawable.lucide_ic_copy,
+            icon = if (copied) L.drawable.lucide_ic_check else R.drawable.ic_copy,
         )
         if (onConfirmed != null) Row(
             Modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp), GlassLevel.Thin)

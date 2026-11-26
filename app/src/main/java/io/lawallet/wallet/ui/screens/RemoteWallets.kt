@@ -603,7 +603,7 @@ fun RemoteWalletDetailScreen(id: String) {
                         Txt(if (showConn) cs else cs.take(36) + "••••••••••••", size = 11.sp, mono = true)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             LwButton(stringResource(R.string.remote_wallet_reveal), { if (showConn) showConn = false else sensitiveGate { showConn = true } }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_eye)
-                            LwButton(stringResource(R.string.common_copy), { sensitiveGate { context.copyToClipboard(cs, copied) } }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = L.drawable.lucide_ic_copy)
+                            LwButton(stringResource(R.string.common_copy), { sensitiveGate { context.copyToClipboard(cs, copied) } }, Modifier.weight(1f), BtnVariant.Secondary, height = 36.dp, icon = R.drawable.ic_copy)
                         }
                     }
                 }

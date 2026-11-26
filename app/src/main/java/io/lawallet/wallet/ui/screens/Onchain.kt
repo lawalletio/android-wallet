@@ -724,7 +724,7 @@ fun OnchainWalletDetailScreen(id: String) {
                     GroupDivider()
                     val kind = stringResource(if (w.watch == WatchKind.ADDRESS) R.string.onchain_kind_address else R.string.onchain_kind_xpub)
                     SettingsRow(kind, { context.copyToClipboard(src, copied) }, icon = L.drawable.lucide_ic_eye, value = src.take(8) + "…" + src.takeLast(6)) {
-                        LwIcon(L.drawable.lucide_ic_copy, size = 18.dp, tint = Lw.MutedFg)
+                        LwIcon(R.drawable.ic_copy, size = 18.dp, tint = Lw.MutedFg)
                     }
                 }
                 GroupDivider()

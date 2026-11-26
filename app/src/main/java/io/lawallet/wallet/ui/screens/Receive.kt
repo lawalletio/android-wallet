@@ -216,7 +216,7 @@ private fun ColumnScope.LightningReceivePage() {
             BigQr("lightning:$address", PAGE_TONES[LIGHTNING], L.drawable.lucide_ic_zap, credit) { context.copyToClipboard(address, copied) }
             AddressHero(address)
             ReceiveActions(listOf(
-                ReceiveAction(L.drawable.lucide_ic_copy, stringResource(R.string.common_copy), "receive-copy") { context.copyToClipboard(address, copied) },
+                ReceiveAction(R.drawable.ic_copy, stringResource(R.string.common_copy), "receive-copy") { context.copyToClipboard(address, copied) },
                 ReceiveAction(L.drawable.lucide_ic_share_2, stringResource(R.string.common_share), "receive-share") { context.shareText(address) },
                 ReceiveAction(L.drawable.lucide_ic_hash, stringResource(R.string.receive_action_amount), "request-amount") { c.flow.resetReceive(); nav.navigate(R0.RECEIVE_AMOUNT) },
             ))

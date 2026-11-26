@@ -484,7 +484,7 @@ fun QrDisplay(data: String, caption: String?, copyValue: String = data, modifier
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(copyValue, copied) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_copy)
+            LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(copyValue, copied) }, Modifier.weight(1f), BtnVariant.Secondary, icon = R.drawable.ic_copy)
             LwButton(stringResource(R.string.common_share), { context.shareText(copyValue) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
         }
     }
@@ -628,7 +628,7 @@ fun PaymentReceiptCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Txt(label, Modifier.weight(1f), size = 12.sp, weight = FontWeight.Medium, color = Lw.MutedFg)
                             if (value != null) Box(Modifier.hideInShot().minimumInteractiveComponentSize().clip(CircleShape).clickable { context.copyToClipboard(value, copiedMsg) }, contentAlignment = Alignment.Center) {
-                                LwIcon(L.drawable.lucide_ic_copy, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
+                                LwIcon(R.drawable.ic_copy, size = 16.dp, tint = Lw.MutedFg, contentDescription = stringResource(R.string.common_copy))
                             }
                         }
                         Txt(value ?: stringResource(R.string.shared_receipt_notProvided), Modifier.testTag("proof-$label"), size = 11.sp, mono = true, color = if (value == null) Lw.MutedFg else Lw.Foreground)

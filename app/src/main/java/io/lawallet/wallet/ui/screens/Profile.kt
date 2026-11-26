@@ -447,7 +447,7 @@ private fun InfoChip(icon: Int, text: String, tint: Color, mono: Boolean = false
         LwIcon(icon, size = 16.dp, tint = tint)
         Spacer(Modifier.width(10.dp))
         Txt(text, Modifier.weight(1f), size = 14.sp, mono = mono, maxLines = 1)
-        LwIcon(L.drawable.lucide_ic_copy, size = 15.dp, tint = Lw.MutedFg)
+        LwIcon(R.drawable.ic_copy, size = 15.dp, tint = Lw.MutedFg)
     }
 }
 
