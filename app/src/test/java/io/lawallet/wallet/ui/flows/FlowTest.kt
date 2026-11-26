@@ -21,6 +21,7 @@ import io.lawallet.wallet.testing.TestContainer
 import io.lawallet.wallet.testing.loginThrowaway
 import io.lawallet.wallet.ui.LaWalletRoot
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -70,6 +71,7 @@ abstract class FlowTest {
         if (loggedIn) runBlocking { c.loginThrowaway(TEST_SECRET) }
         // In the foreground, as LaWalletApp's process observer sets it: balance polling runs.
         c.wallet.active.value = true
+        c.scope.launch { c.wallet.balance.collect { balances += it } }
         // Screens prompt for the device lock through a FragmentActivity, as MainActivity is.
         shadowOf(context.packageManager).addActivityIfNotPresent(ComponentName(context, FragmentActivity::class.java))
         scenario = ActivityScenario.launch(FragmentActivity::class.java).onActivity {
@@ -82,6 +84,9 @@ abstract class FlowTest {
      * [rule].waitUntil, but a timeout says where the wallet stood: CI has timed out waiting on NWC replies that never
      * fail locally, and the plain ComposeTimeoutException says nothing about them.
      */
+    /** Every balance Home was given, in order (a timeout's message: was the new one there and then replaced?). */
+    private val balances = java.util.concurrent.CopyOnWriteArrayList<Long?>()
+
     private fun await(timeoutMs: Long, condition: () -> Boolean) = try {
         rule.waitUntil(timeoutMs, condition)
     } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
@@ -89,7 +94,7 @@ abstract class FlowTest {
         throw AssertionError(
             "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
                 "connected=${relay?.connected?.value} open=${relay?.openSubIds()} queued=${relay?.queuedSubIds()} " +
-                "wallet: requests=${instance.wallet.requests} ${instance.wallet.state()}", e,
+                "balances=$balances wallet: requests=${instance.wallet.requests} ${instance.wallet.state()}", e,
         )
     }
 

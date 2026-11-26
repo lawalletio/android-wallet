@@ -45,7 +45,7 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     fun dropConnections() { sockets.forEach { it.close(1012, "restart") }; sockets.clear() }
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { sockets.remove(webSocket); webSocket.close(1000, null) }
 
-    override fun onOpen(webSocket: WebSocket, response: Response) { sockets += webSocket }
+    override fun onOpen(webSocket: WebSocket, response: Response) { sockets += webSocket; opened++ }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
         val msg = NostrEvent.json.parseToJsonElement(text).jsonArray
@@ -74,7 +74,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     private fun decrypt(content: String) = if (content.contains("?iv=")) Nip04.decrypt(content, walletKeys, clientKeys.pubkey) else Nip44.decrypt(content, walletKeys, clientKeys.pubkey)
     private fun encrypt(plain: String) = if (nip44) Nip44.encrypt(plain, walletKeys, clientKeys.pubkey) else Nip04.encrypt(plain, walletKeys, clientKeys.pubkey)
 
-    private fun handleRequest(ws: WebSocket, ev: NostrEvent) {
+    /** Synchronized: each connection reads on its own thread, and a real wallet doesn't read a balance mid-payment. */
+    @Synchronized private fun handleRequest(ws: WebSocket, ev: NostrEvent) {
         // A real wallet can't read the wrong encryption and just stays silent.
         if (nip44 != (ev.tag("encryption") == "nip44_v2")) { requests += "wrong-encryption"; return }
         val req = NostrEvent.json.parseToJsonElement(decrypt(ev.content)).jsonObject
@@ -82,7 +83,7 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
         val params = req["params"]!!.jsonObject
         requests += method
         val result: JsonObject? = when (method) {
-            "get_balance" -> buildJsonObject { put("balance", balanceMsat) }
+            "get_balance" -> buildJsonObject { put("balance", balanceMsat) }.also { balancesAnswered += balanceMsat / 1000 }
             "make_invoice" -> tx("incoming", params["amount"]!!.jsonPrimitive.long, "hash-make")
             "lookup_invoice" -> tx("incoming", 5000, params["payment_hash"]!!.jsonPrimitive.content, settled = true)
             "list_transactions" -> buildJsonObject { put("transactions", JsonArray(listOf(tx("incoming", 1000, "h1"), tx("outgoing", 2000, "h2")))) }
@@ -110,7 +111,9 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     }
 
     /** For a failing test's message: the relay's subscriptions and the replies it has published. */
-    fun state() = "subs=${subs.keys} replies=${replies.size} held=${heldBalances.size} sockets=${sockets.size}"
+    fun state() = "subs=${subs.keys} replies=${replies.size} held=${heldBalances.size} sockets=${sockets.size} opened=$opened balancesAnswered=$balancesAnswered"
+    private val balancesAnswered = CopyOnWriteArrayList<Long>()
+    @Volatile private var opened = 0
 
     /** True: get_balance answers (with the balance at the time it was asked) wait for [releaseBalances], like a slow wallet. */
     @Volatile var holdBalance = false
