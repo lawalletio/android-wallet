@@ -57,7 +57,10 @@ class FlowStore {
     )
     var cashOut = CashOut()
 
-    /** An onchain payment in progress: who pays, where to, how much ([max]: everything), then the built tx and its id. */
+    /**
+     * An onchain payment in progress: who pays, where to, how much ([max]: everything), the receiver's payjoin endpoint,
+     * then the built tx and its id, and whether the payjoin happened ([joined]: null when it wasn't tried).
+     */
     data class OnchainSend(
         val walletId: String,
         val address: String,
@@ -66,6 +69,8 @@ class FlowStore {
         val max: Boolean = false,
         val draft: OnchainDraft? = null,
         val txid: String? = null,
+        val payjoin: String? = null,
+        val joined: Boolean? = null,
     )
     var onchainSend: OnchainSend? = null
     /** Wallet material the main scanner found, for onchain import to start from (consumed there). */

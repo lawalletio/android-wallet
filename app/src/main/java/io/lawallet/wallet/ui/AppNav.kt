@@ -227,6 +227,7 @@ object R0 {
     const val ONCHAIN_SEND_AMOUNT = "onchain/send/amount"
     const val ONCHAIN_SEND_REVIEW = "onchain/send/review"
     const val ONCHAIN_SENT = "onchain/sent"
+    const val ONCHAIN_PAYJOIN = "onchain/payjoin"
     fun onchainTx(walletId: String, txid: String) = "onchain/tx/$walletId/$txid"
     fun onchainPsbt(id: String) = "onchain/psbt/$id"
     const val ONCHAIN_MULTISIG = "onchain/multisig"
@@ -525,6 +526,7 @@ private fun AppNavHost(container: AppContainer, loggedIn: Boolean) {
                 composable(R0.ONCHAIN_SEND_AMOUNT) { OnchainSendAmountScreen() }
                 composable(R0.ONCHAIN_SEND_REVIEW) { OnchainSendReviewScreen() }
                 composable(R0.ONCHAIN_SENT) { OnchainSentScreen() }
+                composable(R0.ONCHAIN_PAYJOIN) { OnchainPayjoinScreen() }
                 composable("onchain/tx/{wallet}/{txid}") { OnchainTxScreen(it.arguments?.getString("wallet").orEmpty(), it.arguments?.getString("txid").orEmpty()) }
                 composable("onchain/psbt/{id}") { OnchainPsbtScreen(it.arguments?.getString("id").orEmpty()) }
                 composable(R0.ONCHAIN_MULTISIG) { CreateMultisigScreen() }

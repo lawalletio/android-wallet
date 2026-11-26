@@ -13,5 +13,7 @@
 -keep class com.sun.jna.** { *; }
 -keep class * implements com.sun.jna.** { *; }
 -keep class org.bitcoindevkit.** { *; }
+# The Payjoin Dev Kit bindings: the same uniffi-over-JNA shape as BDK's.
+-keep class org.payjoindevkit.** { *; }
 -dontwarn java.awt.**
 -dontwarn org.slf4j.**

@@ -6,6 +6,7 @@ import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.DescriptorPair
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.Electrum
+import io.lawallet.wallet.core.btc.Payjoin
 import io.lawallet.wallet.core.btc.WatchKind
 import io.lawallet.wallet.core.diag.Trail
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import okhttp3.OkHttpClient
 import org.bitcoindevkit.Address
 import org.bitcoindevkit.Amount
 import org.bitcoindevkit.BumpFeeTxBuilder
@@ -75,6 +77,20 @@ data class OnchainTx(
     val amount get() = if (incoming) delta else paid ?: (abs(delta) - (fee ?: 0))
     fun confirmations(tip: Int?) = if (height == null || tip == null) 0 else (tip - height + 1).coerceAtLeast(1)
 
+    companion object {
+        /**
+         * A send's (paid, fee), from our side only. A payjoin also spends the receiver's coins ([allOut] + [fee] is
+         * more than [ourIn]) and pays them back to them, so its outputs to others aren't all ours: what we paid is what
+         * we [asked] to (kept at send), else all that left us less the fee. An unknown fee means inputs we can't see.
+         */
+        fun sendShare(delta: Long, toOthers: Long, allOut: Long, ourIn: Long, fee: Long?, asked: Long?): Pair<Long?, Long?> = when {
+            asked != null -> asked to (-delta - asked)
+            fee == null -> null to null
+            allOut + fee > ourIn -> null to fee
+            else -> toOthers.takeIf { it > 0 } to fee
+        }
+    }
+
     /** As the app's [Tx], so Activity rows and grouping take it unchanged (the txid stands in for the payment hash). */
     fun toTx() = Tx(
         type = if (incoming) "incoming" else "outgoing", amountSats = amount, feesPaidSats = if (incoming) 0 else fee ?: 0,
@@ -101,7 +117,8 @@ data class Fees(val fast: Double, val medium: Double, val slow: Double)
 data class OnchainDraft(val walletId: String, val psbt: String, val address: String, val amount: Long, val fee: Long, val feeRate: Double, val replaces: String? = null)
 
 sealed interface SendOutcome {
-    data class Sent(val txid: String) : SendOutcome
+    /** [payjoin]: null when not tried; true when the receiver joined, paying [extraFee] more from our change; false when it fell back. */
+    data class Sent(val txid: String, val payjoin: Boolean? = null, val extraFee: Long = 0) : SendOutcome
     /** Signed with what this phone holds (maybe nothing): other signers have to add theirs. */
     data class NeedsSignatures(val psbt: String) : SendOutcome
 }
@@ -120,7 +137,7 @@ class OnchainException(val reason: Reason) : Exception(reason.name) {
  * kept current through one [Electrum] subscription socket per chain. A changed scripthash status syncs that wallet
  * (a full scan when it was a look-ahead address); nothing polls. Seed phrases are decrypted only to sign.
  */
-class OnchainRepository(context: Context, private val store: OnchainStore, private val scope: CoroutineScope) {
+class OnchainRepository(context: Context, private val store: OnchainStore, private val scope: CoroutineScope, private val http: OkHttpClient) {
     private val dir = File(context.filesDir, "onchain").apply { mkdirs() }
     private val cache = context.getSharedPreferences("onchain-cache", Context.MODE_PRIVATE)
 
@@ -378,12 +395,16 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
             val paidTo = if (!sent) emptyList() else outs.filter { !bdk.isMine(it.scriptPubkey) }
                 .ifEmpty { outs.filter { bdk.derivationOfSpk(it.scriptPubkey)?.keychain == KeychainKind.EXTERNAL } }
             val to = (if (sent) paidTo.firstOrNull() ?: outs.firstOrNull() else outs.firstOrNull { bdk.isMine(it.scriptPubkey) })
+            val fee = d.fee?.toSat()?.toLong()
+            val (paid, ourFee) = if (!sent) null to fee
+                else OnchainTx.sendShare(d.balanceDelta, paidTo.sumOf { it.value.toSat().toLong() }, outs.sumOf { it.value.toSat().toLong() },
+                    d.sent.toSat().toLong(), fee, cache.getString("pj:$txid", null)?.toLongOrNull())
             OnchainTx(
-                txid.toString(), d.balanceDelta, d.fee?.toSat()?.toLong(), d.feeRate?.let { it.toSatPerKwu().toDouble() * 4 / 1000 },
+                txid.toString(), d.balanceDelta, ourFee, d.feeRate?.let { it.toSatPerKwu().toDouble() * 4 / 1000 },
                 conf?.confirmationBlockTime?.blockId?.height?.toInt(),
                 1000 * (conf?.confirmationBlockTime?.confirmationTime?.toLong() ?: (ct.chainPosition as? ChainPosition.Unconfirmed)?.timestamp?.toLong() ?: now),
                 to?.let { addressOf(it.scriptPubkey.toBytes(), w.chain) }, ct.transaction.isExplicitlyRbf(),
-                paidTo.sumOf { it.value.toSat().toLong() }.takeIf { it > 0 },
+                paid,
             )
         }.sortedWith(compareBy<OnchainTx> { !it.pending }.thenByDescending { it.time })
         val unused = bdk.listUnusedAddresses(KeychainKind.EXTERNAL)
@@ -481,14 +502,78 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
         return ds?.map { SignersContainer.fromDescriptor(it) }
     }
 
-    /** Signs a draft with this phone's key and broadcasts it, or hands back the PSBT when other signatures are needed. */
-    suspend fun send(draft: OnchainDraft): SendOutcome = withContext(Dispatchers.IO) {
+    /**
+     * Signs a draft with this phone's key and broadcasts it, or hands back the PSBT when other signatures are needed.
+     * With [payjoin] (the receiver's `pj=`) the signed draft is offered to the receiver first, and their payjoin goes out
+     * instead when it checks out; otherwise the draft does.
+     */
+    suspend fun send(draft: OnchainDraft, payjoin: String? = null, onRun: (PayjoinRun) -> Unit = {}): SendOutcome = withContext(Dispatchers.IO) {
         val h = handle(draft.walletId)
         val psbt = Psbt(draft.psbt)
         val keys = signers(h.w)
         val done = h.lock.withLock { keys != null && h.bdk!!.signWithSigners(psbt, keys) }
-        if (done) SendOutcome.Sent(broadcast(h, psbt)) else SendOutcome.NeedsSignatures(psbt.serialize())
+        if (!done) return@withContext SendOutcome.NeedsSignatures(psbt.serialize())
+        val tried = payjoin != null && draft.replaces == null && canPayjoin(h.w)
+        var run = PayjoinRun(PayjoinRun.Step.SEND)
+        fun emit(f: (PayjoinRun) -> PayjoinRun) { run = f(run); onRun(run) }
+        val joined = if (!tried) null else runCatching { payjoin(h, psbt, Payjoin.uri(draft.address, draft.amount, payjoin!!), keys!!, ::emit) }
+            .onFailure { e ->
+                Trail.add("onchain", "payjoin skipped: " + ((e as? Payjoin.Rejected)?.message ?: e.javaClass.simpleName))
+                emit { it.copy(failedAt = it.step, why = PayjoinRun.why(e)) }
+            }.getOrNull()
+        // The receiver may broadcast the original itself, so when the payjoin doesn't go out the original must.
+        val joinedTxid = joined?.let { runCatching { broadcast(h, it.first) }.getOrNull() }?.also { Trail.add("onchain", "payjoin sent") }
+        if (joined != null && joinedTxid == null) emit { it.copy(failedAt = PayjoinRun.Step.BROADCAST, why = PayjoinRun.Why.OFFLINE) }
+        val txid = joinedTxid ?: broadcast(h, psbt)
+        // A payjoin's payment output also holds the receiver's coins: what we sent is only what we asked to.
+        if (joinedTxid != null) {
+            cache.edit().putString("pj:$txid", draft.amount.toString()).apply()
+            h.lock.withLock { publish(h) }
+        }
+        val extra = if (joinedTxid != null) joined.second else 0
+        if (tried) emit { it.copy(step = PayjoinRun.Step.DONE, txid = txid, joined = joinedTxid != null, extraFee = extra) }
+        SendOutcome.Sent(txid, if (tried) joinedTxid != null else null, extra)
     }
+
+    /**
+     * Offers [original] (signed, finalised) to the receiver of [bip21]; their proposal signed and what it took from our
+     * change, or throws. Each step goes to [emit] as it starts.
+     */
+    private suspend fun payjoin(h: Handle, original: Psbt, bip21: String, keys: List<SignersContainer>, emit: ((PayjoinRun) -> PayjoinRun) -> Unit): Pair<Psbt, Long> {
+        val bdk = h.bdk!!
+        val (offer, flow) = h.lock.withLock { Payjoin.Offer(original, bdk::isMine, h.w.script?.let(Payjoin::inputVbytes)).let { it to it.flow() } }
+        emit { it.copy(step = PayjoinRun.Step.SEND, flow = flow) }
+        val proposal = Payjoin.propose(http, bip21, offer) { relay, directory ->
+            emit { it.copy(step = PayjoinRun.Step.WAIT, relay = relay, directory = directory, deadline = System.currentTimeMillis() + Payjoin.WAIT_MS) }
+        }
+        emit { it.copy(step = PayjoinRun.Step.CHECK) }
+        return h.lock.withLock {
+            val p = offer.accept(proposal)
+            if (!bdk.signWithSigners(p, keys, Payjoin.SIGN)) throw Payjoin.Rejected("unsigned")
+            offer.checkRate(p)
+            emit { it.copy(step = PayjoinRun.Step.BROADCAST, flow = offer.flow(p), extraFee = offer.contribution) }
+            p to offer.contribution
+        }
+    }
+
+    private val _payjoin = MutableStateFlow<PayjoinRun?>(null)
+    /** The payjoin [startPayjoin] runs, step by step; null before the first. */
+    val payjoinRun: StateFlow<PayjoinRun?> = _payjoin
+
+    /**
+     * Sends [draft] as a payjoin to [pj], on the app's scope so it finishes (or falls back to the original) even if
+     * its screen goes away; [payjoinRun] follows it.
+     */
+    fun startPayjoin(draft: OnchainDraft, pj: String) {
+        _payjoin.value = PayjoinRun()
+        scope.launch {
+            runCatching { send(draft, pj) { r -> _payjoin.value = r } }
+                .onFailure { e -> _payjoin.update { (it ?: PayjoinRun()).copy(error = e) } }
+        }
+    }
+
+    /** Whether a send from [w] can be a payjoin: it needs this phone to sign alone, twice. */
+    fun canPayjoin(w: OnchainWallet) = !w.watchOnly && !w.multisig
 
     /** Adds this phone's signature to [psbt] (base64), if it holds a key for the wallet. */
     suspend fun sign(id: String, psbt: String): String = withContext(Dispatchers.IO) {

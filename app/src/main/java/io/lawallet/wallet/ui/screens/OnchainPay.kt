@@ -77,6 +77,7 @@ import io.lawallet.wallet.app.SendOutcome
 import io.lawallet.wallet.core.btc.Bip21
 import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.Descriptors
+import io.lawallet.wallet.core.btc.Payjoin
 import io.lawallet.wallet.core.btc.PsbtCodec
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
@@ -105,6 +106,7 @@ import io.lawallet.wallet.ui.components.Spinner
 import io.lawallet.wallet.ui.components.SwipeButton
 import io.lawallet.wallet.ui.components.TextPrompt
 import io.lawallet.wallet.ui.components.Txt
+import io.lawallet.wallet.ui.components.CopyValue
 import io.lawallet.wallet.ui.components.copyToClipboard
 import io.lawallet.wallet.ui.components.keypadDisplay
 import io.lawallet.wallet.ui.components.lwFieldColors
@@ -140,7 +142,7 @@ fun startOnchainSend(c: AppContainer, b: Bip21, preferred: String? = null): Stri
     val chain = Descriptors.chainOf(b.address) ?: return null
     val wallets = payingWallets(c, chain)
     val from = wallets.firstOrNull { it.id == preferred } ?: wallets.firstOrNull { it.isPrimary } ?: wallets.firstOrNull() ?: return null
-    c.flow.onchainSend = FlowStore.OnchainSend(from.id, b.address, b.sats, b.label)
+    c.flow.onchainSend = FlowStore.OnchainSend(from.id, b.address, b.sats, b.label, payjoin = b.pj)
     return if (b.sats != null) R0.ONCHAIN_SEND_REVIEW else R0.ONCHAIN_SEND_AMOUNT
 }
 
@@ -251,7 +253,7 @@ private fun ColumnScope.OnchainReceiveBody(id: String, onPick: ((String) -> Unit
             }
         }
         ReceiveActions(buildList {
-            add(ReceiveAction(L.drawable.lucide_ic_copy, stringResource(R.string.common_copy), "onchain-copy") { copyValue?.let { context.copyToClipboard(it, copied) } })
+            add(ReceiveAction(R.drawable.ic_copy, stringResource(R.string.common_copy), "onchain-copy") { copyValue?.let { context.copyToClipboard(it, copied) } })
             add(ReceiveAction(L.drawable.lucide_ic_share_2, stringResource(R.string.common_share), "onchain-share") { copyValue?.let { context.shareText(it) } })
             add(ReceiveAction(L.drawable.lucide_ic_hash, stringResource(R.string.receive_action_amount), "onchain-receive-amount") { amountOpen = true })
             if (w.descriptors != null) add(ReceiveAction(L.drawable.lucide_ic_refresh_cw, stringResource(R.string.onchain_receive_newAddress), "onchain-new-address", busy) {
@@ -348,14 +350,28 @@ fun OnchainSendScreen(from: String? = null) {
     }
 }
 
+/** Who's paid; [payjoin]: the request offers one, badged so it's noticed from the first screen. */
 @Composable
-private fun RecipientRow(address: String, label: String?) =
+private fun RecipientRow(address: String, label: String?, payjoin: Boolean = false) =
     Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = Lw.Bitcoin.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_bitcoin, size = 20.dp, tint = Lw.Bitcoin) }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Txt(label ?: stringResource(R.string.send_to), size = 13.sp, color = Lw.MutedFg, maxLines = 1)
             Txt(short(address), size = 15.sp, mono = true, maxLines = 1)
+        }
+        if (payjoin) Box(Modifier.testTag("onchain-payjoin-badge")) { Pill(stringResource(R.string.onchain_payjoin), Lw.Green) }
+    }
+
+/** What a payjoin is, on a payment to a `pj=` request; [joins]: this wallet can make one, else it says why not. */
+@Composable
+private fun PayjoinNote(joins: Boolean) =
+    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin, tint = Lw.Green.copy(alpha = if (joins) 0.10f else 0.04f)).padding(14.dp).testTag("onchain-payjoin")) {
+        Box(Modifier.size(40.dp).glass(CircleShape, GlassLevel.Thin, tint = Lw.Green.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) { LwIcon(L.drawable.lucide_ic_users, size = 20.dp, tint = Lw.Green) }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Txt(stringResource(R.string.onchain_payjoin_title), size = 15.sp, weight = FontWeight.SemiBold)
+            MutedText(stringResource(if (joins) R.string.onchain_payjoin_body else R.string.onchain_payjoin_unavailable), size = 13.sp)
         }
     }
 
@@ -376,7 +392,7 @@ fun OnchainSendAmountScreen() {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(stringResource(R.string.send_amountTitle), { nav.popBackStack() })
         Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            RecipientRow(s.address, s.label)
+            RecipientRow(s.address, s.label, s.payjoin != null)
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AmountDisplay(keypadDisplay(raw, code), Currencies.unitLabel(code))
                 if (code != "SAT") MutedText(stringResource(R.string.common_sats, Currencies.formatSats(sats ?: 0)))
@@ -465,11 +481,15 @@ fun OnchainSendReviewScreen() {
     val failed = draft?.exceptionOrNull()
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val canSign = !w.watchOnly
+    val payjoin = s0.payjoin?.let { Payjoin.endpoint(it) } != null
+    val joins = payjoin && c.onchainWallets.canPayjoin(w)
+    // The most the receiver may take from our change for its input: one input's worth at our rate.
+    val joinFee = d?.takeIf { joins }?.let { dr -> w.script?.let { kotlin.math.ceil(dr.feeRate * Payjoin.inputVbytes(it)).toLong() } }
     fun onDone(outcome: SendOutcome, dr: OnchainDraft) {
         when (outcome) {
             is SendOutcome.Sent -> {
                 sent = true
-                c.flow.onchainSend = s0.copy(walletId = walletId, draft = dr, txid = outcome.txid)
+                c.flow.onchainSend = s0.copy(walletId = walletId, draft = dr.copy(fee = dr.fee + outcome.extraFee), txid = outcome.txid, joined = outcome.payjoin)
                 nav.navigate(R0.ONCHAIN_SENT) { popUpTo(R0.HOME) }
             }
             is SendOutcome.NeedsSignatures -> { c.flow.psbt = outcome.psbt; nav.navigate(R0.onchainPsbt(walletId)) }
@@ -482,7 +502,8 @@ fun OnchainSendReviewScreen() {
                 val amount = d?.amount ?: s0.sats
                 if (amount != null) AmountDisplay(Currencies.formatSats(amount), "sats") else Box(Modifier.height(58.dp), contentAlignment = Alignment.Center) { Spinner() }
             }
-            RecipientRow(s0.address, s0.label)
+            RecipientRow(s0.address, s0.label, payjoin)
+            if (payjoin) PayjoinNote(joins)
             SettingsGroup {
                 val others = payingWallets(c, chain).size > 1
                 SettingsRow(
@@ -497,6 +518,7 @@ fun OnchainSendReviewScreen() {
             }
             Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp), GlassLevel.Thin).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 KeyValueRow(stringResource(R.string.send_networkFee), d?.let { stringResource(R.string.common_sats, Currencies.formatSats(it.fee)) } ?: "…")
+                if (joinFee != null && joinFee > 0) KeyValueRow(stringResource(R.string.onchain_payjoin_fee), stringResource(R.string.onchain_payjoin_feeUpTo, Currencies.formatSats(joinFee)))
                 KeyValueRow(stringResource(R.string.onchain_send_total), d?.let { stringResource(R.string.common_sats, Currencies.formatSats(it.amount + it.fee)) } ?: "…")
             }
             Row(Modifier.padding(horizontal = 6.dp)) {
@@ -509,9 +531,17 @@ fun OnchainSendReviewScreen() {
         Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)) {
             if (canSign) SwipeButton(stringResource(R.string.onchain_send_swipe), {
                 val dr = d ?: return@SwipeButton
+                // A payjoin takes up to a minute and several steps: its own screen shows them as they happen.
+                if (joins) {
+                    sent = true
+                    c.flow.onchainSend = s0.copy(walletId = walletId, draft = dr)
+                    c.onchainWallets.startPayjoin(dr, s0.payjoin!!)
+                    nav.navigate(R0.ONCHAIN_PAYJOIN) { popUpTo(R0.HOME) }
+                    return@SwipeButton
+                }
                 sending = true; error = null
                 scope.launch {
-                    runCatching { c.onchainWallets.send(dr) }.onSuccess { onDone(it, dr) }.onFailure { error = it }
+                    runCatching { c.onchainWallets.send(dr, s0.payjoin) }.onSuccess { onDone(it, dr) }.onFailure { error = it }
                     sending = false
                 }
             }, loading = sending, done = sent, enabled = d != null)
@@ -539,18 +569,19 @@ fun OnchainSentScreen() {
     val s = c.flow.onchainSend
     val d = s?.draft
     if (s?.txid == null || d == null) { LaunchedEffect(Unit) { nav.goHome() }; return }
+    val to = stringResource(R.string.send_to)
     val rows = listOf(
-        stringResource(R.string.send_to) to short(s.address),
+        to to short(s.address),
         stringResource(R.string.send_networkFee) to stringResource(R.string.onchain_tx_feeRate, Currencies.formatSats(d.fee), rateText(d.feeRate)),
         stringResource(R.string.onchain_tx_status) to stringResource(R.string.onchain_tx_unconfirmed),
-    )
+    ) + listOfNotNull(s.joined?.let { stringResource(R.string.onchain_payjoin) to stringResource(if (it) R.string.onchain_payjoin_joined else R.string.onchain_payjoin_regular) })
     Column(Modifier.fillMaxSize()) {
         PaymentReceipt(stringResource(R.string.send_summary_title), "pending", d.amount, rows, listOf(stringResource(R.string.onchain_tx_id) to s.txid),
             PaddingValues(horizontal = 16.dp, vertical = 32.dp), onDone = {
                 // Back to where the payment started: Home as it was (its page, the wallet list closed), not a fresh one.
                 c.flow.onchainSend = null
                 if (!nav.popBackStack(R0.HOME, inclusive = false)) nav.goHome()
-            })
+            }, valueNodes = mapOf(to to { CopyValue(short(s.address), s.address, Modifier.testTag("onchain-sent-address")) }))
     }
 }
 
@@ -568,6 +599,7 @@ fun OnchainTxScreen(walletId: String, txid: String) {
     var speeding by remember { mutableStateOf(false) }
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val tip by c.onchainWallets.tip(w.chain).collectAsState()
+    val addressKey = stringResource(if (tx?.incoming == true) R.string.onchain_tx_address else R.string.send_to)
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(null, { nav.popBackStack() })
         if (tx == null) {
@@ -584,7 +616,7 @@ fun OnchainTxScreen(walletId: String, txid: String) {
         val confirmations = tx.confirmations(tip)
         val rows = buildList {
             add(stringResource(R.string.onchain_tx_status) to if (tx.pending) stringResource(R.string.onchain_tx_unconfirmed) else if (confirmations >= 6) stringResource(R.string.onchain_tx_confirmed6) else pluralStringResource(R.plurals.onchain_confirmations, confirmations, confirmations))
-            tx.counterpart?.let { add(stringResource(if (tx.incoming) R.string.onchain_tx_address else R.string.send_to) to short(it)) }
+            tx.counterpart?.let { add(addressKey to short(it)) }
             add(stringResource(R.string.onchain_tx_wallet) to w.name)
             if (!tx.incoming && tx.fee != null) add(stringResource(R.string.send_networkFee) to stringResource(R.string.onchain_tx_feeRate, Currencies.formatSats(tx.fee), rateText(tx.feeRate ?: 0.0)))
             add(stringResource(R.string.send_summary_time) to DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(tx.time)))
@@ -601,7 +633,7 @@ fun OnchainTxScreen(walletId: String, txid: String) {
                     BlockStrip(confirmations, if (tx.incoming) Lw.Green else Lw.Bitcoin, block = 14.dp)
                     Txt(statusText, size = 14.sp, align = TextAlign.End)
                 }
-            })) + mapOf(explorer to {
+            })) + listOfNotNull(tx.counterpart?.let { a -> addressKey to @Composable { CopyValue(short(a), a, Modifier.testTag("onchain-tx-address")) } }) + mapOf(explorer to {
                 Txt(
                     "mempool.space ↗", Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(w.chain.txUrl(tx.txid)))) } }.testTag("onchain-explorer"),
                     size = 14.sp, weight = FontWeight.Medium, color = Lw.Bitcoin,
@@ -737,7 +769,7 @@ fun OnchainPsbtScreen(id: String) {
                     MutedText(stringResource(R.string.onchain_psbt_body), align = TextAlign.Center, size = 13.sp)
                     PsbtQr(psbt!!)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(psbt!!, copied) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_copy)
+                        LwButton(stringResource(R.string.common_copy), { context.copyToClipboard(psbt!!, copied) }, Modifier.weight(1f), BtnVariant.Secondary, icon = R.drawable.ic_copy)
                         LwButton(stringResource(R.string.common_share), { context.shareText(psbt!!) }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_share_2)
                         LwButton(stringResource(R.string.onchain_psbt_save), { save.launch("lawallet-${System.currentTimeMillis() / 1000}.psbt") }, Modifier.weight(1f), BtnVariant.Secondary, icon = L.drawable.lucide_ic_download)
                     }

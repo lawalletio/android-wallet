@@ -228,6 +228,7 @@ dependencies {
     implementation(libs.hummingbird)
     implementation(libs.cbor)
     implementation(libs.bdk.android)
+    implementation(libs.jna) { artifact { type = "aar" } }
     implementation(libs.lucide)
     implementation(libs.haze)
     implementation(libs.reorderable)

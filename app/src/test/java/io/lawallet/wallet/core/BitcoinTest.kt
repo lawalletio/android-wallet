@@ -77,4 +77,15 @@ class BitcoinTest {
         assertEquals(2500, tx(-141, 141, paid = 2500).amount)  // to our own address: delta is just the fee
         assertEquals(2500, tx(2500, null).amount)              // received
     }
+
+    @Test fun payjoinSendCountsOnlyOurSide() {
+        // We spent a 100 000 coin to pay 30 000; the receiver added a 264 087 coin, so their output holds 294 087.
+        val amount = { paidFee: Pair<Long?, Long?> -> OnchainTx("t", -30_417, paidFee.second, null, 1, 0, null, false, paidFee.first).amount }
+        assertEquals(30_000L to 417L, OnchainTx.sendShare(-30_417, 294_087, 363_670, 100_000, fee = 417, asked = 30_000))
+        // Not noted at send (an older build, a restored wallet): their input shows in the fee BDK fetched.
+        assertEquals(30_000, amount(OnchainTx.sendShare(-30_417, 294_087, 363_670, 100_000, fee = 417, asked = null)))
+        assertEquals(30_417, amount(OnchainTx.sendShare(-30_417, 294_087, 363_670, 100_000, fee = null, asked = null)))
+        // A plain send keeps its outputs to others.
+        assertEquals(2500L to 141L, OnchainTx.sendShare(-2641, 2500, 9859, 10_000, fee = 141, asked = null))
+    }
 }

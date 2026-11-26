@@ -26,6 +26,7 @@ scripts/test-device.sh                     # instrumented + e2e on an emulator, 
 ./gradlew testDebugUnitTest lintDebug assembleDebug   # exactly what CI runs on every PR
 scripts/perf-report.py pull -s <serial>; scripts/perf-report.py report   # performance data from a device
 scripts/plugins-dev.py                     # serve plugins-dev/ (gitignored) to debug builds: docs/plugins.md
+scripts/build-payjoin-ffi.sh               # rebuild the Payjoin Dev Kit .so files (jniLibs) and org/payjoindevkit bindings (generated)
 ```
 
 - Tests: [docs/testing.md](docs/testing.md). A `fix(...)` commit ships with a regression test named
@@ -57,7 +58,7 @@ All app code is in the single `:app` module, package `io.lawallet.wallet`
 | `core/ln` | bolt11, destination / LNURL / activation / NDEF parsing, `ScanRouter`, Bolt card charge |
 | `core/api` | LaWallet REST client (NIP-98 → JWT session) and models |
 | `core/auth` | passkeys (Credential Manager + PRF → HKDF), Amber (NIP-55), NIP-46 bunker |
-| `core/btc` | onchain: chains, BIP-39, input detection, descriptors and multisig keys (BDK), BIP-21, Electrum subscription client, PSBT codec (BC-UR) |
+| `core/btc` | onchain: chains, BIP-39, input detection, descriptors and multisig keys (BDK), BIP-21, Electrum subscription client, PSBT codec (BC-UR), payjoin sender (BIP-78 here, BIP-77 through the Payjoin Dev Kit in `org.payjoindevkit`) |
 | `core/fx` | currencies, keypad logic, Yadio rates |
 | `core/store` | `Prefs`, `SecretStore` (nsec wrapped with an Android Keystore key), profile cache |
 | `core/diag` | crash-report `Scrubber`, `Trail` breadcrumbs, `Perf` (frames, start, resources, NWC latency) |
