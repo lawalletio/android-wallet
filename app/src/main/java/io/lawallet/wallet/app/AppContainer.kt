@@ -48,6 +48,7 @@ class AppContainer(
     val lock = AppLock(prefs, activityBridge)
     val onchain = OnchainStore(context.applicationContext)
     val onchainWallets = OnchainRepository(context.applicationContext, onchain, scope, http)
+    val bip353 by lazy { io.lawallet.wallet.core.btc.Bip353(http) }
     val bip39 by lazy { io.lawallet.wallet.core.btc.Bip39(context.resources.openRawResource(io.lawallet.wallet.R.raw.bip39_english).bufferedReader().readLines()) }
     val updater = Updater(context.applicationContext, http)
 }
