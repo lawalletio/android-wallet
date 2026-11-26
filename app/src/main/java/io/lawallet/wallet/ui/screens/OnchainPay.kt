@@ -79,6 +79,7 @@ import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.Payjoin
 import io.lawallet.wallet.core.btc.PsbtCodec
+import io.lawallet.wallet.core.btc.SilentPayment
 import io.lawallet.wallet.core.fx.Currencies
 import io.lawallet.wallet.ui.LocalContainer
 import io.lawallet.wallet.ui.LocalNav
@@ -140,7 +141,8 @@ internal fun payingWallets(c: AppContainer, chain: Chain) = c.onchain.wallets.va
  */
 fun startOnchainSend(c: AppContainer, b: Bip21, preferred: String? = null): String? {
     val chain = Descriptors.chainOf(b.address) ?: return null
-    val wallets = payingWallets(c, chain)
+    // A silent payment is derived from the spending keys: only a wallet whose keys are on this phone can make one.
+    val wallets = payingWallets(c, chain).filter { it.seed || !SilentPayment.isAddress(b.address) }
     val from = wallets.firstOrNull { it.id == preferred } ?: wallets.firstOrNull { it.isPrimary } ?: wallets.firstOrNull() ?: return null
     c.flow.onchainSend = FlowStore.OnchainSend(from.id, b.address, b.sats, b.label, payjoin = b.pj)
     return if (b.sats != null) R0.ONCHAIN_SEND_REVIEW else R0.ONCHAIN_SEND_AMOUNT
@@ -482,7 +484,7 @@ fun OnchainSendReviewScreen() {
     if (w == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val canSign = !w.watchOnly
     val payjoin = s0.payjoin?.let { Payjoin.endpoint(it) } != null
-    val joins = payjoin && c.onchainWallets.canPayjoin(w)
+    val joins = payjoin && c.onchainWallets.canPayjoin(w, s0.address)
     // The most the receiver may take from our change for its input: one input's worth at our rate.
     val joinFee = d?.takeIf { joins }?.let { dr -> w.script?.let { kotlin.math.ceil(dr.feeRate * Payjoin.inputVbytes(it)).toLong() } }
     fun onDone(outcome: SendOutcome, dr: OnchainDraft) {
