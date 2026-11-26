@@ -42,7 +42,7 @@ class SendFlowTest : FlowTest() {
         try {
             waitUntil { c.wallet.balance.value == 20_000L }
         } catch (e: Throwable) {
-            // Only CI has missed this so far: say where it stopped.
+            // Say where it stopped: the app's balance, and what the wallet was asked.
             throw AssertionError(
                 "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
                     "walletMsat=${instance.wallet.balanceMsat} requests=${instance.wallet.requests}", e,

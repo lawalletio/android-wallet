@@ -199,8 +199,8 @@ class WalletRepositoryTest {
         assertTrue(notices.none { it.tx.paymentHash == "old199" })
     }
 
-    // Found by SendFlowTest on CI: a balance read sent before a payment and answered after it stood in for the refresh
-    // the payment asked for, so Home kept the old balance until the next poll.
+    // A balance read sent before a payment and answered after it stood in for the refresh the payment asked for, so
+    // Home kept the old balance until the next poll.
     @Test fun aRefreshNeverSharesABalanceReadSentBeforeIt() = runBlocking {
         val (f, _) = fakeWallet()
         listening(f)

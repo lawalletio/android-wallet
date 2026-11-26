@@ -54,6 +54,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
                 val subId = msg[1].jsonPrimitive.content
                 val filter = msg[2].jsonObject
                 subs[subId] = filter
+                // Like a relay: a reply published before this REQ arrived is served from storage.
+                filter["#e"]?.jsonArray?.forEach { e -> replies[e.jsonPrimitive.content]?.let { send(webSocket, subId, it) } }
                 if (answerInfo && filter["kinds"]!!.jsonArray.any { it.jsonPrimitive.int == 13194 }) {
                     val tags = if (nip44) listOf(listOf("encryption", "nip44_v2 nip04")) else emptyList()
                     send(webSocket, subId, NostrEvent.sign(walletKeys, 13194, "pay_invoice get_balance make_invoice lookup_invoice list_transactions notifications", tags))
@@ -93,9 +95,18 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
         }
         val body = if (result != null) buildJsonObject { put("result_type", method); put("result", result) }
         else buildJsonObject { put("result_type", method); put("error", buildJsonObject { put("code", "INSUFFICIENT_BALANCE"); put("message", "Not enough sats") }) }
-        val subId = subs.entries.first { (_, f) -> f["#e"]?.jsonArray?.any { it.jsonPrimitive.content == ev.id } == true }.key
-        val reply = { send(ws, subId, NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id)))) }
-        if (method == "get_balance" && holdBalance) heldBalances += reply else reply()
+        val reply = NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id)))
+        val publish = { publishReply(ev.id, reply) }
+        if (method == "get_balance" && holdBalance) heldBalances += publish else publish()
+    }
+
+    /** Replies by request id: the client's REQ for one can arrive after it (a relay holds REQs back while it connects or is at its cap). */
+    private val replies = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
+
+    private fun publishReply(requestId: String, reply: NostrEvent) {
+        replies[requestId] = reply
+        subs.filter { (_, f) -> f["#e"]?.jsonArray?.any { it.jsonPrimitive.content == requestId } == true }.keys
+            .forEach { id -> sockets.forEach { send(it, id, reply) } }
     }
 
     /** True: get_balance answers (with the balance at the time it was asked) wait for [releaseBalances], like a slow wallet. */

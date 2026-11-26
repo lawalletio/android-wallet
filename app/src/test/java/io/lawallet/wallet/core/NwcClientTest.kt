@@ -139,4 +139,20 @@ class NwcClientTest {
         assertEquals("23197", notificationKinds(nip44 = true))
         assertEquals("23196", notificationKinds(nip44 = false))
     }
+
+    // A relay can hold a REQ back (connecting, or at its subscription cap) while the request it waits on goes out: the
+    // wallet's reply is stored and served once the REQ lands. Missing this in FakeNwcWallet made SendFlowTest fail on CI.
+    @Test fun aReplyPublishedBeforeItsReqStillArrives() = runBlocking {
+        val (_, nwc) = client(nip44 = true)
+        val held = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val socket = nwc.relay.sink
+        nwc.relay.sink = { frame ->
+            when {
+                frame.startsWith("[\"REQ\",\"rsp-") -> held += frame
+                frame.startsWith("[\"EVENT\"") -> { socket(frame); Thread.sleep(200); held.forEach(socket); held.clear() }
+                else -> socket(frame)
+            }
+        }
+        assertEquals(21_000_000L, withTimeout(10_000) { nwc.getBalanceMsat() })
+    }
 }
