@@ -123,6 +123,9 @@ object HomePager {
     /** Where Home's pager last was, for while it's off screen. */
     private var last = LIGHTNING.toFloat()
     fun release(s: PagerState) { if (state === s) { last = s.currentPage + s.currentPageOffsetFraction; state = null } }
+    /** A page to open on when Home next shows (a payment switched network from another screen). */
+    var pending: Int? = null
+    fun show(page: Int) { last = page.toFloat(); pending = page }
     /** The page nearest the front. */
     val page get() = position.roundToInt().coerceIn(0, PAGES - 1)
     /** How much [page] is in front: 1 when it is, 0 a page or more away (the weights always sum to 1). */
@@ -288,6 +291,7 @@ fun HomeScreen() {
     LaunchedEffect(Unit) {
         if (c.flow.revealWallets) pager.scrollToPage(LIGHTNING)
         if (c.flow.revealOnchain) pager.scrollToPage(ONCHAIN)
+        HomePager.pending?.let { pager.scrollToPage(it); HomePager.pending = null }
     }
     DisposableEffect(pager) { HomePager.state = pager; onDispose { HomePager.release(pager) } }
     // Back from Onchain or USDT goes to Lightning first (the pages' own handlers, composed later, win while they're open).

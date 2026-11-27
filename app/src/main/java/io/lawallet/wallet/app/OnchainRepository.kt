@@ -2,11 +2,13 @@ package io.lawallet.wallet.app
 
 import android.content.Context
 import io.lawallet.wallet.BuildConfig
+import io.lawallet.wallet.core.btc.BtcImport
 import io.lawallet.wallet.core.btc.Chain
 import io.lawallet.wallet.core.btc.DescriptorPair
 import io.lawallet.wallet.core.btc.Descriptors
 import io.lawallet.wallet.core.btc.Electrum
 import io.lawallet.wallet.core.btc.Payjoin
+import io.lawallet.wallet.core.btc.SilentPayment
 import io.lawallet.wallet.core.btc.WatchKind
 import io.lawallet.wallet.core.diag.Trail
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +39,7 @@ import org.bitcoindevkit.Amount
 import org.bitcoindevkit.BumpFeeTxBuilder
 import org.bitcoindevkit.ChainPosition
 import org.bitcoindevkit.Descriptor
+import org.bitcoindevkit.DescriptorSecretKey
 import org.bitcoindevkit.ElectrumClient
 import org.bitcoindevkit.FeeRate
 import org.bitcoindevkit.KeychainKind
@@ -459,22 +462,32 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
     }
     private fun rate(satVb: Double) = FeeRate.fromSatPerKwu((satVb * 250).roundToLong().coerceAtLeast(25).toULong())
 
-    /** Builds (doesn't sign) a payment of [sats] to [address]; null [sats] sends everything (no change). */
+    /**
+     * Builds (doesn't sign) a payment of [sats] to [address]; null [sats] sends everything (no change). A silent payment
+     * address needs this phone's keys: its output is derived from them (BIP-352).
+     */
     suspend fun draft(id: String, address: String, sats: Long?, satVb: Double): OnchainDraft = withContext(Dispatchers.IO) {
         val h = handle(id)
+        val sp = SilentPayment.parse(address)
+        val root = if (sp != null) root(h.w) ?: throw OnchainException(OnchainException.Reason.NO_KEY) else null
         h.lock.withLock {
             val bdk = h.bdk ?: throw OnchainException(OnchainException.Reason.NO_KEY)
-            val script = Address(address, h.w.chain.bdk).scriptPubkey()
-            val b = TxBuilder().feeRate(rate(satVb))
+            val script = if (sp == null) Address(address, h.w.chain.bdk).scriptPubkey() else null
             val psbt = try {
-                (if (sats == null) b.drainWallet().drainTo(script) else b.addRecipient(script, Amount.fromSat(sats.toULong()))).finish(bdk)
+                if (script == null) root!!.use { SilentPayment.draft(bdk, it, sp!!, sats, rate(satVb)) } ?: throw OnchainException(OnchainException.Reason.NO_KEY)
+                else {
+                    val b = TxBuilder().feeRate(rate(satVb))
+                    (if (sats == null) b.drainWallet().drainTo(script) else b.addRecipient(script, Amount.fromSat(sats.toULong()))).finish(bdk)
+                }
             } catch (e: org.bitcoindevkit.CreateTxException) {
                 throw OnchainException(reason(e))
             }
             // Building reveals a change address: keep it, so the next draft doesn't reuse it.
             bdk.persist(h.persister!!)
             val tx = psbt.extractTxUncheckedFeeRate()
-            val amount = tx.output().filter { it.scriptPubkey.toBytes().contentEquals(script.toBytes()) }.sumOf { it.value.toSat().toLong() }
+            // A silent payment's output is the one that isn't ours (we can't own it: it pays the recipient's key).
+            val amount = tx.output().filter { if (script == null) !bdk.isMine(it.scriptPubkey) else it.scriptPubkey.toBytes().contentEquals(script.toBytes()) }
+                .sumOf { it.value.toSat().toLong() }
             OnchainDraft(id, psbt.serialize(), address, amount, psbt.fee().toLong(), satVb)
         }
     }
@@ -487,10 +500,23 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
             val psbt = try { BumpFeeTxBuilder(Txid.fromString(txid), rate(satVb)).finish(bdk) } catch (e: org.bitcoindevkit.CreateTxException) {
                 throw OnchainException(reason(e))
             }
+            // A silent payment's output is bound to its inputs: a bump that adds one would pay a key nobody finds.
+            val sp = cache.getString("sp:$txid", null)
+            fun outpoints(tx: Transaction) = tx.input().map { "${it.previousOutput.txid}:${it.previousOutput.vout}" }.toSet()
+            if (sp != null && outpoints(psbt.extractTxUncheckedFeeRate()) != bdk.getTx(Txid.fromString(txid))?.transaction?.let(::outpoints)) {
+                throw OnchainException(OnchainException.Reason.NO_FUNDS)
+            }
             bdk.persist(h.persister!!)
             val out = psbt.extractTxUncheckedFeeRate().output().firstOrNull { !bdk.isMine(it.scriptPubkey) }
-            OnchainDraft(id, psbt.serialize(), out?.let { addressOf(it.scriptPubkey.toBytes(), h.w.chain) }.orEmpty(), out?.value?.toSat()?.toLong() ?: 0, psbt.fee().toLong(), satVb, replaces = txid)
+            OnchainDraft(id, psbt.serialize(), sp ?: out?.let { addressOf(it.scriptPubkey.toBytes(), h.w.chain) }.orEmpty(), out?.value?.toSat()?.toLong() ?: 0, psbt.fee().toLong(), satVb, replaces = txid)
         }
+    }
+
+    /** The master key (or imported xprv) of a wallet whose keys are on this phone; null otherwise. Blocking (Keystore). */
+    private fun root(w: OnchainWallet): DescriptorSecretKey? = when {
+        !w.seed -> null
+        w.keyOnly -> store.privateKey(w.id)?.let { k -> BtcImport.extendedKey(k)?.let { DescriptorSecretKey.fromString(it.xpub) } }
+        else -> store.secret(w.id)?.let { (words, pass) -> Descriptors.secretKey(words, pass, w.chain) }
     }
 
     /** The keys this phone holds for [w]: its own phrase, or the seed wallet that cosigns a vault. Blocking (Keystore). */
@@ -513,7 +539,8 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
         val keys = signers(h.w)
         val done = h.lock.withLock { keys != null && h.bdk!!.signWithSigners(psbt, keys) }
         if (!done) return@withContext SendOutcome.NeedsSignatures(psbt.serialize())
-        val tried = payjoin != null && draft.replaces == null && canPayjoin(h.w)
+        val sp = SilentPayment.isAddress(draft.address)
+        val tried = payjoin != null && draft.replaces == null && canPayjoin(h.w, draft.address)
         var run = PayjoinRun(PayjoinRun.Step.SEND)
         fun emit(f: (PayjoinRun) -> PayjoinRun) { run = f(run); onRun(run) }
         val joined = if (!tried) null else runCatching { payjoin(h, psbt, Payjoin.uri(draft.address, draft.amount, payjoin!!), keys!!, ::emit) }
@@ -525,6 +552,8 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
         val joinedTxid = joined?.let { runCatching { broadcast(h, it.first) }.getOrNull() }?.also { Trail.add("onchain", "payjoin sent") }
         if (joined != null && joinedTxid == null) emit { it.copy(failedAt = PayjoinRun.Step.BROADCAST, why = PayjoinRun.Why.OFFLINE) }
         val txid = joinedTxid ?: broadcast(h, psbt)
+        // Remembered so a fee bump keeps the inputs the silent payment output was derived from.
+        if (sp) cache.edit().putString("sp:$txid", draft.address).apply()
         // A payjoin's payment output also holds the receiver's coins: what we sent is only what we asked to.
         if (joinedTxid != null) {
             cache.edit().putString("pj:$txid", draft.amount.toString()).apply()
@@ -572,8 +601,14 @@ class OnchainRepository(context: Context, private val store: OnchainStore, priva
         }
     }
 
-    /** Whether a send from [w] can be a payjoin: it needs this phone to sign alone, twice. */
-    fun canPayjoin(w: OnchainWallet) = !w.watchOnly && !w.multisig
+    /**
+     * Whether a send from [w] to [address] can be a payjoin: it needs this phone to sign alone, twice. Not to a silent
+     * payment, whose output is derived from our inputs alone (the receiver adding one would break it).
+     */
+    /** The silent payment address (`sp1…`) a send of ours paid, or null when it was a plain one. */
+    fun silentPayment(txid: String): String? = cache.getString("sp:$txid", null)
+
+    fun canPayjoin(w: OnchainWallet, address: String) = !w.watchOnly && !w.multisig && !SilentPayment.isAddress(address)
 
     /** Adds this phone's signature to [psbt] (base64), if it holds a key for the wallet. */
     suspend fun sign(id: String, psbt: String): String = withContext(Dispatchers.IO) {

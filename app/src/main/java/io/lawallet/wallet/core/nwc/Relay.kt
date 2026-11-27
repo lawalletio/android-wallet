@@ -157,6 +157,7 @@ class Relay(val url: String, private val http: OkHttpClient, private val scope: 
     }
 
     internal fun openSubIds(): List<String> = synchronized(lock) { subs.filterValues { it.sent }.keys.toList() }
+    internal fun queuedSubIds(): List<String> = synchronized(lock) { subs.filterValues { !it.sent }.keys.toList() }
 
     /** Sends queued REQs up to [maxSubs], unless the relay asked us to slow down. */
     internal fun flush() {

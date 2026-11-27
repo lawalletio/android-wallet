@@ -17,3 +17,9 @@
 -keep class org.payjoindevkit.** { *; }
 -dontwarn java.awt.**
 -dontwarn org.slf4j.**
+
+# dnsjava (BIP-353 names): Windows resolver config (JNA), the JDK's name-service SPI and Lombok annotations are
+# desktop-only paths the app never takes (it resolves over DoH through OkHttp).
+-dontwarn com.sun.jna.platform.win32.**
+-dontwarn lombok.**
+-dontwarn sun.net.spi.nameservice.**

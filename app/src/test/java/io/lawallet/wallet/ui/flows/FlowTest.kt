@@ -21,6 +21,7 @@ import io.lawallet.wallet.testing.TestContainer
 import io.lawallet.wallet.testing.loginThrowaway
 import io.lawallet.wallet.ui.LaWalletRoot
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -46,6 +47,9 @@ abstract class FlowTest {
     @Before fun startInstance() {
         // Dates in activity rows render the same everywhere.
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+        // Home's page lives in a global: every test starts on Lightning, whatever the one before switched to.
+        io.lawallet.wallet.ui.screens.HomePager.show(io.lawallet.wallet.ui.screens.LIGHTNING)
+        io.lawallet.wallet.ui.screens.HomePager.pending = null
         instance = FakeInstance().start()
         c = TestContainer.create(context, instance)
         // No image loading at all (avatars, domain logos): nothing leaves the machine and screenshots don't wait on it.
@@ -67,6 +71,9 @@ abstract class FlowTest {
         if (loggedIn) runBlocking { c.loginThrowaway(TEST_SECRET) }
         // In the foreground, as LaWalletApp's process observer sets it: balance polling runs.
         c.wallet.active.value = true
+        // Unconfined: runs in the writer's thread, so no value is conflated away before it's recorded.
+        c.scope.launch(kotlinx.coroutines.Dispatchers.Unconfined) { c.wallet.balance.collect { balances += it } }
+        io.lawallet.wallet.core.diag.Trail.open(java.nio.file.Files.createTempDirectory("trail").toFile(), "flow test")
         // Screens prompt for the device lock through a FragmentActivity, as MainActivity is.
         shadowOf(context.packageManager).addActivityIfNotPresent(ComponentName(context, FragmentActivity::class.java))
         scenario = ActivityScenario.launch(FragmentActivity::class.java).onActivity {
@@ -75,13 +82,35 @@ abstract class FlowTest {
         }
     }
 
+    /**
+     * [rule].waitUntil, but a timeout says where the wallet stood: CI has timed out waiting on NWC replies that never
+     * fail locally, and the plain ComposeTimeoutException says nothing about them.
+     */
+    /** Every balance Home was given, in order (a timeout's message: was the new one there and then replaced?). */
+    private val balances = java.util.concurrent.CopyOnWriteArrayList<Long?>()
+
+    private fun await(timeoutMs: Long, condition: () -> Boolean) = try {
+        // Each check first runs what's due on the main looper: the app's scope resumes there after a wallet reply,
+        // and on CI a reply that had arrived was still waiting there when the wait timed out.
+        rule.waitUntil(timeoutMs) { shadowOf(android.os.Looper.getMainLooper()).idle(); condition() }
+    } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+        val relay = (c.wallet.client.value as? io.lawallet.wallet.core.nwc.NwcClient)?.relay
+        throw AssertionError(
+            "balance=${c.wallet.balance.value} error=${c.wallet.relayError.value} client=${c.wallet.client.value != null} " +
+                "connected=${relay?.connected?.value} open=${relay?.openSubIds()} queued=${relay?.queuedSubIds()} " +
+                "balances=$balances wallet: requests=${instance.wallet.requests} ${instance.wallet.state()} " +
+                "mainLooper idle=${shadowOf(android.os.Looper.getMainLooper()).isIdle} trail:\n" +
+                io.lawallet.wallet.core.diag.Trail.run { flush(); tail(false, 40) }.joinToString("\n"), e,
+        )
+    }
+
     protected fun waitForTag(tag: String, timeoutMs: Long = 10_000) =
-        rule.waitUntil(timeoutMs) { rule.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        await(timeoutMs) { rule.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
     protected fun waitForText(text: String, timeoutMs: Long = 10_000, substring: Boolean = false) =
-        rule.waitUntil(timeoutMs) { rule.onAllNodes(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        await(timeoutMs) { rule.onAllNodes(hasText(text, substring = substring), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
-    protected fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) = rule.waitUntil(timeoutMs, condition)
+    protected fun waitUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) = await(timeoutMs, condition)
 
     /** Settles animations, then records/compares `<name>_<lang>.png`. */
     protected fun shot(name: String) {
@@ -93,7 +122,7 @@ abstract class FlowTest {
     protected fun tag(tag: String): SemanticsNodeInteraction = rule.onNode(hasTestTag(tag), useUnmergedTree = true)
 
     /** Waits until the node tagged [tag] shows exactly [text]. */
-    protected fun waitForTagText(tag: String, text: String, timeoutMs: Long = 10_000) = rule.waitUntil(timeoutMs) {
+    protected fun waitForTagText(tag: String, text: String, timeoutMs: Long = 10_000) = await(timeoutMs) {
         rule.onAllNodes(hasTestTag(tag) and hasText(text), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
 

@@ -22,7 +22,7 @@ data class DescriptorPair(val external: String, val internal: String)
 object Descriptors {
     private val KEYCHAINS = listOf(KeychainKind.EXTERNAL, KeychainKind.INTERNAL)
 
-    private fun secretKey(words: List<String>, passphrase: String?, chain: Chain) =
+    fun secretKey(words: List<String>, passphrase: String?, chain: Chain) =
         DescriptorSecretKey(chain.kind, Mnemonic.fromString(words.joinToString(" ")), passphrase?.takeIf { it.isNotEmpty() })
 
     private fun template(script: ScriptType, key: DescriptorSecretKey, keychain: KeychainKind, chain: Chain) = when (script) {
@@ -124,8 +124,9 @@ object Descriptors {
 
     fun address(descriptor: String, index: Int, chain: Chain): String = Descriptor(descriptor, chain.kind).deriveAddress(index.toUInt(), chain.bdk).toString()
 
-    /** Which chain [address] belongs to, or null if it isn't a valid address. */
-    fun chainOf(address: String): Chain? = Chain.entries.firstOrNull { c -> runCatching { Address(address, c.bdk) }.isSuccess }
+    /** Which chain [address] (or silent payment address) belongs to, or null if it isn't a valid one. */
+    fun chainOf(address: String): Chain? =
+        Chain.entries.firstOrNull { c -> runCatching { Address(address, c.bdk) }.isSuccess } ?: SilentPayment.parse(address)?.chain
 
     /** Electrum's id for an output script: sha256 of the script, byte-reversed, hex. */
     fun scripthash(script: ByteArray): String = sha256(script).reversedArray().joinToString("") { "%02x".format(it) }
@@ -151,14 +152,15 @@ data class Bip21(val address: String, val sats: Long? = null, val label: String?
         fun parse(raw: String): Bip21? {
             val s = raw.trim()
             val body = if (s.startsWith("bitcoin:", ignoreCase = true)) s.substring(8) else if (':' in s || s.isEmpty()) return null else s
-            val address = body.substringBefore('?').takeIf { it.isNotEmpty() } ?: return null
             val params = body.substringAfter('?', "").split('&').filter { '=' in it }
                 // A `+` stays a `+` (not a space): BIP-77's `pj` fragment used it as a separator.
                 .associate { it.substringBefore('=').lowercase() to URLDecoder.decode(it.substringAfter('=').replace("+", "%2B"), "UTF-8") }
+            // BIP-321: a silent payment address in `sp=` is preferred (more private); the address may then be empty.
+            val address = params["sp"]?.takeIf { SilentPayment.isAddress(it) } ?: body.substringBefore('?').takeIf { it.isNotEmpty() } ?: return null
             // An unknown required parameter (BIP-21 `req-`) means we can't honour the request.
             if (params.keys.any { it.startsWith("req-") }) return null
             val sats = params["amount"]?.let { runCatching { BigDecimal(it).movePointRight(8).longValueExact() }.getOrNull() ?: return null }
-            return Bip21(address.let { if (it.startsWith("BC1") || it.startsWith("TB1")) it.lowercase() else it }, sats, params["label"], params["message"], params["lightning"], params["pj"])
+            return Bip21(address.let { a -> if (listOf("BC1", "TB1", "SP1", "TSP1").any { a.startsWith(it) }) a.lowercase() else a }, sats, params["label"], params["message"], params["lightning"], params["pj"])
         }
     }
 }

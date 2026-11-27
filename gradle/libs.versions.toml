@@ -46,6 +46,8 @@ cbor = "0.9"
 bdk = "3.1.1"
 # The Payjoin Dev Kit bindings (org.payjoindevkit) load their .so through JNA, the version bdk-android brings.
 jna = "5.14.0"
+# BIP-353 names: DNS over HTTPS answers, DNSSEC validated on the phone (never trusting the resolver).
+dnsjava = "3.7.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -85,6 +87,7 @@ cbor = { module = "co.nstant.in:cbor", version.ref = "cbor" }
 bdk-android = { module = "org.bitcoindevkit:bdk-android", version.ref = "bdk" }
 bdk-jvm = { module = "org.bitcoindevkit:bdk-jvm", version.ref = "bdk" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+dnsjava = { module = "dnsjava:dnsjava", version.ref = "dnsjava" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 quickjs-android = { module = "wang.harlon.quickjs:wrapper-android", version.ref = "quickjs" }
 lucide = { module = "com.composables:icons-lucide-android", version.ref = "lucide" }

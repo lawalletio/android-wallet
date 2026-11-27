@@ -229,6 +229,7 @@ dependencies {
     implementation(libs.cbor)
     implementation(libs.bdk.android)
     implementation(libs.jna) { artifact { type = "aar" } }
+    implementation(libs.dnsjava) { exclude(group = "net.java.dev.jna") }
     implementation(libs.lucide)
     implementation(libs.haze)
     implementation(libs.reorderable)

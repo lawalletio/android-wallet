@@ -148,10 +148,24 @@ fun SendRecipientScreen() {
     val settings by c.session.settings.collectAsState()
     val client by c.wallet.client.collectAsState()
     val bank = settings?.swapsEnabled == true && client != null
+    val noWallet = stringResource(R.string.onchain_send_noWallet)
+    // Pays [b] from Bitcoin instead, Home switched over; false when no onchain wallet here can.
+    fun payOnchain(b: io.lawallet.wallet.core.btc.Bip21): Boolean {
+        val route = startOnchainSend(c, b) ?: return false
+        switchHome(PayNetwork.ONCHAIN)
+        val here = nav.currentDestination?.id
+        nav.navigate(route) { here?.let { popUpTo(it) { inclusive = true } } }
+        return true
+    }
     AddressEntry(
         stringResource(R.string.send_title), stringResource(R.string.send_to), stringResource(R.string.common_continue),
         scan = { nav.navigate(R0.SCAN) { launchSingleTop = true } }, bank = bank,
+        // A Bitcoin address: Lightning can't pay it, Bitcoin can (one tap over, or Continue).
+        notice = { value, showError ->
+            remember(value) { onchainOnly(value) }?.let { b -> NetworkSwitchCard(PayNetwork.ONCHAIN, { if (!payOnchain(b)) showError(noWallet) }) }
+        },
     ) { value ->
+        onchainOnly(value)?.let { b -> if (payOnchain(b)) return@AddressEntry else throw DestinationException("onchain", noWallet) }
         // A CBU typed in full and sent with Continue: the account, resolved when the instance can.
         if (bank && BankDestination.kind(value) == BankDestination.Kind.Cbu) {
             val account = runCatching { c.swaps.lookup(value) }.getOrNull() ?: BankAccount(value)
@@ -175,6 +189,8 @@ internal fun AddressEntry(
     scan: (() -> Unit)? = null,
     /** Also offer bank accounts (ARS cash-out) for a CBU/CVU or alias. */
     bank: Boolean = false,
+    /** Shown under the field for what's typed, with a way to show an error there. */
+    notice: (@Composable (String, (String) -> Unit) -> Unit)? = null,
     onSubmit: suspend (String) -> Unit,
 ) {
     val c = LocalContainer.current
@@ -208,7 +224,9 @@ internal fun AddressEntry(
     }
     val user = input.substringBefore('@')
     val typedDomain = input.substringAfter('@', "")
-    val suggestions = if (user.isNotBlank() && !input.startsWith("ln", true) && user.all { it.isLetterOrDigit() || it in "._-" } && !(bank && user.all { it.isDigit() }))
+    // A Bitcoin address isn't a user name to complete (Send says to pay it onchain instead).
+    val onchain = remember(input) { onchainOnly(input.trim()) != null }
+    val suggestions = if (!onchain && user.isNotBlank() && !input.startsWith("ln", true) && user.all { it.isLetterOrDigit() || it in "._-" } && !(bank && user.all { it.isDigit() }))
         SUGGESTED_DOMAINS.filter { it.startsWith(typedDomain, true) && "$user@$it" != input }.take(6) else emptyList()
     // Fully written: the address leads the box, expanded with its Nostr face and name.
     val full = input.trim().takeIf { FULL_ADDRESS.matches(it) }
@@ -233,6 +251,7 @@ internal fun AddressEntry(
                 },
             )
             ErrorText(error, Modifier.fillMaxWidth())
+            notice?.invoke(input.trim()) { error = it }
             if (bank) BankSuggestions(input, enabled = !loading) { account, name -> nav.navigate(startCashOut(c, account, name)) }
             if (full != null || suggestions.isNotEmpty()) AddressGroup(
                 stringResource(R.string.shared_addressInput_suggestions),
@@ -246,6 +265,10 @@ internal fun AddressEntry(
         LwButton(submitLabel, { submit() }, Modifier.fillMaxWidth().padding(16.dp).testTag("recipient-continue"), BtnVariant.Theme, enabled = input.isNotBlank(), loading = loading)
     }
 }
+
+/** A Bitcoin address or `bitcoin:` link with no Lightning alternative: only an onchain wallet pays it. */
+internal fun onchainOnly(text: String): io.lawallet.wallet.core.btc.Bip21? =
+    io.lawallet.wallet.core.btc.Bip21.parse(text)?.takeIf { it.lightning == null && io.lawallet.wallet.core.btc.Descriptors.chainOf(it.address) != null }
 
 /** Pasting [text] would go straight through: a Lightning address, or an invoice that hasn't expired. */
 internal fun isPayableClip(text: String, now: Long = System.currentTimeMillis()): Boolean = when (val d = runCatching { DestinationParser.parse(text) }.getOrNull()) {

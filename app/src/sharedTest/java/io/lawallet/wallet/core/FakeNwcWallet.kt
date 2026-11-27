@@ -45,7 +45,7 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     fun dropConnections() { sockets.forEach { it.close(1012, "restart") }; sockets.clear() }
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { sockets.remove(webSocket); webSocket.close(1000, null) }
 
-    override fun onOpen(webSocket: WebSocket, response: Response) { sockets += webSocket }
+    override fun onOpen(webSocket: WebSocket, response: Response) { sockets += webSocket; opened++ }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
         val msg = NostrEvent.json.parseToJsonElement(text).jsonArray
@@ -54,6 +54,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
                 val subId = msg[1].jsonPrimitive.content
                 val filter = msg[2].jsonObject
                 subs[subId] = filter
+                // Like a relay: a reply published before this REQ arrived is served from storage.
+                filter["#e"]?.jsonArray?.forEach { e -> replies[e.jsonPrimitive.content]?.let { send(webSocket, subId, it) } }
                 if (answerInfo && filter["kinds"]!!.jsonArray.any { it.jsonPrimitive.int == 13194 }) {
                     val tags = if (nip44) listOf(listOf("encryption", "nip44_v2 nip04")) else emptyList()
                     send(webSocket, subId, NostrEvent.sign(walletKeys, 13194, "pay_invoice get_balance make_invoice lookup_invoice list_transactions notifications", tags))
@@ -72,7 +74,8 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
     private fun decrypt(content: String) = if (content.contains("?iv=")) Nip04.decrypt(content, walletKeys, clientKeys.pubkey) else Nip44.decrypt(content, walletKeys, clientKeys.pubkey)
     private fun encrypt(plain: String) = if (nip44) Nip44.encrypt(plain, walletKeys, clientKeys.pubkey) else Nip04.encrypt(plain, walletKeys, clientKeys.pubkey)
 
-    private fun handleRequest(ws: WebSocket, ev: NostrEvent) {
+    /** Synchronized: each connection reads on its own thread, and a real wallet doesn't read a balance mid-payment. */
+    @Synchronized private fun handleRequest(ws: WebSocket, ev: NostrEvent) {
         // A real wallet can't read the wrong encryption and just stays silent.
         if (nip44 != (ev.tag("encryption") == "nip44_v2")) { requests += "wrong-encryption"; return }
         val req = NostrEvent.json.parseToJsonElement(decrypt(ev.content)).jsonObject
@@ -80,7 +83,7 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
         val params = req["params"]!!.jsonObject
         requests += method
         val result: JsonObject? = when (method) {
-            "get_balance" -> buildJsonObject { put("balance", balanceMsat) }
+            "get_balance" -> buildJsonObject { put("balance", balanceMsat) }.also { balancesAnswered += balanceMsat / 1000 }
             "make_invoice" -> tx("incoming", params["amount"]!!.jsonPrimitive.long, "hash-make")
             "lookup_invoice" -> tx("incoming", 5000, params["payment_hash"]!!.jsonPrimitive.content, settled = true)
             "list_transactions" -> buildJsonObject { put("transactions", JsonArray(listOf(tx("incoming", 1000, "h1"), tx("outgoing", 2000, "h2")))) }
@@ -93,10 +96,24 @@ class FakeNwcWallet(private val nip44: Boolean) : WebSocketListener() {
         }
         val body = if (result != null) buildJsonObject { put("result_type", method); put("result", result) }
         else buildJsonObject { put("result_type", method); put("error", buildJsonObject { put("code", "INSUFFICIENT_BALANCE"); put("message", "Not enough sats") }) }
-        val subId = subs.entries.first { (_, f) -> f["#e"]?.jsonArray?.any { it.jsonPrimitive.content == ev.id } == true }.key
-        val reply = { send(ws, subId, NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id)))) }
-        if (method == "get_balance" && holdBalance) heldBalances += reply else reply()
+        val reply = NostrEvent.sign(walletKeys, 23195, encrypt(body.toString()), listOf(listOf("p", clientKeys.pubkey), listOf("e", ev.id)))
+        val publish = { publishReply(ev.id, reply) }
+        if (method == "get_balance" && holdBalance) heldBalances += publish else publish()
     }
+
+    /** Replies by request id: the client's REQ for one can arrive after it (a relay holds REQs back while it connects or is at its cap). */
+    private val replies = java.util.concurrent.ConcurrentHashMap<String, NostrEvent>()
+
+    private fun publishReply(requestId: String, reply: NostrEvent) {
+        replies[requestId] = reply
+        subs.filter { (_, f) -> f["#e"]?.jsonArray?.any { it.jsonPrimitive.content == requestId } == true }.keys
+            .forEach { id -> sockets.forEach { send(it, id, reply) } }
+    }
+
+    /** For a failing test's message: the relay's subscriptions and the replies it has published. */
+    fun state() = "subs=${subs.keys} replies=${replies.size} held=${heldBalances.size} sockets=${sockets.size} opened=$opened balancesAnswered=$balancesAnswered"
+    private val balancesAnswered = CopyOnWriteArrayList<Long>()
+    @Volatile private var opened = 0
 
     /** True: get_balance answers (with the balance at the time it was asked) wait for [releaseBalances], like a slow wallet. */
     @Volatile var holdBalance = false
